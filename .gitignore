@@ -1,0 +1,19 @@
+.worktrees/
+worktrees/
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+coverage/
+
+# Python / backend
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+
+# Env and OS noise
+.env
+.env.*
+.DS_Store
