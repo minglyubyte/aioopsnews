@@ -38,6 +38,8 @@ AI Reality Check is an MVP accountability platform for tracking AI failures and 
    UV_CACHE_DIR=../.uv-cache uv sync --all-groups
    ```
 
+The backend defaults to a local SQLite database at `backend/data/ai_reality_check.db` for the read API. If the file does not exist yet, the app bootstraps a small reviewed incident dataset automatically.
+
 ## Run Locally
 
 ### Frontend
@@ -57,6 +59,7 @@ UV_CACHE_DIR=../.uv-cache uv run uvicorn app.main:app --reload
 ```
 
 The health endpoint is available at `http://127.0.0.1:8000/health`.
+The incident feed endpoints are available at `http://127.0.0.1:8000/incidents` and `http://127.0.0.1:8000/filters`.
 
 ## Quality Checks
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.services.incident_query import get_filter_values, list_public_incidents
@@ -39,11 +39,15 @@ class IncidentFilterResponse(BaseModel):
     companies: list[str]
 
 
+def get_incident_repository(request: Request):
+    return request.app.state.incident_repository
+
+
 @router.get("/incidents", response_model=IncidentFeedResponse)
-def get_incidents() -> IncidentFeedResponse:
-    return IncidentFeedResponse(items=list_public_incidents())
+def get_incidents(repository=Depends(get_incident_repository)) -> IncidentFeedResponse:
+    return IncidentFeedResponse(items=list_public_incidents(repository))
 
 
 @router.get("/filters", response_model=IncidentFilterResponse)
-def get_filters() -> IncidentFilterResponse:
-    return IncidentFilterResponse(**get_filter_values())
+def get_filters(repository=Depends(get_incident_repository)) -> IncidentFilterResponse:
+    return IncidentFilterResponse(**get_filter_values(repository))
