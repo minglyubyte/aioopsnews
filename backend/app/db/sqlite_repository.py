@@ -331,6 +331,78 @@ class SQLiteIncidentRepository:
 
         return True
 
+    def list_pending_incidents(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            incident_rows = connection.execute(
+                """
+                select
+                    incident_logs.id,
+                    incident_logs.headline,
+                    incident_logs.reality_summary,
+                    incident_sources.publisher,
+                    incident_sources.title,
+                    incident_sources.source_url
+                from incident_logs
+                left join incident_sources
+                    on incident_sources.incident_id = incident_logs.id
+                where incident_logs.status = ?
+                order by incident_logs.date_logged desc, incident_logs.id asc
+                """,
+                ("pending_review",),
+            ).fetchall()
+
+        return [
+            {
+                "id": row["id"],
+                "headline": row["headline"],
+                "source_summary": row["reality_summary"],
+                "publisher": row["publisher"],
+                "source_title": row["title"],
+                "source_url": row["source_url"],
+            }
+            for row in incident_rows
+        ]
+
+    def update_incident_enrichment(
+        self,
+        *,
+        incident_id: str,
+        company_involved: str,
+        claimant_name: str | None,
+        categories: list[str],
+        severity_score: int,
+        reality_summary: str,
+        confidence_score: float,
+        review_notes: str,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                update incident_logs
+                set
+                    company_involved = ?,
+                    claimant_name = ?,
+                    categories = ?,
+                    severity_score = ?,
+                    reality_summary = ?,
+                    confidence_score = ?,
+                    review_notes = ?,
+                    updated_at = current_timestamp
+                where id = ?
+                """,
+                (
+                    company_involved,
+                    claimant_name,
+                    json.dumps(categories),
+                    severity_score,
+                    reality_summary,
+                    confidence_score,
+                    review_notes,
+                    incident_id,
+                ),
+            )
+            connection.commit()
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._database_path)
         connection.row_factory = sqlite3.Row
