@@ -5,6 +5,9 @@ import sqlite3
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
+
+from app.scrapers.rss import RSSArticle
 
 _SQLITE_SCHEMA = """
 create table if not exists claims (
@@ -238,6 +241,95 @@ class SQLiteIncidentRepository:
             "claimants": claimants,
             "companies": companies,
         }
+
+    def ingest_rss_article(
+        self,
+        article: RSSArticle,
+        *,
+        ingestion_run_id: str,
+    ) -> bool:
+        with self._connect() as connection:
+            existing_row = connection.execute(
+                """
+                select incident_id
+                from incident_sources
+                where source_url = ?
+                limit 1
+                """,
+                (article.url,),
+            ).fetchone()
+            if existing_row is not None:
+                return False
+
+            incident_id = f"incident-{uuid4()}"
+            source_id = f"source-{uuid4()}"
+
+            connection.execute(
+                """
+                insert into incident_logs (
+                    id,
+                    headline,
+                    date_logged,
+                    company_involved,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    status,
+                    ingestion_run_id,
+                    confidence_score,
+                    review_notes,
+                    matched_claim_id,
+                    claim_match_confidence
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    incident_id,
+                    article.title,
+                    article.published_at.date().isoformat(),
+                    "Pending classification",
+                    None,
+                    json.dumps([]),
+                    1,
+                    article.summary,
+                    "pending_review",
+                    ingestion_run_id,
+                    None,
+                    (
+                        f"Ingested from {article.publisher} RSS feed; "
+                        "awaiting enrichment and editorial review."
+                    ),
+                    None,
+                    None,
+                ),
+            )
+            connection.execute(
+                """
+                insert into incident_sources (
+                    id,
+                    incident_id,
+                    source_url,
+                    source_type,
+                    publisher,
+                    title,
+                    published_at,
+                    is_primary
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    source_id,
+                    incident_id,
+                    article.url,
+                    article.source_type,
+                    article.publisher,
+                    article.title,
+                    article.published_at.isoformat(),
+                    0,
+                ),
+            )
+            connection.commit()
+
+        return True
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._database_path)
