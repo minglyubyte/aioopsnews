@@ -1,10 +1,10 @@
 # AI Reality Check
 
-AI Reality Check is an MVP accountability platform for tracking AI failures and reality-checking public claims against reported outcomes. This bootstrap task sets up the initial monorepo structure, a placeholder Next.js frontend, and a minimal FastAPI backend.
+AI Reality Check is an MVP accountability platform for tracking AI failures and reality-checking public claims against reported outcomes. This bootstrap task sets up the initial monorepo structure, a placeholder Vite + React frontend, and a minimal FastAPI backend.
 
 ## Repository Layout
 
-- `frontend/` - Next.js app router project with lint, test, and build commands.
+- `frontend/` - Vite + React + TypeScript project with lint, test, and build commands.
 - `backend/` - FastAPI service with pytest and Ruff configuration.
 - `infra/` - Placeholder infrastructure docs for Supabase and scheduled jobs.
 - `.env.example` - Shared environment template for local development.
@@ -47,7 +47,7 @@ cd frontend
 npm run dev
 ```
 
-The placeholder UI is available at `http://localhost:3000`.
+The placeholder UI is available at `http://localhost:5173`.
 
 ### Backend
 
