@@ -106,3 +106,62 @@ body {
   color: #556c86;
   font-size: 0.9rem;
 }
+
+.review-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.review-form {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(39, 65, 95, 0.12);
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+  color: #304760;
+  font-weight: 600;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(39, 65, 95, 0.16);
+  border-radius: 0.85rem;
+  background: #fbfdff;
+  color: #10233f;
+  font: inherit;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.primary-action {
+  width: fit-content;
+  padding: 0.85rem 1.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #19395d 0%, #2d577c 100%);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-action:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+@media (min-width: 960px) {
+  .review-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+    align-items: start;
+  }
+}

@@ -28,3 +28,26 @@ export type IncidentFilters = {
   claimants: string[];
   companies: string[];
 };
+
+export type AdminIncident = Incident & {
+  claimant_name?: string | null;
+  matched_claim_id?: string | null;
+  claim_match_confidence?: number | null;
+  review_notes?: string | null;
+};
+
+export type AdminIncidentQueueResponse = {
+  items: AdminIncident[];
+};
+
+export type AdminIncidentUpdateRequest = {
+  status: "pending_review" | "approved" | "rejected" | "needs_rework";
+  company_involved: string;
+  claimant_name?: string | null;
+  categories: string[];
+  severity_score: number;
+  reality_summary: string;
+  matched_claim_id?: string | null;
+  claim_match_confidence?: number | null;
+  review_notes: string;
+};
