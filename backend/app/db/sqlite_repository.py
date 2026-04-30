@@ -221,6 +221,65 @@ class SQLiteIncidentRepository:
             for row in incident_rows
         ]
 
+    def list_review_queue(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            incident_rows = connection.execute(
+                """
+                select
+                    id,
+                    headline,
+                    date_logged,
+                    company_involved,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    status,
+                    matched_claim_id,
+                    claim_match_confidence,
+                    review_notes
+                from incident_logs
+                where status = ?
+                order by date_logged desc, id asc
+                """,
+                ("pending_review",),
+            ).fetchall()
+
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    source_type,
+                    publisher,
+                    title
+                from incident_sources
+                order by published_at desc, id asc
+                """
+            ).fetchall()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+
+        return [
+            {
+                "id": row["id"],
+                "headline": row["headline"],
+                "date_logged": row["date_logged"],
+                "company_involved": row["company_involved"],
+                "claimant_name": row["claimant_name"],
+                "categories": json.loads(row["categories"]),
+                "severity_score": row["severity_score"],
+                "reality_summary": row["reality_summary"],
+                "status": row["status"],
+                "matched_claim_id": row["matched_claim_id"],
+                "claim_match_confidence": row["claim_match_confidence"],
+                "review_notes": row["review_notes"],
+                "sources": sources_by_incident[row["id"]],
+            }
+            for row in incident_rows
+        ]
+
     def get_filter_values(self) -> dict[str, list[str]]:
         incidents = self.list_public_incidents()
 
@@ -402,6 +461,127 @@ class SQLiteIncidentRepository:
                 ),
             )
             connection.commit()
+
+    def apply_admin_review(
+        self,
+        *,
+        incident_id: str,
+        status: str,
+        company_involved: str,
+        claimant_name: str | None,
+        categories: list[str],
+        severity_score: int,
+        reality_summary: str,
+        matched_claim_id: str | None,
+        claim_match_confidence: float | None,
+        review_notes: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                update incident_logs
+                set
+                    status = ?,
+                    company_involved = ?,
+                    claimant_name = ?,
+                    categories = ?,
+                    severity_score = ?,
+                    reality_summary = ?,
+                    matched_claim_id = ?,
+                    claim_match_confidence = ?,
+                    review_notes = ?,
+                    updated_at = current_timestamp
+                where id = ?
+                """,
+                (
+                    status,
+                    company_involved,
+                    claimant_name,
+                    json.dumps(categories),
+                    severity_score,
+                    reality_summary,
+                    matched_claim_id,
+                    claim_match_confidence,
+                    review_notes,
+                    incident_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                return None
+
+            incident_row = connection.execute(
+                """
+                select
+                    id,
+                    headline,
+                    date_logged,
+                    company_involved,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    status,
+                    matched_claim_id,
+                    claim_match_confidence,
+                    review_notes
+                from incident_logs
+                where id = ?
+                """,
+                (incident_id,),
+            ).fetchone()
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    source_type,
+                    publisher,
+                    title
+                from incident_sources
+                where incident_id = ?
+                order by published_at desc, id asc
+                """,
+                (incident_id,),
+            ).fetchall()
+            connection.commit()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+        row = incident_row
+        assert row is not None
+        return {
+            "id": row["id"],
+            "headline": row["headline"],
+            "date_logged": row["date_logged"],
+            "company_involved": row["company_involved"],
+            "claimant_name": row["claimant_name"],
+            "categories": json.loads(row["categories"]),
+            "severity_score": row["severity_score"],
+            "reality_summary": row["reality_summary"],
+            "status": row["status"],
+            "matched_claim_id": row["matched_claim_id"],
+            "claim_match_confidence": row["claim_match_confidence"],
+            "review_notes": row["review_notes"],
+            "sources": sources_by_incident[row["id"]],
+        }
+
+    def _group_sources_by_incident(
+        self,
+        source_rows: list[sqlite3.Row],
+    ) -> dict[str, list[dict[str, Any]]]:
+        sources_by_incident: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in source_rows:
+            sources_by_incident[row["incident_id"]].append(
+                {
+                    "id": row["id"],
+                    "source_url": row["source_url"],
+                    "source_type": row["source_type"],
+                    "publisher": row["publisher"],
+                    "title": row["title"],
+                }
+            )
+
+        return sources_by_incident
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._database_path)
