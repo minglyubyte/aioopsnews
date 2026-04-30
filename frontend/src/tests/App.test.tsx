@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import App from "../App";
 import DemoDashboard from "../demo/DemoDashboard";
+import { RouteEntry } from "../main";
 
 function renderPath(pathname: string) {
   window.history.pushState({}, "", pathname);
@@ -97,6 +98,89 @@ function buildIncident(
     matched_claim: null,
     sources: [],
   };
+}
+
+function buildAdminRouteIncident() {
+  return {
+    id: "incident-admin-1",
+    headline: "AssistCo assistant exposes billing notes",
+    headline_en: "AssistCo assistant exposes billing notes",
+    headline_zh: null,
+    date_logged: "2026-05-01",
+    company_involved: "AssistCo",
+    claimant_name: null,
+    incident_topic: "privacy",
+    categories: ["Privacy/Security"],
+    severity_score: 3,
+    reality_summary:
+      "A support assistant exposed private billing notes in customer-facing replies.",
+    reality_summary_en:
+      "A support assistant exposed private billing notes in customer-facing replies.",
+    reality_summary_zh: null,
+    status: "pending_review",
+    translation_status: "pending",
+    matched_claim: null,
+    sources: [],
+    matched_claim_id: null,
+    claim_match_confidence: null,
+    review_notes: "Awaiting editor review.",
+    legitimacy_score: 0.92,
+    legitimacy_label: "high_confidence",
+    legitimacy_reasoning:
+      "Three credible sources agree on the same event and date.",
+    source_validation_summary: "3 valid sources fetched successfully.",
+    review_batch_id: "batch-1",
+    review_model: "gpt-5.4-mini",
+    duplicate_status: "suspected",
+    duplicate_of_incident_id: "incident-parent-1",
+    canonical_incident_id: "incident-canonical-1",
+    duplicate_candidates: [],
+  };
+}
+
+function installRouteFetchMock() {
+  const incident = buildIncident();
+  const adminIncident = buildAdminRouteIncident();
+
+  const fetchMock = vi.fn(async (input: string | URL | Request) => {
+    const url = input.toString();
+
+    if (url.endsWith("/filters")) {
+      return new Response(JSON.stringify(buildReaderFiltersResponse()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.includes("/admin/incidents")) {
+      return new Response(JSON.stringify({ items: [adminIncident] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith(`/incidents/${incident.id}`)) {
+      return new Response(JSON.stringify(incident), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.includes("/incidents")) {
+      return new Response(JSON.stringify({ items: [incident] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 describe("App", () => {
@@ -267,6 +351,37 @@ describe("App", () => {
         name: "演示分类分布环形图",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("does not render the admin token form on the public route", async () => {
+    installRouteFetchMock();
+    window.history.pushState({}, "", "/");
+
+    render(<RouteEntry />);
+
+    expect(
+      await screen.findByRole("heading", { name: "AI Reality Check" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Admin token")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Editor queue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the editor queue on the internal route", async () => {
+    installRouteFetchMock();
+    window.localStorage.setItem("ai-reality-check-admin-token", "secret-token");
+    window.history.pushState({}, "", "/internal");
+
+    render(<RouteEntry />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Editor queue" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Admin token")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Incident spotlight" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps the admin queue locked until an admin token is entered", async () => {
