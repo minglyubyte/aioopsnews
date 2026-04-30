@@ -18,6 +18,7 @@ AI Reality Check currently has a working end-to-end MVP implementation in code, 
 - Shared-secret protected admin review API
 - Minimal admin review UI
 - Seed gold-sample evaluation flow with launch-threshold reporting
+- Production operations runbook covering scheduling, backfill policy, failure handling, queue monitoring, and launch-day checks
 
 ## Launch Blockers
 

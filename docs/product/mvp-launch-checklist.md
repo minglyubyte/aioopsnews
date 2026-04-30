@@ -40,6 +40,7 @@
 - [x] Backfill runbook exists
 - [x] Production scheduler wiring is documented
 - [x] Failure and backlog monitoring expectations are documented
+- [x] Launch-day and post-launch operator checks are documented
 
 ## Release Decision
 
