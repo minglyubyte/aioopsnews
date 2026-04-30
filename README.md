@@ -12,7 +12,7 @@ The repository now supports a functional end-to-end MVP slice:
 - daily RSS ingestion and historical backfill workflows
 - manual review queue for approving and correcting incidents
 
-It is not yet a full launch-ready MVP. The main remaining gaps are review audit history plus launch-readiness evaluation docs and metrics. See `docs/product/mvp-status.md` and `docs/product/mvp-launch-checklist.md`.
+It is not yet a full launch-ready MVP. The main remaining gaps are review audit history plus broader launch-readiness coverage and operations hardening. See `docs/product/mvp-status.md`, `docs/product/mvp-launch-checklist.md`, and `docs/product/launch-readiness-thresholds.md`.
 
 ## Repository Layout
 
@@ -84,6 +84,22 @@ Key API endpoints:
 - `PATCH /admin/incidents/{id}`
 
 Admin endpoints require the `X-Admin-Token` header to match `ADMIN_API_TOKEN`.
+
+## Launch Readiness Evaluation
+
+Run the seed gold-sample evaluation locally with:
+
+```bash
+cd backend
+./.venv/bin/python -m app.evals.launch_readiness
+```
+
+For the full backend verification path, the evaluation is also covered by:
+
+```bash
+cd backend
+./.venv/bin/python -m pytest -q tests/test_launch_readiness_eval.py
+```
 
 ## Product Surface
 

@@ -1,0 +1,42 @@
+[
+  {
+    "headline": "AssistCo assistant exposes private billing notes",
+    "source_summary": "A support assistant exposed private billing notes in customer-facing replies.",
+    "incident_date": "2026-05-01",
+    "expected_company": "AssistCo",
+    "expected_categories": ["Privacy/Security"],
+    "expected_severity_score": 4,
+    "claim_expected": true,
+    "summary_acceptable": true
+  },
+  {
+    "headline": "RoboFleet robot pilot rollback follows navigation failures",
+    "source_summary": "Operators paused a sidewalk robot pilot after repeated navigation failures and escalations.",
+    "incident_date": "2026-04-24",
+    "expected_company": "RoboFleet",
+    "expected_categories": ["Autonomous Systems"],
+    "expected_severity_score": 3,
+    "claim_expected": false,
+    "summary_acceptable": true
+  },
+  {
+    "headline": "SignalLoop timeline slips after repeated launch delay",
+    "source_summary": "The company acknowledged another late release after missing its prior rollout target.",
+    "incident_date": "2026-04-20",
+    "expected_company": "SignalLoop",
+    "expected_categories": ["Missed Timelines"],
+    "expected_severity_score": 2,
+    "claim_expected": false,
+    "summary_acceptable": true
+  },
+  {
+    "headline": "NovaDesk billing dashboard outage strands customers",
+    "source_summary": "A reporting dashboard remained unavailable while the company resolved an external billing dispute.",
+    "incident_date": "2026-04-18",
+    "expected_company": "NovaDesk",
+    "expected_categories": ["Missed Timelines"],
+    "expected_severity_score": 3,
+    "claim_expected": false,
+    "summary_acceptable": true
+  }
+]

@@ -26,12 +26,13 @@
 
 ## Quality Evaluation
 
-- [ ] Gold-sample review set exists
-- [ ] Category accuracy has been measured
-- [ ] Severity agreement has been measured
-- [ ] Claim-match precision has been measured
-- [ ] Summary acceptability has been measured
-- [ ] Launch thresholds are defined for review volume and automation quality
+- [x] Gold-sample review set exists
+- [x] Category accuracy has been measured
+- [x] Severity agreement has been measured
+- [x] Claim-match precision has been measured
+- [x] Summary acceptability has been measured
+- [x] Launch thresholds are defined for review volume and automation quality
+- [ ] Gold-sample coverage has grown to launch-scale editorial review volume
 
 ## Operations
 

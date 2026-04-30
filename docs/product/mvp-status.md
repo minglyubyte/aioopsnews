@@ -17,14 +17,15 @@ AI Reality Check currently has a working end-to-end MVP implementation in code, 
 - Daily ingestion workflow with retry behavior and run metrics
 - Shared-secret protected admin review API
 - Minimal admin review UI
+- Seed gold-sample evaluation flow with launch-threshold reporting
 
 ## Launch Blockers
 
 - Editor corrections overwrite the incident row and do not yet create a separate audit trail or correction history.
-- Launch-readiness evaluation artifacts are missing:
-  - gold-sample review set
-  - precision and override-rate measurements
-  - explicit launch thresholds
+- Launch-readiness evaluation still needs broader editorial coverage:
+  - grow the gold sample toward launch-scale coverage
+  - add override-rate measurements from real review activity
+  - validate metrics against a larger reviewed set
 - Production scheduler wiring and ongoing monitoring expectations are not yet documented.
 
 ## Readiness Call
@@ -36,5 +37,5 @@ AI Reality Check currently has a working end-to-end MVP implementation in code, 
 ## Recommended Next Steps
 
 1. Add review history and override audit logging.
-2. Complete the launch-readiness checklist and quality evaluation work.
+2. Expand the gold-sample set and run launch-readiness evaluation on a larger reviewed corpus.
 3. Document production scheduling and monitoring expectations.
