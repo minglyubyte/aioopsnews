@@ -248,6 +248,30 @@ def test_get_incidents_supports_filters_and_pagination(tmp_path: Path) -> None:
     ]
 
 
+def test_get_incident_detail_returns_public_record_with_sources(tmp_path: Path) -> None:
+    database_path = tmp_path / "incident-detail.db"
+    _build_test_database(database_path)
+    client = TestClient(create_app(database_url=f"sqlite:///{database_path}"))
+
+    detail_response = client.get("/incidents/incident-1")
+    hidden_response = client.get("/incidents/incident-3")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["headline"] == (
+        "Database-backed feed shows a reviewed privacy incident"
+    )
+    assert detail_response.json()["sources"] == [
+        {
+            "id": "source-1",
+            "source_url": "https://example.com/privacy",
+            "source_type": "primary",
+            "publisher": "Example News",
+            "title": "Database-backed feed shows a reviewed privacy incident",
+        }
+    ]
+    assert hidden_response.status_code == 404
+
+
 def test_get_filters_reads_distinct_values_from_database(tmp_path: Path) -> None:
     database_path = tmp_path / "filters.db"
     _build_test_database(database_path)

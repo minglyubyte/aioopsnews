@@ -249,34 +249,68 @@ class SQLiteIncidentRepository:
                 """
             ).fetchall()
 
-        sources_by_incident: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in source_rows:
-            sources_by_incident[row["incident_id"]].append(
-                {
-                    "id": row["id"],
-                    "source_url": row["source_url"],
-                    "source_type": row["source_type"],
-                    "publisher": row["publisher"],
-                    "title": row["title"],
-                }
-            )
+        sources_by_incident = self._group_sources_by_incident(source_rows)
 
         return [
-            {
-                "id": row["id"],
-                "headline": row["headline"],
-                "date_logged": row["date_logged"],
-                "company_involved": row["company_involved"],
-                "claimant_name": row["claimant_name"],
-                "categories": json.loads(row["categories"]),
-                "severity_score": row["severity_score"],
-                "reality_summary": row["reality_summary"],
-                "status": row["status"],
-                "matched_claim": _build_public_claim_payload(row),
-                "sources": sources_by_incident[row["id"]],
-            }
+            self._serialize_public_incident_row(row, sources_by_incident[row["id"]])
             for row in incident_rows
         ]
+
+    def get_public_incident(self, incident_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            incident_row = connection.execute(
+                """
+                select
+                    incident_logs.id,
+                    incident_logs.headline,
+                    incident_logs.date_logged,
+                    incident_logs.company_involved,
+                    incident_logs.claimant_name,
+                    incident_logs.categories,
+                    incident_logs.severity_score,
+                    incident_logs.reality_summary,
+                    incident_logs.status,
+                    incident_logs.claim_match_confidence,
+                    claims.id as claim_id,
+                    claims.claimant_name as claim_claimant_name,
+                    claims.company_involved as claim_company_involved,
+                    claims.original_claim,
+                    claims.claim_date,
+                    claims.claim_topic,
+                    claims.status as claim_status
+                from incident_logs
+                left join claims
+                    on claims.id = incident_logs.matched_claim_id
+                where incident_logs.id = ? and incident_logs.status = ?
+                limit 1
+                """,
+                (incident_id, "approved"),
+            ).fetchone()
+
+            if incident_row is None:
+                return None
+
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    source_type,
+                    publisher,
+                    title
+                from incident_sources
+                where incident_id = ?
+                order by published_at desc, id asc
+                """,
+                (incident_id,),
+            ).fetchall()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+        return self._serialize_public_incident_row(
+            incident_row,
+            sources_by_incident[incident_id],
+        )
 
     def list_review_queue(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -678,6 +712,25 @@ class SQLiteIncidentRepository:
             )
 
         return sources_by_incident
+
+    def _serialize_public_incident_row(
+        self,
+        row: sqlite3.Row,
+        sources: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "headline": row["headline"],
+            "date_logged": row["date_logged"],
+            "company_involved": row["company_involved"],
+            "claimant_name": row["claimant_name"],
+            "categories": json.loads(row["categories"]),
+            "severity_score": row["severity_score"],
+            "reality_summary": row["reality_summary"],
+            "status": row["status"],
+            "matched_claim": _build_public_claim_payload(row),
+            "sources": sources,
+        }
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._database_path)

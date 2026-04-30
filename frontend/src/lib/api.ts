@@ -2,6 +2,7 @@ import type {
   AdminIncident,
   AdminIncidentQueueResponse,
   AdminIncidentUpdateRequest,
+  Incident,
   IncidentFeedFilters,
   IncidentFeedResponse,
   IncidentFilters,
@@ -53,6 +54,10 @@ export function fetchIncidentFeed(
   }
 
   return getJson<IncidentFeedResponse>("/incidents", searchParams);
+}
+
+export function fetchIncidentDetail(incidentId: string): Promise<Incident> {
+  return getJson<Incident>(`/incidents/${incidentId}`);
 }
 
 export function fetchIncidentFilters(): Promise<IncidentFilters> {

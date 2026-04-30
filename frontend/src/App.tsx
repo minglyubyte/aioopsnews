@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import {
   fetchAdminIncidentQueue,
+  fetchIncidentDetail,
   fetchIncidentFeed,
   fetchIncidentFilters,
   updateAdminIncident,
@@ -40,6 +41,12 @@ export default function App() {
   const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [readerFilters, setReaderFilters] = useState<IncidentFeedFilters>({});
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
+    null,
+  );
+  const [incidentDetail, setIncidentDetail] = useState<Incident | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   const activeIncident =
     adminIncidents.find((incident) => incident.id === activeReviewId) ??
@@ -177,6 +184,22 @@ export default function App() {
     }
   }
 
+  async function handleSelectIncident(incidentId: string) {
+    setSelectedIncidentId(incidentId);
+    setIsDetailLoading(true);
+    setDetailError(null);
+
+    try {
+      const detail = await fetchIncidentDetail(incidentId);
+      setIncidentDetail(detail);
+    } catch {
+      setIncidentDetail(null);
+      setDetailError("Unable to load incident details right now.");
+    } finally {
+      setIsDetailLoading(false);
+    }
+  }
+
   function updateDraft<K extends keyof ReviewDraft>(
     field: K,
     value: ReviewDraft[K],
@@ -304,11 +327,70 @@ export default function App() {
                     </span>
                   ))}
                 </div>
+                <button
+                  className="secondary-action"
+                  type="button"
+                  onClick={() => void handleSelectIncident(incident.id)}
+                >
+                  View details
+                </button>
               </article>
             ))}
           </div>
         ) : null}
       </section>
+
+      {selectedIncidentId ? (
+        <section className="feed-card" aria-live="polite">
+          <div className="section-header">
+            <p className="section-kicker">Incident detail</p>
+            <h2>Incident detail</h2>
+          </div>
+          {isDetailLoading ? <p>Loading incident details...</p> : null}
+          {detailError ? <p>{detailError}</p> : null}
+          {!isDetailLoading && !detailError && incidentDetail ? (
+            <div className="detail-grid">
+              <article className="incident-item">
+                <div className="incident-meta">
+                  <span>{incidentDetail.company_involved}</span>
+                  <span>Severity {incidentDetail.severity_score}</span>
+                  <span>{incidentDetail.date_logged}</span>
+                </div>
+                <h3>{incidentDetail.headline}</h3>
+                <p className="body-copy">{incidentDetail.reality_summary}</p>
+                {incidentDetail.matched_claim ? (
+                  <section
+                    className="claim-block"
+                    aria-label="Claim vs. reality"
+                  >
+                    <p className="claim-kicker">Claim vs. reality</p>
+                    <p className="claim-quote">
+                      {incidentDetail.matched_claim.original_claim}
+                    </p>
+                    <div className="claim-meta">
+                      <span>{incidentDetail.matched_claim.claimant_name}</span>
+                      <span>{incidentDetail.matched_claim.claim_date}</span>
+                    </div>
+                  </section>
+                ) : null}
+              </article>
+
+              <aside className="source-list">
+                <h3>Sources</h3>
+                {incidentDetail.sources.map((source) => (
+                  <article className="source-item" key={source.id}>
+                    <p className="source-publisher">{source.publisher}</p>
+                    <p className="body-copy">
+                      {source.title ?? source.source_url}
+                    </p>
+                    <a href={source.source_url}>{source.source_url}</a>
+                  </article>
+                ))}
+              </aside>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="feed-card" aria-live="polite">
         <div className="section-header">

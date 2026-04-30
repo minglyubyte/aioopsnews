@@ -195,9 +195,49 @@ body {
   cursor: wait;
 }
 
+.secondary-action {
+  width: fit-content;
+  margin-top: 1rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid rgba(39, 65, 95, 0.16);
+  border-radius: 999px;
+  background: #fbfdff;
+  color: #19395d;
+  font: inherit;
+  cursor: pointer;
+}
+
+.detail-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.source-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.source-item {
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(39, 65, 95, 0.12);
+}
+
+.source-publisher {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6a7f99;
+}
+
 @media (min-width: 960px) {
   .reader-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-grid {
+    grid-template-columns: minmax(0, 1.6fr) minmax(16rem, 1fr);
+    align-items: start;
   }
 
   .review-grid {

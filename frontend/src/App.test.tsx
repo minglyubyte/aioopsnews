@@ -2,6 +2,134 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 
 describe("App", () => {
+  it("opens a detail panel for a selected public incident", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(
+          JSON.stringify({
+            categories: ["Autonomous Systems", "Privacy/Security"],
+            claimants: ["AssistCo", "RoboFleet"],
+            companies: ["AssistCo", "RoboFleet"],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/admin/incidents")) {
+        return new Response(
+          JSON.stringify({
+            items: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/incidents/incident-1")) {
+        return new Response(
+          JSON.stringify({
+            id: "incident-1",
+            headline: "Customer support bot exposes private account notes",
+            date_logged: "2026-04-29",
+            company_involved: "AssistCo",
+            claimant_name: "AssistCo",
+            categories: ["Privacy/Security"],
+            severity_score: 4,
+            reality_summary:
+              "A support automation rollout leaked internal notes into user-facing replies.",
+            status: "approved",
+            matched_claim: {
+              id: "claim-1",
+              claimant_name: "AssistCo",
+              company_involved: "AssistCo",
+              original_claim:
+                "Our assistant will eliminate repetitive support escalations.",
+              claim_date: "2026-01-15",
+              claim_topic: "job automation",
+              match_confidence: 0.88,
+            },
+            sources: [
+              {
+                id: "source-1",
+                source_url: "https://example.com/privacy-story",
+                source_type: "primary",
+                publisher: "Example News",
+                title: "Customer support bot exposes private account notes",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "incident-1",
+              headline: "Customer support bot exposes private account notes",
+              date_logged: "2026-04-29",
+              company_involved: "AssistCo",
+              claimant_name: "AssistCo",
+              categories: ["Privacy/Security"],
+              severity_score: 4,
+              reality_summary:
+                "A support automation rollout leaked internal notes into user-facing replies.",
+              status: "approved",
+              matched_claim: {
+                id: "claim-1",
+                claimant_name: "AssistCo",
+                company_involved: "AssistCo",
+                original_claim:
+                  "Our assistant will eliminate repetitive support escalations.",
+                claim_date: "2026-01-15",
+                claim_topic: "job automation",
+                match_confidence: 0.88,
+              },
+              sources: [],
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Customer support bot exposes private account notes",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View details" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Incident detail",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Example News")).toBeInTheDocument();
+    expect(
+      screen.getByText("https://example.com/privacy-story"),
+    ).toBeInTheDocument();
+  });
+
   it("refetches the public feed when a reader applies filters", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString();

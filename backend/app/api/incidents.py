@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from app.services.incident_query import (
     IncidentQueryFilters,
     get_filter_values,
+    get_public_incident,
     list_public_incidents,
 )
 
@@ -83,6 +84,17 @@ def get_incidents(
             ),
         )
     )
+
+
+@router.get("/incidents/{incident_id}", response_model=IncidentFeedItemResponse)
+def get_incident_detail(
+    incident_id: str,
+    repository=Depends(get_incident_repository),
+) -> IncidentFeedItemResponse:
+    incident = get_public_incident(repository, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return IncidentFeedItemResponse(**incident)
 
 
 @router.get("/filters", response_model=IncidentFilterResponse)
