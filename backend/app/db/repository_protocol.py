@@ -21,6 +21,8 @@ class IncidentRepository(Protocol):
 
     def list_review_queue(self) -> list[dict[str, Any]]: ...
 
+    def list_incidents_pending_llm_review(self) -> list[dict[str, Any]]: ...
+
     def ingest_rss_article(
         self,
         article: RSSArticle,
@@ -76,3 +78,73 @@ class IncidentRepository(Protocol):
         primary_source_links: list[str],
         secondary_source_links: list[str],
     ) -> None: ...
+
+    def upsert_incident_import_row(
+        self,
+        *,
+        external_id: str,
+        headline: str,
+        date_logged: str,
+        company_involved: str,
+        incident_topic: str,
+        reality_summary: str,
+        status: str,
+        source_links: list[str],
+        legitimacy_score: float | None,
+        legitimacy_label: str | None,
+        legitimacy_reasoning: str | None,
+        source_validation_summary: str,
+        legitimacy_flag: str,
+        confidence_level: str,
+        import_notes: str | None,
+        matched_claim_id: str | None,
+        headline_zh: str | None,
+        reality_summary_zh: str | None,
+        translation_status: str,
+    ) -> None: ...
+
+    def update_incident_source_evidence(
+        self,
+        *,
+        source_id: str,
+        canonical_url: str | None,
+        fetch_status: str,
+        http_status: int | None,
+        evidence_text: str | None,
+        fetch_error: str | None,
+        fetched_at: str,
+    ) -> None: ...
+
+    def mark_incidents_review_batch(
+        self,
+        *,
+        incident_ids: list[str],
+        review_batch_id: str,
+        review_model: str,
+    ) -> None: ...
+
+    def apply_incident_review_result(
+        self,
+        *,
+        incident_id: str,
+        status: str,
+        legitimacy_score: float,
+        legitimacy_label: str,
+        legitimacy_reasoning: str,
+        source_validation_summary: str,
+        headline_en: str,
+        reality_summary_en: str,
+        review_model: str,
+        review_batch_id: str,
+        reviewed_at: str,
+    ) -> dict[str, Any] | None: ...
+
+    def update_incident_translation(
+        self,
+        *,
+        incident_id: str,
+        headline_zh: str,
+        reality_summary_zh: str,
+        translation_status: str,
+        translated_at: str,
+    ) -> dict[str, Any] | None: ...

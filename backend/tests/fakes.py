@@ -175,13 +175,19 @@ class InMemoryIncidentRepository:
         self._source_urls.add(article.url)
         self.incidents[incident_id] = {
             "id": incident_id,
+            "external_id": None,
             "headline": article.title,
+            "headline_en": article.title,
+            "headline_zh": None,
             "date_logged": article.published_at.date().isoformat(),
             "company_involved": "Pending classification",
+            "incident_topic": None,
             "claimant_name": None,
             "categories": [],
             "severity_score": 1,
             "reality_summary": article.summary,
+            "reality_summary_en": article.summary,
+            "reality_summary_zh": None,
             "status": "pending_review",
             "ingestion_run_id": ingestion_run_id,
             "confidence_score": None,
@@ -191,13 +197,30 @@ class InMemoryIncidentRepository:
             ),
             "matched_claim_id": None,
             "claim_match_confidence": None,
+            "legitimacy_score": None,
+            "legitimacy_label": None,
+            "legitimacy_reasoning": None,
+            "source_validation_summary": None,
+            "legitimacy_flag": None,
+            "confidence_level": None,
+            "import_notes": None,
+            "translation_status": "not_requested",
+            "review_batch_id": None,
+            "review_model": None,
+            "reviewed_at": None,
+            "translated_at": None,
             "sources": [
                 {
                     "id": source_id,
                     "source_url": article.url,
+                    "canonical_url": None,
                     "source_type": article.source_type,
                     "publisher": article.publisher,
                     "title": article.title,
+                    "fetch_status": None,
+                    "http_status": None,
+                    "evidence_text": None,
+                    "fetch_error": None,
                 }
             ],
         }
@@ -231,6 +254,18 @@ class InMemoryIncidentRepository:
             }
             for incident in incidents
         ]
+
+    def list_incidents_pending_llm_review(self) -> list[dict[str, Any]]:
+        incidents = [
+            incident
+            for incident in self.incidents.values()
+            if incident["status"] == "pending_llm_review"
+        ]
+        incidents.sort(
+            key=lambda incident: (incident["date_logged"], incident["id"]),
+            reverse=True,
+        )
+        return [self._serialize_admin_incident(incident) for incident in incidents]
 
     def list_claims(self) -> list[ClaimRecord]:
         claims = [
@@ -358,17 +393,218 @@ class InMemoryIncidentRepository:
             )
         self.claim_sources[claim_id] = sources
 
+    def upsert_incident_import_row(
+        self,
+        *,
+        external_id: str,
+        headline: str,
+        date_logged: str,
+        company_involved: str,
+        incident_topic: str,
+        reality_summary: str,
+        status: str,
+        source_links: list[str],
+        legitimacy_score: float | None,
+        legitimacy_label: str | None,
+        legitimacy_reasoning: str | None,
+        source_validation_summary: str,
+        legitimacy_flag: str,
+        confidence_level: str,
+        import_notes: str | None,
+        matched_claim_id: str | None,
+        headline_zh: str | None,
+        reality_summary_zh: str | None,
+        translation_status: str,
+    ) -> None:
+        existing_incident_id = next(
+            (
+                incident_id
+                for incident_id, incident in self.incidents.items()
+                if incident.get("external_id") == external_id
+            ),
+            None,
+        )
+        if existing_incident_id is None:
+            self._incident_sequence += 1
+            incident_id = f"incident-{self._incident_sequence}"
+        else:
+            incident_id = existing_incident_id
+
+        sources: list[dict[str, Any]] = []
+        for display_order, url in enumerate(source_links):
+            self._source_sequence += 1
+            sources.append(
+                {
+                    "id": f"source-{self._source_sequence}",
+                    "source_url": url,
+                    "canonical_url": None,
+                    "source_type": "imported",
+                    "publisher": None,
+                    "title": None,
+                    "fetch_status": None,
+                    "http_status": None,
+                    "evidence_text": None,
+                    "fetch_error": None,
+                    "is_primary": display_order == 0,
+                }
+            )
+            self._source_urls.add(url)
+
+        self.incidents[incident_id] = {
+            "id": incident_id,
+            "external_id": external_id,
+            "headline": headline,
+            "headline_en": headline,
+            "headline_zh": headline_zh,
+            "date_logged": date_logged,
+            "company_involved": company_involved,
+            "incident_topic": incident_topic,
+            "claimant_name": None,
+            "categories": [],
+            "severity_score": 3,
+            "reality_summary": reality_summary,
+            "reality_summary_en": reality_summary,
+            "reality_summary_zh": reality_summary_zh,
+            "status": status,
+            "ingestion_run_id": None,
+            "confidence_score": legitimacy_score,
+            "review_notes": legitimacy_reasoning,
+            "matched_claim_id": matched_claim_id,
+            "claim_match_confidence": None,
+            "legitimacy_score": legitimacy_score,
+            "legitimacy_label": legitimacy_label,
+            "legitimacy_reasoning": legitimacy_reasoning,
+            "source_validation_summary": source_validation_summary,
+            "legitimacy_flag": legitimacy_flag,
+            "confidence_level": confidence_level,
+            "import_notes": import_notes,
+            "translation_status": translation_status,
+            "review_batch_id": None,
+            "review_model": None,
+            "reviewed_at": None,
+            "translated_at": "2026-04-30T12:00:00" if headline_zh else None,
+            "sources": sources,
+        }
+
+    def update_incident_source_evidence(
+        self,
+        *,
+        source_id: str,
+        canonical_url: str | None,
+        fetch_status: str,
+        http_status: int | None,
+        evidence_text: str | None,
+        fetch_error: str | None,
+        fetched_at: str,
+    ) -> None:
+        for incident in self.incidents.values():
+            for source in incident.get("sources", []):
+                if source["id"] != source_id:
+                    continue
+                source.update(
+                    {
+                        "canonical_url": canonical_url,
+                        "fetch_status": fetch_status,
+                        "http_status": http_status,
+                        "evidence_text": evidence_text,
+                        "fetch_error": fetch_error,
+                        "fetched_at": fetched_at,
+                    }
+                )
+                return
+
+    def mark_incidents_review_batch(
+        self,
+        *,
+        incident_ids: list[str],
+        review_batch_id: str,
+        review_model: str,
+    ) -> None:
+        for incident_id in incident_ids:
+            incident = self.incidents[incident_id]
+            incident["review_batch_id"] = review_batch_id
+            incident["review_model"] = review_model
+
+    def apply_incident_review_result(
+        self,
+        *,
+        incident_id: str,
+        status: str,
+        legitimacy_score: float,
+        legitimacy_label: str,
+        legitimacy_reasoning: str,
+        source_validation_summary: str,
+        headline_en: str,
+        reality_summary_en: str,
+        review_model: str,
+        review_batch_id: str,
+        reviewed_at: str,
+    ) -> dict[str, Any] | None:
+        incident = self.incidents.get(incident_id)
+        if incident is None:
+            return None
+        incident.update(
+            {
+                "status": status,
+                "headline": headline_en,
+                "headline_en": headline_en,
+                "reality_summary": reality_summary_en,
+                "reality_summary_en": reality_summary_en,
+                "legitimacy_score": legitimacy_score,
+                "legitimacy_label": legitimacy_label,
+                "legitimacy_reasoning": legitimacy_reasoning,
+                "source_validation_summary": source_validation_summary,
+                "review_model": review_model,
+                "review_batch_id": review_batch_id,
+                "reviewed_at": reviewed_at,
+            }
+        )
+        return self._serialize_admin_incident(incident)
+
+    def update_incident_translation(
+        self,
+        *,
+        incident_id: str,
+        headline_zh: str,
+        reality_summary_zh: str,
+        translation_status: str,
+        translated_at: str,
+    ) -> dict[str, Any] | None:
+        incident = self.incidents.get(incident_id)
+        if incident is None:
+            return None
+        incident.update(
+            {
+                "headline_zh": headline_zh,
+                "reality_summary_zh": reality_summary_zh,
+                "translation_status": translation_status,
+                "translated_at": translated_at,
+            }
+        )
+        return self._serialize_admin_incident(incident)
+
     def _serialize_public_incident(self, incident: dict[str, Any]) -> dict[str, Any]:
         payload = {
             "id": incident["id"],
             "headline": incident["headline"],
+            "headline_en": incident.get("headline_en", incident["headline"]),
+            "headline_zh": incident.get("headline_zh"),
             "date_logged": incident["date_logged"],
             "company_involved": incident["company_involved"],
+            "incident_topic": incident.get("incident_topic"),
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),
             "severity_score": incident["severity_score"],
             "reality_summary": incident["reality_summary"],
+            "reality_summary_en": incident.get(
+                "reality_summary_en",
+                incident["reality_summary"],
+            ),
+            "reality_summary_zh": incident.get("reality_summary_zh"),
             "status": incident["status"],
+            "translation_status": incident.get("translation_status"),
+            "review_batch_id": incident.get("review_batch_id"),
+            "review_model": incident.get("review_model"),
             "matched_claim": None,
             "sources": deepcopy(incident.get("sources", [])),
         }
@@ -398,15 +634,30 @@ class InMemoryIncidentRepository:
         return {
             "id": incident["id"],
             "headline": incident["headline"],
+            "headline_en": incident.get("headline_en", incident["headline"]),
+            "headline_zh": incident.get("headline_zh"),
             "date_logged": incident["date_logged"],
             "company_involved": incident["company_involved"],
+            "incident_topic": incident.get("incident_topic"),
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),
             "severity_score": incident["severity_score"],
             "reality_summary": incident["reality_summary"],
+            "reality_summary_en": incident.get(
+                "reality_summary_en",
+                incident["reality_summary"],
+            ),
+            "reality_summary_zh": incident.get("reality_summary_zh"),
             "status": incident["status"],
             "matched_claim_id": incident.get("matched_claim_id"),
             "claim_match_confidence": incident.get("claim_match_confidence"),
             "review_notes": incident.get("review_notes"),
+            "legitimacy_score": incident.get("legitimacy_score"),
+            "legitimacy_label": incident.get("legitimacy_label"),
+            "legitimacy_reasoning": incident.get("legitimacy_reasoning"),
+            "source_validation_summary": incident.get("source_validation_summary"),
+            "translation_status": incident.get("translation_status"),
+            "review_batch_id": incident.get("review_batch_id"),
+            "review_model": incident.get("review_model"),
             "sources": deepcopy(incident.get("sources", [])),
         }

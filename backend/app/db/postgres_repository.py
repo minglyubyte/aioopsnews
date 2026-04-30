@@ -48,31 +48,109 @@ create table if not exists claim_sources (
 
 create table if not exists incident_logs (
     id text primary key,
+    external_id text,
     headline text not null,
+    headline_en text,
+    headline_zh text,
     date_logged text not null,
     company_involved text not null,
+    incident_topic text,
     claimant_name text,
     categories text not null,
     severity_score integer not null,
     reality_summary text not null,
+    reality_summary_en text,
+    reality_summary_zh text,
     status text not null,
     ingestion_run_id text,
     confidence_score double precision,
     review_notes text,
     matched_claim_id text references claims(id),
     claim_match_confidence double precision,
+    legitimacy_score double precision,
+    legitimacy_label text,
+    legitimacy_reasoning text,
+    source_validation_summary text,
+    legitimacy_flag text,
+    confidence_level text,
+    import_notes text,
+    translation_status text,
+    review_batch_id text,
+    review_model text,
+    reviewed_at timestamptz,
+    translated_at timestamptz,
     created_at timestamptz default current_timestamp,
     updated_at timestamptz default current_timestamp
 );
+
+alter table incident_logs
+    add column if not exists external_id text;
+
+alter table incident_logs
+    add column if not exists headline_en text;
+
+alter table incident_logs
+    add column if not exists headline_zh text;
+
+alter table incident_logs
+    add column if not exists incident_topic text;
+
+alter table incident_logs
+    add column if not exists reality_summary_en text;
+
+alter table incident_logs
+    add column if not exists reality_summary_zh text;
+
+alter table incident_logs
+    add column if not exists legitimacy_score double precision;
+
+alter table incident_logs
+    add column if not exists legitimacy_label text;
+
+alter table incident_logs
+    add column if not exists legitimacy_reasoning text;
+
+alter table incident_logs
+    add column if not exists source_validation_summary text;
+
+alter table incident_logs
+    add column if not exists legitimacy_flag text;
+
+alter table incident_logs
+    add column if not exists confidence_level text;
+
+alter table incident_logs
+    add column if not exists import_notes text;
+
+alter table incident_logs
+    add column if not exists translation_status text;
+
+alter table incident_logs
+    add column if not exists review_batch_id text;
+
+alter table incident_logs
+    add column if not exists review_model text;
+
+alter table incident_logs
+    add column if not exists reviewed_at timestamptz;
+
+alter table incident_logs
+    add column if not exists translated_at timestamptz;
 
 create table if not exists incident_sources (
     id text primary key,
     incident_id text not null references incident_logs(id) on delete cascade,
     source_url text not null,
+    canonical_url text,
     source_type text not null,
     publisher text,
     title text,
     published_at text,
+    fetch_status text,
+    http_status integer,
+    evidence_text text,
+    fetch_error text,
+    fetched_at timestamptz,
     is_primary integer not null default 0,
     created_at timestamptz default current_timestamp
 );
@@ -85,6 +163,10 @@ create index if not exists claim_sources_claim_id_idx
 
 create index if not exists claim_sources_source_kind_idx
     on claim_sources (source_kind);
+
+create unique index if not exists incident_logs_external_id_unique_idx
+    on incident_logs (external_id)
+    where external_id is not null;
 """
 
 _SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str, str | None]] = [
@@ -255,14 +337,21 @@ class PostgresIncidentRepository:
                 f"""
                 select
                     incident_logs.id,
+                    incident_logs.external_id,
                     incident_logs.headline,
+                    incident_logs.headline_en,
+                    incident_logs.headline_zh,
                     incident_logs.date_logged,
                     incident_logs.company_involved,
+                    incident_logs.incident_topic,
                     incident_logs.claimant_name,
                     incident_logs.categories,
                     incident_logs.severity_score,
                     incident_logs.reality_summary,
+                    incident_logs.reality_summary_en,
+                    incident_logs.reality_summary_zh,
                     incident_logs.status,
+                    incident_logs.translation_status,
                     incident_logs.claim_match_confidence,
                     claims.id as claim_id,
                     claims.claimant_name as claim_claimant_name,
@@ -308,14 +397,21 @@ class PostgresIncidentRepository:
                 """
                 select
                     incident_logs.id,
+                    incident_logs.external_id,
                     incident_logs.headline,
+                    incident_logs.headline_en,
+                    incident_logs.headline_zh,
                     incident_logs.date_logged,
                     incident_logs.company_involved,
+                    incident_logs.incident_topic,
                     incident_logs.claimant_name,
                     incident_logs.categories,
                     incident_logs.severity_score,
                     incident_logs.reality_summary,
+                    incident_logs.reality_summary_en,
+                    incident_logs.reality_summary_zh,
                     incident_logs.status,
+                    incident_logs.translation_status,
                     incident_logs.claim_match_confidence,
                     claims.id as claim_id,
                     claims.claimant_name as claim_claimant_name,
@@ -364,17 +460,30 @@ class PostgresIncidentRepository:
                 """
                 select
                     id,
+                    external_id,
                     headline,
+                    headline_en,
+                    headline_zh,
                     date_logged,
                     company_involved,
+                    incident_topic,
                     claimant_name,
                     categories,
                     severity_score,
                     reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
                     status,
                     matched_claim_id,
                     claim_match_confidence,
-                    review_notes
+                    review_notes,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    translation_status,
+                    review_batch_id,
+                    review_model
                 from incident_logs
                 where status = %s
                 order by date_logged desc, id asc
@@ -388,6 +497,7 @@ class PostgresIncidentRepository:
                     id,
                     incident_id,
                     source_url,
+                    canonical_url,
                     source_type,
                     publisher,
                     title
@@ -402,16 +512,110 @@ class PostgresIncidentRepository:
             {
                 "id": row["id"],
                 "headline": row["headline"],
+                "headline_en": row["headline_en"],
+                "headline_zh": row["headline_zh"],
                 "date_logged": row["date_logged"],
                 "company_involved": row["company_involved"],
+                "incident_topic": row["incident_topic"],
                 "claimant_name": row["claimant_name"],
                 "categories": json.loads(row["categories"]),
                 "severity_score": row["severity_score"],
                 "reality_summary": row["reality_summary"],
+                "reality_summary_en": row["reality_summary_en"],
+                "reality_summary_zh": row["reality_summary_zh"],
                 "status": row["status"],
                 "matched_claim_id": row["matched_claim_id"],
                 "claim_match_confidence": row["claim_match_confidence"],
                 "review_notes": row["review_notes"],
+                "legitimacy_score": row["legitimacy_score"],
+                "legitimacy_label": row["legitimacy_label"],
+                "legitimacy_reasoning": row["legitimacy_reasoning"],
+                "source_validation_summary": row["source_validation_summary"],
+                "translation_status": row["translation_status"],
+                "review_batch_id": row["review_batch_id"],
+                "review_model": row["review_model"],
+                "sources": sources_by_incident[row["id"]],
+            }
+            for row in incident_rows
+        ]
+
+    def list_incidents_pending_llm_review(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            incident_rows = connection.execute(
+                """
+                select
+                    id,
+                    external_id,
+                    headline,
+                    headline_en,
+                    headline_zh,
+                    date_logged,
+                    company_involved,
+                    incident_topic,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
+                    status,
+                    review_notes,
+                    legitimacy_flag,
+                    confidence_level,
+                    import_notes,
+                    review_batch_id,
+                    review_model,
+                    translation_status
+                from incident_logs
+                where status = %s
+                order by date_logged desc, id asc
+                """,
+                ("pending_llm_review",),
+            ).fetchall()
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    canonical_url,
+                    source_type,
+                    publisher,
+                    title,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error
+                from incident_sources
+                order by published_at desc, id asc
+                """
+            ).fetchall()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+        return [
+            {
+                "id": row["id"],
+                "external_id": row["external_id"],
+                "headline": row["headline"],
+                "headline_en": row["headline_en"],
+                "headline_zh": row["headline_zh"],
+                "date_logged": row["date_logged"],
+                "company_involved": row["company_involved"],
+                "incident_topic": row["incident_topic"],
+                "claimant_name": row["claimant_name"],
+                "categories": json.loads(row["categories"]),
+                "severity_score": row["severity_score"],
+                "reality_summary": row["reality_summary"],
+                "reality_summary_en": row["reality_summary_en"],
+                "reality_summary_zh": row["reality_summary_zh"],
+                "status": row["status"],
+                "review_notes": row["review_notes"],
+                "legitimacy_flag": row["legitimacy_flag"],
+                "confidence_level": row["confidence_level"],
+                "import_notes": row["import_notes"],
+                "review_batch_id": row["review_batch_id"],
+                "review_model": row["review_model"],
+                "translation_status": row["translation_status"],
                 "sources": sources_by_incident[row["id"]],
             }
             for row in incident_rows
@@ -481,29 +685,41 @@ class PostgresIncidentRepository:
                 """
                 insert into incident_logs (
                     id,
+                    external_id,
                     headline,
+                    headline_en,
                     date_logged,
                     company_involved,
+                    incident_topic,
                     claimant_name,
                     categories,
                     severity_score,
                     reality_summary,
+                    reality_summary_en,
                     status,
                     ingestion_run_id,
                     confidence_score,
                     review_notes,
                     matched_claim_id,
-                    claim_match_confidence
-                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    claim_match_confidence,
+                    translation_status
+                ) values (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s
+                )
                 """,
                 (
                     incident_id,
+                    None,
+                    article.title,
                     article.title,
                     article.published_at.date().isoformat(),
                     "Pending classification",
                     None,
+                    None,
                     json.dumps([]),
                     1,
+                    article.summary,
                     article.summary,
                     "pending_review",
                     ingestion_run_id,
@@ -514,6 +730,7 @@ class PostgresIncidentRepository:
                     ),
                     None,
                     None,
+                    "not_requested",
                 ),
             )
             connection.execute(
@@ -708,17 +925,30 @@ class PostgresIncidentRepository:
                 """
                 select
                     id,
+                    external_id,
                     headline,
+                    headline_en,
+                    headline_zh,
                     date_logged,
                     company_involved,
+                    incident_topic,
                     claimant_name,
                     categories,
                     severity_score,
                     reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
                     status,
                     matched_claim_id,
                     claim_match_confidence,
-                    review_notes
+                    review_notes,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    translation_status,
+                    review_batch_id,
+                    review_model
                 from incident_logs
                 where id = %s
                 """,
@@ -730,6 +960,7 @@ class PostgresIncidentRepository:
                     id,
                     incident_id,
                     source_url,
+                    canonical_url,
                     source_type,
                     publisher,
                     title
@@ -747,16 +978,28 @@ class PostgresIncidentRepository:
         return {
             "id": row["id"],
             "headline": row["headline"],
+            "headline_en": row["headline_en"],
+            "headline_zh": row["headline_zh"],
             "date_logged": row["date_logged"],
             "company_involved": row["company_involved"],
+            "incident_topic": row["incident_topic"],
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
             "severity_score": row["severity_score"],
             "reality_summary": row["reality_summary"],
+            "reality_summary_en": row["reality_summary_en"],
+            "reality_summary_zh": row["reality_summary_zh"],
             "status": row["status"],
             "matched_claim_id": row["matched_claim_id"],
             "claim_match_confidence": row["claim_match_confidence"],
             "review_notes": row["review_notes"],
+            "legitimacy_score": row["legitimacy_score"],
+            "legitimacy_label": row["legitimacy_label"],
+            "legitimacy_reasoning": row["legitimacy_reasoning"],
+            "source_validation_summary": row["source_validation_summary"],
+            "translation_status": row["translation_status"],
+            "review_batch_id": row["review_batch_id"],
+            "review_model": row["review_model"],
             "sources": sources_by_incident[row["id"]],
         }
 
@@ -851,6 +1094,498 @@ class PostgresIncidentRepository:
             )
             connection.commit()
 
+    def upsert_incident_import_row(
+        self,
+        *,
+        external_id: str,
+        headline: str,
+        date_logged: str,
+        company_involved: str,
+        incident_topic: str,
+        reality_summary: str,
+        status: str,
+        source_links: list[str],
+        legitimacy_score: float | None,
+        legitimacy_label: str | None,
+        legitimacy_reasoning: str | None,
+        source_validation_summary: str,
+        legitimacy_flag: str,
+        confidence_level: str,
+        import_notes: str | None,
+        matched_claim_id: str | None,
+        headline_zh: str | None,
+        reality_summary_zh: str | None,
+        translation_status: str,
+    ) -> None:
+        with self._connect() as connection:
+            incident_id = connection.execute(
+                """
+                select id
+                from incident_logs
+                where external_id = %s
+                limit 1
+                """,
+                (external_id,),
+            ).fetchone()
+            resolved_incident_id = (
+                incident_id["id"] if incident_id is not None else f"incident-{uuid4()}"
+            )
+            connection.execute(
+                """
+                insert into incident_logs (
+                    id,
+                    external_id,
+                    headline,
+                    headline_en,
+                    headline_zh,
+                    date_logged,
+                    company_involved,
+                    incident_topic,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
+                    status,
+                    confidence_score,
+                    review_notes,
+                    matched_claim_id,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    legitimacy_flag,
+                    confidence_level,
+                    import_notes,
+                    translation_status,
+                    review_batch_id,
+                    review_model,
+                    reviewed_at,
+                    translated_at
+                ) values (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                on conflict (id) do update
+                set
+                    external_id = excluded.external_id,
+                    headline = excluded.headline,
+                    headline_en = excluded.headline_en,
+                    headline_zh = excluded.headline_zh,
+                    date_logged = excluded.date_logged,
+                    company_involved = excluded.company_involved,
+                    incident_topic = excluded.incident_topic,
+                    reality_summary = excluded.reality_summary,
+                    reality_summary_en = excluded.reality_summary_en,
+                    reality_summary_zh = excluded.reality_summary_zh,
+                    status = excluded.status,
+                    confidence_score = excluded.confidence_score,
+                    review_notes = excluded.review_notes,
+                    matched_claim_id = excluded.matched_claim_id,
+                    legitimacy_score = excluded.legitimacy_score,
+                    legitimacy_label = excluded.legitimacy_label,
+                    legitimacy_reasoning = excluded.legitimacy_reasoning,
+                    source_validation_summary = excluded.source_validation_summary,
+                    legitimacy_flag = excluded.legitimacy_flag,
+                    confidence_level = excluded.confidence_level,
+                    import_notes = excluded.import_notes,
+                    translation_status = excluded.translation_status,
+                    review_batch_id = excluded.review_batch_id,
+                    review_model = excluded.review_model,
+                    reviewed_at = excluded.reviewed_at,
+                    translated_at = excluded.translated_at,
+                    updated_at = current_timestamp
+                """,
+                (
+                    resolved_incident_id,
+                    external_id,
+                    headline,
+                    headline,
+                    headline_zh,
+                    date_logged,
+                    company_involved,
+                    incident_topic,
+                    None,
+                    json.dumps([]),
+                    3,
+                    reality_summary,
+                    reality_summary,
+                    reality_summary_zh,
+                    status,
+                    None,
+                    legitimacy_reasoning,
+                    matched_claim_id,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    legitimacy_flag,
+                    confidence_level,
+                    import_notes,
+                    translation_status,
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            )
+            connection.execute(
+                "delete from incident_sources where incident_id = %s",
+                (resolved_incident_id,),
+            )
+            source_rows: list[tuple[str, str, str, str, None, None, None, int]] = []
+            for display_order, source_url in enumerate(source_links):
+                source_rows.append(
+                    (
+                        f"source-{uuid4()}",
+                        resolved_incident_id,
+                        source_url,
+                        "imported",
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        1 if display_order == 0 else 0,
+                    )
+                )
+            self._execute_many(
+                connection,
+                """
+                insert into incident_sources (
+                    id,
+                    incident_id,
+                    source_url,
+                    canonical_url,
+                    source_type,
+                    publisher,
+                    title,
+                    published_at,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error,
+                    is_primary
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                source_rows,
+            )
+            connection.commit()
+
+    def update_incident_source_evidence(
+        self,
+        *,
+        source_id: str,
+        canonical_url: str | None,
+        fetch_status: str,
+        http_status: int | None,
+        evidence_text: str | None,
+        fetch_error: str | None,
+        fetched_at: str,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                update incident_sources
+                set
+                    canonical_url = %s,
+                    fetch_status = %s,
+                    http_status = %s,
+                    evidence_text = %s,
+                    fetch_error = %s,
+                    fetched_at = %s
+                where id = %s
+                """,
+                (
+                    canonical_url,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error,
+                    fetched_at,
+                    source_id,
+                ),
+            )
+            connection.commit()
+
+    def mark_incidents_review_batch(
+        self,
+        *,
+        incident_ids: list[str],
+        review_batch_id: str,
+        review_model: str,
+    ) -> None:
+        with self._connect() as connection:
+            for incident_id in incident_ids:
+                connection.execute(
+                    """
+                    update incident_logs
+                    set
+                        review_batch_id = %s,
+                        review_model = %s,
+                        updated_at = current_timestamp
+                    where id = %s
+                    """,
+                    (review_batch_id, review_model, incident_id),
+                )
+            connection.commit()
+
+    def apply_incident_review_result(
+        self,
+        *,
+        incident_id: str,
+        status: str,
+        legitimacy_score: float,
+        legitimacy_label: str,
+        legitimacy_reasoning: str,
+        source_validation_summary: str,
+        headline_en: str,
+        reality_summary_en: str,
+        review_model: str,
+        review_batch_id: str,
+        reviewed_at: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                update incident_logs
+                set
+                    status = %s,
+                    headline = %s,
+                    headline_en = %s,
+                    reality_summary = %s,
+                    reality_summary_en = %s,
+                    legitimacy_score = %s,
+                    legitimacy_label = %s,
+                    legitimacy_reasoning = %s,
+                    source_validation_summary = %s,
+                    review_model = %s,
+                    review_batch_id = %s,
+                    reviewed_at = %s,
+                    updated_at = current_timestamp
+                where id = %s
+                """,
+                (
+                    status,
+                    headline_en,
+                    headline_en,
+                    reality_summary_en,
+                    reality_summary_en,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    review_model,
+                    review_batch_id,
+                    reviewed_at,
+                    incident_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                return None
+            incident_row = connection.execute(
+                """
+                select
+                    id,
+                    external_id,
+                    headline,
+                    headline_en,
+                    headline_zh,
+                    date_logged,
+                    company_involved,
+                    incident_topic,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
+                    status,
+                    matched_claim_id,
+                    claim_match_confidence,
+                    review_notes,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    translation_status,
+                    review_batch_id,
+                    review_model
+                from incident_logs
+                where id = %s
+                """,
+                (incident_id,),
+            ).fetchone()
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    canonical_url,
+                    source_type,
+                    publisher,
+                    title,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error
+                from incident_sources
+                where incident_id = %s
+                order by published_at desc, id asc
+                """,
+                (incident_id,),
+            ).fetchall()
+            connection.commit()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+        row = incident_row
+        assert row is not None
+        return {
+            "id": row["id"],
+            "headline": row["headline"],
+            "headline_en": row["headline_en"],
+            "headline_zh": row["headline_zh"],
+            "date_logged": row["date_logged"],
+            "company_involved": row["company_involved"],
+            "incident_topic": row["incident_topic"],
+            "claimant_name": row["claimant_name"],
+            "categories": json.loads(row["categories"]),
+            "severity_score": row["severity_score"],
+            "reality_summary": row["reality_summary"],
+            "reality_summary_en": row["reality_summary_en"],
+            "reality_summary_zh": row["reality_summary_zh"],
+            "status": row["status"],
+            "matched_claim_id": row["matched_claim_id"],
+            "claim_match_confidence": row["claim_match_confidence"],
+            "review_notes": row["review_notes"],
+            "legitimacy_score": row["legitimacy_score"],
+            "legitimacy_label": row["legitimacy_label"],
+            "legitimacy_reasoning": row["legitimacy_reasoning"],
+            "source_validation_summary": row["source_validation_summary"],
+            "translation_status": row["translation_status"],
+            "review_batch_id": row["review_batch_id"],
+            "review_model": row["review_model"],
+            "sources": sources_by_incident[row["id"]],
+        }
+
+    def update_incident_translation(
+        self,
+        *,
+        incident_id: str,
+        headline_zh: str,
+        reality_summary_zh: str,
+        translation_status: str,
+        translated_at: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                update incident_logs
+                set
+                    headline_zh = %s,
+                    reality_summary_zh = %s,
+                    translation_status = %s,
+                    translated_at = %s,
+                    updated_at = current_timestamp
+                where id = %s
+                """,
+                (
+                    headline_zh,
+                    reality_summary_zh,
+                    translation_status,
+                    translated_at,
+                    incident_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                return None
+            incident_row = connection.execute(
+                """
+                select
+                    id,
+                    external_id,
+                    headline,
+                    headline_en,
+                    headline_zh,
+                    date_logged,
+                    company_involved,
+                    incident_topic,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
+                    status,
+                    matched_claim_id,
+                    claim_match_confidence,
+                    review_notes,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    translation_status,
+                    review_batch_id,
+                    review_model
+                from incident_logs
+                where id = %s
+                """,
+                (incident_id,),
+            ).fetchone()
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    canonical_url,
+                    source_type,
+                    publisher,
+                    title
+                from incident_sources
+                where incident_id = %s
+                order by published_at desc, id asc
+                """,
+                (incident_id,),
+            ).fetchall()
+            connection.commit()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+        row = incident_row
+        assert row is not None
+        return {
+            "id": row["id"],
+            "headline": row["headline"],
+            "headline_en": row["headline_en"],
+            "headline_zh": row["headline_zh"],
+            "date_logged": row["date_logged"],
+            "company_involved": row["company_involved"],
+            "incident_topic": row["incident_topic"],
+            "claimant_name": row["claimant_name"],
+            "categories": json.loads(row["categories"]),
+            "severity_score": row["severity_score"],
+            "reality_summary": row["reality_summary"],
+            "reality_summary_en": row["reality_summary_en"],
+            "reality_summary_zh": row["reality_summary_zh"],
+            "status": row["status"],
+            "matched_claim_id": row["matched_claim_id"],
+            "claim_match_confidence": row["claim_match_confidence"],
+            "review_notes": row["review_notes"],
+            "legitimacy_score": row["legitimacy_score"],
+            "legitimacy_label": row["legitimacy_label"],
+            "legitimacy_reasoning": row["legitimacy_reasoning"],
+            "source_validation_summary": row["source_validation_summary"],
+            "translation_status": row["translation_status"],
+            "review_batch_id": row["review_batch_id"],
+            "review_model": row["review_model"],
+            "sources": sources_by_incident[row["id"]],
+        }
+
     def _group_sources_by_incident(
         self,
         source_rows: list[dict[str, Any]],
@@ -861,9 +1596,14 @@ class PostgresIncidentRepository:
                 {
                     "id": row["id"],
                     "source_url": row["source_url"],
+                    "canonical_url": row.get("canonical_url"),
                     "source_type": row["source_type"],
                     "publisher": row["publisher"],
                     "title": row["title"],
+                    "fetch_status": row.get("fetch_status"),
+                    "http_status": row.get("http_status"),
+                    "evidence_text": row.get("evidence_text"),
+                    "fetch_error": row.get("fetch_error"),
                 }
             )
 
@@ -877,13 +1617,22 @@ class PostgresIncidentRepository:
         return {
             "id": row["id"],
             "headline": row["headline"],
+            "headline_en": row.get("headline_en") or row["headline"],
+            "headline_zh": row.get("headline_zh"),
             "date_logged": row["date_logged"],
             "company_involved": row["company_involved"],
+            "incident_topic": row.get("incident_topic"),
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
             "severity_score": row["severity_score"],
             "reality_summary": row["reality_summary"],
+            "reality_summary_en": row.get("reality_summary_en")
+            or row["reality_summary"],
+            "reality_summary_zh": row.get("reality_summary_zh"),
             "status": row["status"],
+            "translation_status": row.get("translation_status"),
+            "review_batch_id": row.get("review_batch_id"),
+            "review_model": row.get("review_model"),
             "matched_claim": _build_public_claim_payload(row),
             "sources": sources,
         }

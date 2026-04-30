@@ -6,9 +6,23 @@ from fastapi.testclient import TestClient
 
 from app.app_factory import create_app
 from app.scrapers.rss import RSSArticle
+from app.services.incident_translation import IncidentTranslation
 from tests.fakes import InMemoryIncidentRepository
 
 ASSISTCO_CLAIM = "Our assistant will eliminate repetitive support escalations."
+
+
+class StaticTranslationClient:
+    def translate(
+        self,
+        *,
+        headline_en: str,
+        reality_summary_en: str,
+    ) -> IncidentTranslation:
+        return IncidentTranslation(
+            headline_zh=f"ZH:{headline_en}",
+            reality_summary_zh=f"ZH:{reality_summary_en}",
+        )
 
 
 def _build_review_queue_client(
@@ -48,6 +62,7 @@ def _build_review_queue_client(
         create_app(
             admin_api_token=admin_api_token,
             incident_repository=repository,
+            incident_translation_client=StaticTranslationClient(),
         )
     )
     return client, repository
@@ -87,6 +102,8 @@ def test_get_admin_review_queue_returns_pending_incidents() -> None:
     assert payload["items"]
     assert all(item["status"] == "pending_review" for item in payload["items"])
     assert payload["items"][0]["headline"] == "AssistCo assistant exposes billing notes"
+    assert payload["items"][0]["translation_status"] == "not_requested"
+    assert payload["items"][0]["legitimacy_score"] is None
     assert payload["items"][0]["sources"][0]["source_url"].endswith(
         "/assistco-billing-notes"
     )
@@ -116,6 +133,8 @@ def test_patch_admin_incident_applies_editor_overrides() -> None:
     payload = response.json()
     assert payload["status"] == "approved"
     assert payload["matched_claim_id"] == "claim-1"
+    assert payload["translation_status"] == "completed"
+    assert payload["headline_zh"] == "ZH:AssistCo assistant exposes billing notes"
     assert repository.incidents[incident_id]["review_notes"] == (
         "Approved after editor verification."
     )

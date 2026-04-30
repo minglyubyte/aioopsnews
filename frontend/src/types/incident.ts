@@ -19,13 +19,19 @@ export type MatchedClaim = {
 export type Incident = {
   id: string;
   headline: string;
+  headline_en?: string | null;
+  headline_zh?: string | null;
   date_logged: string;
   company_involved: string;
+  incident_topic?: string | null;
   claimant_name?: string;
   categories: string[];
   severity_score: number;
   reality_summary: string;
+  reality_summary_en?: string | null;
+  reality_summary_zh?: string | null;
   status: string;
+  translation_status?: string | null;
   matched_claim?: MatchedClaim | null;
   sources: IncidentSource[];
 };
@@ -59,6 +65,12 @@ export type AdminIncident = Incident & {
   matched_claim_id?: string | null;
   claim_match_confidence?: number | null;
   review_notes?: string | null;
+  legitimacy_score?: number | null;
+  legitimacy_label?: string | null;
+  legitimacy_reasoning?: string | null;
+  source_validation_summary?: string | null;
+  review_batch_id?: string | null;
+  review_model?: string | null;
 };
 
 export type AdminIncidentQueueResponse = {

@@ -51,28 +51,49 @@ function buildIncident(
   overrides: Partial<{
     id: string;
     headline: string;
+    headline_en: string;
+    headline_zh: string | null;
     date_logged: string;
     company_involved: string;
     claimant_name: string;
+    incident_topic: string | null;
     categories: string[];
     severity_score: number;
     reality_summary: string;
+    reality_summary_en: string;
+    reality_summary_zh: string | null;
     status: string;
+    translation_status: string;
   }> = {},
 ) {
   return {
     id: overrides.id ?? "incident-1",
     headline:
       overrides.headline ?? "Customer support bot exposes private account notes",
+    headline_en:
+      overrides.headline_en ??
+      overrides.headline ??
+      "Customer support bot exposes private account notes",
+    headline_zh:
+      overrides.headline_zh ?? "中文：Customer support bot exposes private account notes",
     date_logged: overrides.date_logged ?? "2026-04-29",
     company_involved: overrides.company_involved ?? "AssistCo",
     claimant_name: overrides.claimant_name ?? "AssistCo",
+    incident_topic: overrides.incident_topic ?? "privacy",
     categories: overrides.categories ?? ["Privacy/Security"],
     severity_score: overrides.severity_score ?? 4,
     reality_summary:
       overrides.reality_summary ??
       "A support automation rollout leaked internal notes into user-facing replies.",
+    reality_summary_en:
+      overrides.reality_summary_en ??
+      overrides.reality_summary ??
+      "A support automation rollout leaked internal notes into user-facing replies.",
+    reality_summary_zh:
+      overrides.reality_summary_zh ??
+      "中文：A support automation rollout leaked internal notes into user-facing replies.",
     status: overrides.status ?? "approved",
+    translation_status: overrides.translation_status ?? "completed",
     matched_claim: null,
     sources: [],
   };
@@ -952,6 +973,70 @@ describe("App", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("defaults the public feed to English and switches incident copy to Chinese", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(JSON.stringify(buildReaderFiltersResponse()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/admin/incidents")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [
+            buildIncident({
+              headline: "Customer support bot exposes private account notes",
+              headline_zh: "客服机器人泄露私人账户备注",
+              reality_summary:
+                "A support automation rollout leaked internal notes into user-facing replies.",
+              reality_summary_zh:
+                "支持自动化发布将内部备注泄露给用户可见的回复。",
+            }),
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Customer support bot exposes private account notes",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Reader language switch" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Chinese" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "客服机器人泄露私人账户备注",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("支持自动化发布将内部备注泄露给用户可见的回复。"),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem("ai-reality-check-locale")).toBe("zh");
+  });
+
   it("lets an editor approve a pending incident from the admin queue", async () => {
     const fetchMock = vi.fn(
       async (input: string | URL | Request, init?: RequestInit) => {
@@ -1117,6 +1202,78 @@ describe("App", () => {
     expect(
       screen.getByText("Approved after editor verification."),
     ).toBeInTheDocument();
+  });
+
+  it("shows legitimacy and translation metadata in the admin queue", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(JSON.stringify(buildReaderFiltersResponse()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/admin/incidents")) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                ...buildIncident({
+                  id: "incident-admin-1",
+                  headline: "AssistCo assistant exposes billing notes",
+                  headline_zh: null,
+                  translation_status: "not_requested",
+                  status: "pending_review",
+                }),
+                matched_claim_id: null,
+                claim_match_confidence: null,
+                review_notes: "Awaiting editor review.",
+                legitimacy_score: 0.87,
+                legitimacy_label: "needs_review",
+                legitimacy_reasoning:
+                  "ACCEPT/medium editorial input with 3 validated sources for privacy.",
+                source_validation_summary: "Validated 3 distinct sources.",
+                sources: [
+                  {
+                    id: "source-admin-1",
+                    source_url:
+                      "https://example.com/articles/assistco-billing-notes",
+                    source_type: "secondary",
+                    publisher: "Example News",
+                  },
+                ],
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.setItem("ai-reality-check-admin-token", "secret-token");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "AssistCo assistant exposes billing notes",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Legitimacy score 87%")).toBeInTheDocument();
+    expect(screen.getByText("needs_review")).toBeInTheDocument();
+    expect(screen.getByText("Validated 3 distinct sources.")).toBeInTheDocument();
+    expect(screen.getByText("Translation not_requested")).toBeInTheDocument();
   });
 
   it("renders incident signals with chronological monthly counts and category distribution", async () => {

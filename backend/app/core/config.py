@@ -9,6 +9,11 @@ from pathlib import Path
 class Settings:
     database_url: str
     admin_api_token: str = "dev-admin-token"
+    openai_api_key: str | None = None
+    openai_primary_review_model: str = "gpt-5.4-mini"
+    openai_escalation_review_model: str = "gpt-5.2"
+    deepseek_api_key: str | None = None
+    deepseek_translation_model: str = "deepseek-v4-flash"
 
 
 def _load_dotenv_defaults() -> None:
@@ -40,5 +45,19 @@ def get_settings() -> Settings:
         admin_api_token=os.getenv(
             "ADMIN_API_TOKEN",
             "dev-admin-token",
+        ),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_primary_review_model=os.getenv(
+            "OPENAI_PRIMARY_REVIEW_MODEL",
+            "gpt-5.4-mini",
+        ),
+        openai_escalation_review_model=os.getenv(
+            "OPENAI_ESCALATION_REVIEW_MODEL",
+            "gpt-5.2",
+        ),
+        deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
+        deepseek_translation_model=os.getenv(
+            "DEEPSEEK_TRANSLATION_MODEL",
+            "deepseek-v4-flash",
         ),
     )

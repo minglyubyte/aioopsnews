@@ -16,6 +16,7 @@ import type {
 } from "./types/incident";
 
 const ADMIN_TOKEN_STORAGE_KEY = "ai-reality-check-admin-token";
+const READER_LOCALE_STORAGE_KEY = "ai-reality-check-locale";
 
 type FeedState = {
   incidents: Incident[];
@@ -26,6 +27,8 @@ type FeedState = {
   isAdminLoading: boolean;
   adminError: string | null;
 };
+
+type ReaderLocale = "en" | "zh";
 
 const initialState: FeedState = {
   incidents: [],
@@ -91,6 +94,9 @@ export default function App() {
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
     null,
   );
+  const [readerLocale, setReaderLocale] = useState<ReaderLocale>(() =>
+    readStoredReaderLocale(),
+  );
   const [incidentDetail, setIncidentDetail] = useState<Incident | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -113,6 +119,10 @@ export default function App() {
     ...monthlyIncidentPoints.map((point) => point.count),
     1,
   );
+
+  useEffect(() => {
+    window.localStorage.setItem(READER_LOCALE_STORAGE_KEY, readerLocale);
+  }, [readerLocale]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -403,6 +413,24 @@ export default function App() {
           queue so readers and reviewers can both work from the same source of
           truth.
         </p>
+        <div aria-label="Reader language switch" className="filter-row" role="group">
+          <button
+            aria-pressed={readerLocale === "en"}
+            className={`filter-pill-button${readerLocale === "en" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setReaderLocale("en")}
+          >
+            English
+          </button>
+          <button
+            aria-pressed={readerLocale === "zh"}
+            className={`filter-pill-button${readerLocale === "zh" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setReaderLocale("zh")}
+          >
+            Chinese
+          </button>
+        </div>
         {filters ? (
           <>
             <div className="filter-row" aria-label="Category tags">
@@ -617,8 +645,10 @@ export default function App() {
                   <span>Severity {incident.severity_score}</span>
                   <span>{incident.date_logged}</span>
                 </div>
-                <h3>{incident.headline}</h3>
-                <p className="body-copy">{incident.reality_summary}</p>
+                <h3>{localizedHeadline(incident, readerLocale)}</h3>
+                <p className="body-copy">
+                  {localizedSummary(incident, readerLocale)}
+                </p>
                 {incident.matched_claim ? (
                   <section
                     className="claim-block"
@@ -677,8 +707,10 @@ export default function App() {
                   <span>Severity {incidentDetail.severity_score}</span>
                   <span>{incidentDetail.date_logged}</span>
                 </div>
-                <h3>{incidentDetail.headline}</h3>
-                <p className="body-copy">{incidentDetail.reality_summary}</p>
+                <h3>{localizedHeadline(incidentDetail, readerLocale)}</h3>
+                <p className="body-copy">
+                  {localizedSummary(incidentDetail, readerLocale)}
+                </p>
                 {incidentDetail.matched_claim ? (
                   <section
                     className="claim-block"
@@ -744,6 +776,29 @@ export default function App() {
               <h3>{activeIncident.headline}</h3>
               <p className="body-copy">{activeIncident.reality_summary}</p>
               <p className="body-copy">{activeIncident.review_notes}</p>
+              {activeIncident.legitimacy_score !== undefined &&
+              activeIncident.legitimacy_score !== null ? (
+                <p className="body-copy">
+                  Legitimacy score{" "}
+                  {Math.round(activeIncident.legitimacy_score * 100)}%
+                </p>
+              ) : null}
+              {activeIncident.legitimacy_label ? (
+                <p className="body-copy">{activeIncident.legitimacy_label}</p>
+              ) : null}
+              {activeIncident.legitimacy_reasoning ? (
+                <p className="body-copy">{activeIncident.legitimacy_reasoning}</p>
+              ) : null}
+              {activeIncident.source_validation_summary ? (
+                <p className="body-copy">
+                  {activeIncident.source_validation_summary}
+                </p>
+              ) : null}
+              {activeIncident.translation_status ? (
+                <p className="body-copy">
+                  Translation {activeIncident.translation_status}
+                </p>
+              ) : null}
             </article>
 
             <form
@@ -836,6 +891,16 @@ function readStoredAdminToken(): string | null {
   return window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
 }
 
+function readStoredReaderLocale(): ReaderLocale {
+  if (typeof window === "undefined") {
+    return "en";
+  }
+
+  return window.localStorage.getItem(READER_LOCALE_STORAGE_KEY) === "zh"
+    ? "zh"
+    : "en";
+}
+
 function createReviewDraft(incident: AdminIncident): ReviewDraft {
   return {
     company: incident.company_involved,
@@ -843,6 +908,22 @@ function createReviewDraft(incident: AdminIncident): ReviewDraft {
     severity: incident.severity_score,
     reviewNotes: incident.review_notes ?? "",
   };
+}
+
+function localizedHeadline(incident: Incident, locale: ReaderLocale): string {
+  if (locale === "zh" && incident.headline_zh) {
+    return incident.headline_zh;
+  }
+
+  return incident.headline_en ?? incident.headline;
+}
+
+function localizedSummary(incident: Incident, locale: ReaderLocale): string {
+  if (locale === "zh" && incident.reality_summary_zh) {
+    return incident.reality_summary_zh;
+  }
+
+  return incident.reality_summary_en ?? incident.reality_summary;
 }
 
 function buildMonthlyIncidentPoints(

@@ -34,13 +34,19 @@ class MatchedClaimResponse(BaseModel):
 class IncidentFeedItemResponse(BaseModel):
     id: str
     headline: str
+    headline_en: str | None = None
+    headline_zh: str | None = None
     date_logged: str
     company_involved: str
+    incident_topic: str | None = None
     claimant_name: str | None = None
     categories: list[str]
     severity_score: int
     reality_summary: str
+    reality_summary_en: str | None = None
+    reality_summary_zh: str | None = None
     status: str
+    translation_status: str | None = None
     matched_claim: MatchedClaimResponse | None = None
     sources: list[IncidentSourceResponse]
 

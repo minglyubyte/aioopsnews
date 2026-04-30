@@ -26,8 +26,13 @@ def _build_repository() -> InMemoryIncidentRepository:
             {
                 "id": "incident-4",
                 "headline": "May escalation shows archive filters can narrow results",
+                "headline_en": (
+                    "May escalation shows archive filters can narrow results"
+                ),
+                "headline_zh": None,
                 "date_logged": "2026-05-03",
                 "company_involved": "MayOps",
+                "incident_topic": "model governance",
                 "claimant_name": "MayOps",
                 "categories": ["Model Governance"],
                 "severity_score": 2,
@@ -35,7 +40,13 @@ def _build_repository() -> InMemoryIncidentRepository:
                     "A separate approved May incident supports archive "
                     "filtering coverage."
                 ),
+                "reality_summary_en": (
+                    "A separate approved May incident supports archive "
+                    "filtering coverage."
+                ),
+                "reality_summary_zh": None,
                 "status": "approved",
+                "translation_status": "not_requested",
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
@@ -44,15 +55,23 @@ def _build_repository() -> InMemoryIncidentRepository:
             {
                 "id": "incident-1",
                 "headline": "Database-backed feed shows a reviewed privacy incident",
+                "headline_en": "Database-backed feed shows a reviewed privacy incident",
+                "headline_zh": "数据库支持的隐私事件已完成审核",
                 "date_logged": "2026-04-30",
                 "company_involved": "FutureStack",
+                "incident_topic": "privacy",
                 "claimant_name": "FutureStack",
                 "categories": ["Privacy/Security"],
                 "severity_score": 4,
                 "reality_summary": (
                     "A reviewed database record leaked internal notes into replies."
                 ),
+                "reality_summary_en": (
+                    "A reviewed database record leaked internal notes into replies."
+                ),
+                "reality_summary_zh": "经审核的数据库记录将内部备注泄露到回复中。",
                 "status": "approved",
+                "translation_status": "completed",
                 "matched_claim_id": "claim-1",
                 "claim_match_confidence": 0.88,
                 "review_notes": "editor reviewed",
@@ -71,15 +90,23 @@ def _build_repository() -> InMemoryIncidentRepository:
             {
                 "id": "incident-2",
                 "headline": "Warehouse robot rollback follows navigation failures",
+                "headline_en": "Warehouse robot rollback follows navigation failures",
+                "headline_zh": None,
                 "date_logged": "2026-04-24",
                 "company_involved": "RoboOps",
+                "incident_topic": "autonomous systems",
                 "claimant_name": "RoboOps",
                 "categories": ["Autonomous Systems"],
                 "severity_score": 3,
                 "reality_summary": (
                     "Operators paused a pilot after repeated pathing failures."
                 ),
+                "reality_summary_en": (
+                    "Operators paused a pilot after repeated pathing failures."
+                ),
+                "reality_summary_zh": None,
                 "status": "approved",
+                "translation_status": "not_requested",
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
@@ -98,8 +125,13 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "headline": (
                     "Prior-year incident proves year archives can narrow results"
                 ),
+                "headline_en": (
+                    "Prior-year incident proves year archives can narrow results"
+                ),
+                "headline_zh": None,
                 "date_logged": "2025-12-18",
                 "company_involved": "ArchiveAI",
+                "incident_topic": "model governance",
                 "claimant_name": "ArchiveAI",
                 "categories": ["Model Governance"],
                 "severity_score": 2,
@@ -107,7 +139,13 @@ def _build_repository() -> InMemoryIncidentRepository:
                     "An older approved incident should only appear for matching "
                     "archive years."
                 ),
+                "reality_summary_en": (
+                    "An older approved incident should only appear for matching "
+                    "archive years."
+                ),
+                "reality_summary_zh": None,
                 "status": "approved",
+                "translation_status": "not_requested",
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
@@ -116,13 +154,19 @@ def _build_repository() -> InMemoryIncidentRepository:
             {
                 "id": "incident-3",
                 "headline": "Draft incident should not be public",
+                "headline_en": "Draft incident should not be public",
+                "headline_zh": None,
                 "date_logged": "2026-04-20",
                 "company_involved": "HiddenCo",
+                "incident_topic": "missed timelines",
                 "claimant_name": "HiddenCo",
                 "categories": ["Missed Timelines"],
                 "severity_score": 2,
                 "reality_summary": "Draft only.",
+                "reality_summary_en": "Draft only.",
+                "reality_summary_zh": None,
                 "status": "pending_review",
+                "translation_status": "not_requested",
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "awaiting editor",
@@ -155,6 +199,11 @@ def test_get_incidents_reads_from_repository_records() -> None:
         "claim_topic": "job automation",
         "match_confidence": 0.88,
     }
+    assert payload["items"][1]["headline_en"] == (
+        "Database-backed feed shows a reviewed privacy incident"
+    )
+    assert payload["items"][1]["headline_zh"] == "数据库支持的隐私事件已完成审核"
+    assert payload["items"][1]["translation_status"] == "completed"
 
 
 def test_get_incidents_supports_filters_and_pagination() -> None:
@@ -226,6 +275,10 @@ def test_get_incident_detail_returns_public_record_with_sources() -> None:
     hidden_response = client.get("/incidents/incident-3")
 
     assert detail_response.status_code == 200
+    assert detail_response.json()["headline_en"] == (
+        "Database-backed feed shows a reviewed privacy incident"
+    )
+    assert detail_response.json()["headline_zh"] == "数据库支持的隐私事件已完成审核"
     assert detail_response.json()["sources"] == [
         {
             "id": "source-1",
