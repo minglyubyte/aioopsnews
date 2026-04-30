@@ -60,6 +60,15 @@ export type IncidentFeedFilters = {
   pageSize?: number;
 };
 
+export type DuplicateCandidate = {
+  candidate_incident_id: string;
+  embedding_score: number;
+  llm_verdict: string | null;
+  confidence: number | null;
+  reasoning: string | null;
+  status: string | null;
+};
+
 export type AdminIncident = Incident & {
   claimant_name?: string | null;
   matched_claim_id?: string | null;
@@ -71,6 +80,10 @@ export type AdminIncident = Incident & {
   source_validation_summary?: string | null;
   review_batch_id?: string | null;
   review_model?: string | null;
+  duplicate_status?: string | null;
+  duplicate_of_incident_id?: string | null;
+  canonical_incident_id?: string | null;
+  duplicate_candidates?: DuplicateCandidate[];
 };
 
 export type AdminIncidentQueueResponse = {

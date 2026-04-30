@@ -1,13 +1,30 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
 import DemoDashboard from "./demo/DemoDashboard";
 import "./index.css";
+import InternalReviewPage from "./pages/InternalReviewPage";
+import PublicDashboardPage from "./pages/PublicDashboardPage";
 
-const path = window.location.pathname;
+export function RouteEntry() {
+  const path = window.location.pathname;
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    {path === "/demo" ? <DemoDashboard /> : <App />}
-  </React.StrictMode>,
-);
+  if (path === "/demo") {
+    return <DemoDashboard />;
+  }
+
+  if (path === "/internal") {
+    return <InternalReviewPage />;
+  }
+
+  return <PublicDashboardPage />;
+}
+
+const rootElement = document.getElementById("root");
+
+if (rootElement) {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <RouteEntry />
+    </React.StrictMode>,
+  );
+}
