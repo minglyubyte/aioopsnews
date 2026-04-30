@@ -155,6 +155,24 @@ create table if not exists incident_sources (
     created_at timestamptz default current_timestamp
 );
 
+alter table incident_sources
+    add column if not exists canonical_url text;
+
+alter table incident_sources
+    add column if not exists fetch_status text;
+
+alter table incident_sources
+    add column if not exists http_status integer;
+
+alter table incident_sources
+    add column if not exists evidence_text text;
+
+alter table incident_sources
+    add column if not exists fetch_error text;
+
+alter table incident_sources
+    add column if not exists fetched_at timestamptz;
+
 create unique index if not exists claim_sources_claim_url_unique_idx
     on claim_sources (claim_id, source_url);
 
@@ -1234,15 +1252,15 @@ class PostgresIncidentRepository:
                 "delete from incident_sources where incident_id = %s",
                 (resolved_incident_id,),
             )
-            source_rows: list[tuple[str, str, str, str, None, None, None, int]] = []
+            source_rows: list[tuple[object, ...]] = []
             for display_order, source_url in enumerate(source_links):
                 source_rows.append(
                     (
                         f"source-{uuid4()}",
                         resolved_incident_id,
                         source_url,
-                        "imported",
                         None,
+                        "imported",
                         None,
                         None,
                         None,

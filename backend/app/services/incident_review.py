@@ -59,6 +59,8 @@ class IncidentSourceFetcher(Protocol):
 
 
 class IncidentBatchReviewClient(Protocol):
+    def get_batch_status(self, *, batch_id: str) -> str: ...
+
     def submit_batch(
         self,
         *,
@@ -199,6 +201,10 @@ class OpenAIIncidentReviewClient:
             )
         return results
 
+    def get_batch_status(self, *, batch_id: str) -> str:
+        batch = self._get_json(f"/batches/{batch_id}")
+        return str(batch["status"])
+
     def review_incident(
         self,
         *,
@@ -263,7 +269,11 @@ def submit_incident_review_batch(
     batch_client: IncidentBatchReviewClient,
     primary_model: str,
 ) -> IncidentReviewBatchSubmission:
-    incidents = repository.list_incidents_pending_llm_review()
+    incidents = [
+        incident
+        for incident in repository.list_incidents_pending_llm_review()
+        if not incident.get("review_batch_id")
+    ]
     for incident in incidents:
         for source in incident.get("sources", []):
             fetched = source_fetcher.fetch(source["source_url"])
@@ -277,17 +287,21 @@ def submit_incident_review_batch(
                 fetched_at=_now_isoformat(),
             )
 
-    refreshed_incidents = repository.list_incidents_pending_llm_review()
+    refreshed_incidents = [
+        incident
+        for incident in repository.list_incidents_pending_llm_review()
+        if not incident.get("review_batch_id")
+    ]
     provider_submission = batch_client.submit_batch(
         incidents=refreshed_incidents,
         model=primary_model,
     )
     submission = IncidentReviewBatchSubmission(
         batch_id=provider_submission.batch_id,
-        submitted=getattr(
-            provider_submission,
-            "submitted",
-            getattr(provider_submission, "request_count"),
+        submitted=(
+            provider_submission.submitted
+            if hasattr(provider_submission, "submitted")
+            else provider_submission.request_count
         ),
         model=provider_submission.model,
     )

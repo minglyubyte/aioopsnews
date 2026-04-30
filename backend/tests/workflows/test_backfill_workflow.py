@@ -7,7 +7,7 @@ from pathlib import Path
 from app.core.source_registry import SourceDefinition
 from app.scrapers.rss import RSSArticle
 from app.workflows.backfill import plan_backfill_batches, run_historical_backfill
-from tests.fakes import InMemoryIncidentRepository
+from tests.support.fakes import InMemoryIncidentRepository
 
 
 def test_plan_backfill_batches_partitions_date_range_monthly() -> None:

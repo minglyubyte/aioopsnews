@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.app_factory import create_app
 from app.scrapers.rss import RSSArticle
 from app.services.incident_translation import IncidentTranslation
-from tests.fakes import InMemoryIncidentRepository
+from tests.support.fakes import InMemoryIncidentRepository
 
 ASSISTCO_CLAIM = "Our assistant will eliminate repetitive support escalations."
 

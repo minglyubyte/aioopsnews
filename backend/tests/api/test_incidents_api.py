@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from app.app_factory import create_app
-from tests.fakes import InMemoryIncidentRepository
+from tests.support.fakes import InMemoryIncidentRepository
 
 FUTURESTACK_CLAIM = "Our copilots will eliminate tier-one support queues."
 

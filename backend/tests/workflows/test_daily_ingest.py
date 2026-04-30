@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from app.core.source_registry import get_trusted_sources
 from app.scrapers.rss import RSSArticle, parse_rss_feed
 from app.workflows.daily_ingest import ingest_rss_feed, run_daily_ingestion
-from tests.fakes import InMemoryIncidentRepository
+from tests.support.fakes import InMemoryIncidentRepository
 
 ASSISTCO_CLAIM = "Our assistant will eliminate repetitive support escalations."
 

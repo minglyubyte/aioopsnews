@@ -10,8 +10,8 @@ from app.services.incident_review import (
     submit_incident_review_batch,
 )
 from app.services.incident_translation import IncidentTranslation
-from tests.fakes import InMemoryIncidentRepository
-from tests.test_incident_import import VALID_IMPORT_CSV
+from tests.support.fakes import InMemoryIncidentRepository
+from tests.support.incident_csv_fixtures import VALID_IMPORT_CSV
 
 
 @dataclass

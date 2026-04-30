@@ -5,8 +5,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import App from "./App";
-import DemoDashboard from "./demo/DemoDashboard";
+import App from "../App";
+import DemoDashboard from "../demo/DemoDashboard";
 
 function renderPath(pathname: string) {
   window.history.pushState({}, "", pathname);

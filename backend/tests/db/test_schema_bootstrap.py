@@ -8,7 +8,7 @@ from app.models.claim import ClaimRecord
 from app.models.incident import IncidentRecord
 from app.models.source import IncidentSourceRecord
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_product_decision_record_captures_mvp_foundation() -> None:

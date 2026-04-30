@@ -6,7 +6,7 @@ from app.scrapers.rss import RSSArticle
 from app.services.classifier import classify_incident
 from app.services.summarizer import summarize_incident
 from app.workflows.enrich_pending_incidents import enrich_pending_incidents
-from tests.fakes import InMemoryIncidentRepository
+from tests.support.fakes import InMemoryIncidentRepository
 
 ASSISTCO_CLAIM = "Our assistant will eliminate repetitive support escalations."
 

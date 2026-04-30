@@ -8,7 +8,11 @@ from app.evals.launch_readiness import (
     load_gold_samples,
 )
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "launch_readiness_gold_samples.json"
+FIXTURE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "launch_readiness_gold_samples.json"
+)
 
 
 def test_load_gold_samples_reads_expected_cases() -> None:

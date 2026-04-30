@@ -7,7 +7,7 @@ from app.services.claim_import import (
     import_claims_csv_text,
     parse_claims_csv_text,
 )
-from tests.fakes import InMemoryIncidentRepository
+from tests.support.fakes import InMemoryIncidentRepository
 
 CLAIMS_WITH_SOURCES_CSV = "\n".join(
     [
