@@ -7,15 +7,19 @@ describe("RouteEntry", () => {
     window.history.pushState({}, "", "/");
   });
 
-  it("renders the public dashboard on the root route without admin controls", () => {
+  it("renders the public route reader contract without internal review UI", () => {
     render(<RouteEntry />);
 
     expect(
-      screen.getByRole("heading", { name: "Public dashboard" }),
+      screen.getByRole("heading", { name: "AI Reality Check" }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Unlock admin" }),
+      screen.getByText(
+        "A calm feed of reviewed AI failures, grounded in credible reporting.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Editor queue" }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Admin token")).not.toBeInTheDocument();
   });
 });

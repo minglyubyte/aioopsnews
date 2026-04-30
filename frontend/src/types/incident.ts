@@ -80,10 +80,10 @@ export type AdminIncident = Incident & {
   source_validation_summary?: string | null;
   review_batch_id?: string | null;
   review_model?: string | null;
-  duplicate_status?: string | null;
-  duplicate_of_incident_id?: string | null;
-  canonical_incident_id?: string | null;
-  duplicate_candidates?: DuplicateCandidate[];
+  duplicate_status: string | null;
+  duplicate_of_incident_id: string | null;
+  canonical_incident_id: string | null;
+  duplicate_candidates: DuplicateCandidate[];
 };
 
 export type AdminIncidentQueueResponse = {
