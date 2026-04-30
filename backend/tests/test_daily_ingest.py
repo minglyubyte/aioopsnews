@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.core.source_registry import get_trusted_sources
 from app.db.sqlite_repository import SQLiteIncidentRepository
-from app.scrapers.rss import parse_rss_feed
-from app.workflows.daily_ingest import ingest_rss_feed
+from app.scrapers.rss import RSSArticle, parse_rss_feed
+from app.workflows.daily_ingest import ingest_rss_feed, run_daily_ingestion
 
 SAMPLE_RSS = """\
 <rss version="2.0">
@@ -141,3 +142,108 @@ def test_ingest_rss_feed_persists_pending_review_incidents_and_dedupes(
             source.publisher,
         ),
     ]
+
+
+def test_run_daily_ingestion_records_stage_metrics_and_manual_review_volume(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "daily-pipeline.db"
+    repository = SQLiteIncidentRepository(f"sqlite:///{database_path}")
+    sources = [get_trusted_sources()[0]]
+
+    def fetch_articles(source_key: str) -> list[RSSArticle]:
+        assert source_key == sources[0].key
+        return [
+            RSSArticle(
+                source_key=source_key,
+                publisher=sources[0].publisher,
+                title="AssistCo support bot leaks internal notes",
+                url="https://example.com/articles/support-leak",
+                summary=(
+                    "A customer support assistant exposed private account notes in "
+                    "user-facing replies before the feature was disabled."
+                ),
+                published_at=datetime(2026, 4, 30, 8, 0, tzinfo=timezone.utc),
+                source_type="secondary",
+            )
+        ]
+
+    result = run_daily_ingestion(
+        repository=repository,
+        sources=sources,
+        fetch_articles=fetch_articles,
+        ingestion_run_id="daily-run-2026-04-30",
+    )
+
+    assert result["articles_fetched"] == 1
+    assert result["incidents_created"] == 1
+    assert result["duplicates_skipped"] == 0
+    assert result["incidents_flagged_for_manual_review"] >= 1
+    assert result["source_failures"] == 0
+    assert result["sources_processed"] == 1
+    assert result["source_results"] == [
+        {
+            "source_key": sources[0].key,
+            "status": "ok",
+            "attempts": 1,
+            "fetch": {"articles_fetched": 1},
+            "dedupe": {"duplicates_skipped": 0},
+            "persist": {"incidents_created": 1},
+            "enrich": {"pending_found": 2, "enriched": 2, "skipped": 0},
+            "claim_match": {"matched_claims": 1, "unmatched_incidents": 1},
+            "mark_review_status": {"pending_review": 2},
+        }
+    ]
+
+
+def test_run_daily_ingestion_retries_transient_source_failure_and_reports_errors(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "daily-retry.db"
+    repository = SQLiteIncidentRepository(f"sqlite:///{database_path}")
+    sources = [get_trusted_sources()[0], get_trusted_sources()[1]]
+    attempts: dict[str, int] = {}
+
+    def fetch_articles(source_key: str) -> list[RSSArticle]:
+        attempts[source_key] = attempts.get(source_key, 0) + 1
+
+        if source_key == sources[0].key and attempts[source_key] == 1:
+            raise TimeoutError("temporary timeout")
+        if source_key == sources[1].key:
+            raise RuntimeError("feed unavailable")
+
+        return [
+            RSSArticle(
+                source_key=source_key,
+                publisher=sources[0].publisher,
+                title="AssistCo support bot leaks internal notes",
+                url=f"https://example.com/articles/{source_key}-support-leak",
+                summary=(
+                    "A customer support assistant exposed private account notes in "
+                    "user-facing replies before the feature was disabled."
+                ),
+                published_at=datetime(2026, 4, 30, 8, 0, tzinfo=timezone.utc),
+                source_type="secondary",
+            )
+        ]
+
+    result = run_daily_ingestion(
+        repository=repository,
+        sources=sources,
+        fetch_articles=fetch_articles,
+        ingestion_run_id="daily-run-2026-05-01",
+        max_retries=2,
+    )
+
+    assert result["articles_fetched"] == 1
+    assert result["incidents_created"] == 1
+    assert result["source_failures"] == 1
+    assert result["sources_processed"] == 1
+    assert attempts == {
+        sources[0].key: 2,
+        sources[1].key: 3,
+    }
+    assert result["source_results"][0]["status"] == "ok"
+    assert result["source_results"][0]["attempts"] == 2
+    assert result["source_results"][1]["status"] == "failed"
+    assert result["source_results"][1]["error"] == "feed unavailable"
