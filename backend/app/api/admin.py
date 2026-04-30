@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from hmac import compare_digest
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.api.incidents import IncidentSourceResponse
+from app.core.config import Settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -49,8 +51,24 @@ def get_incident_repository(request: Request):
     return request.app.state.incident_repository
 
 
+def get_settings(request: Request) -> Settings:
+    return request.app.state.settings
+
+
+def require_admin_token(
+    x_admin_token: str | None = Header(default=None),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    if x_admin_token is None or not compare_digest(
+        x_admin_token,
+        settings.admin_api_token,
+    ):
+        raise HTTPException(status_code=401, detail="Admin access required")
+
+
 @router.get("/incidents", response_model=AdminIncidentQueueResponse)
 def get_admin_incidents(
+    _authorized: None = Depends(require_admin_token),
     repository=Depends(get_incident_repository),
 ) -> AdminIncidentQueueResponse:
     return AdminIncidentQueueResponse(items=repository.list_review_queue())
@@ -60,6 +78,7 @@ def get_admin_incidents(
 def patch_admin_incident(
     incident_id: str,
     update: AdminIncidentUpdateRequest,
+    _authorized: None = Depends(require_admin_token),
     repository=Depends(get_incident_repository),
 ) -> AdminIncidentResponse:
     updated_incident = repository.apply_admin_review(

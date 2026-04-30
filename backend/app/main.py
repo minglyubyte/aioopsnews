@@ -7,12 +7,20 @@ from app.core.config import get_settings
 from app.db.sqlite_repository import SQLiteIncidentRepository
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
+def create_app(
+    database_url: str | None = None,
+    admin_api_token: str | None = None,
+) -> FastAPI:
     settings = get_settings()
+    effective_settings = settings.__class__(
+        database_url=database_url or settings.database_url,
+        admin_api_token=admin_api_token or settings.admin_api_token,
+    )
     app = FastAPI(title="AI Reality Check API")
+    app.state.settings = effective_settings
 
     app.state.incident_repository = SQLiteIncidentRepository(
-        database_url or settings.database_url
+        effective_settings.database_url
     )
 
     app.add_middleware(

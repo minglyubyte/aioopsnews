@@ -14,10 +14,13 @@ const API_BASE_URL =
 async function getJson<T>(
   path: string,
   searchParams?: URLSearchParams,
+  headers?: HeadersInit,
 ): Promise<T> {
   const suffix =
     searchParams && searchParams.size ? `?${searchParams.toString()}` : "";
-  const response = await fetch(`${API_BASE_URL}${path}${suffix}`);
+  const response = await fetch(`${API_BASE_URL}${path}${suffix}`, {
+    headers,
+  });
 
   if (!response.ok) {
     throw new Error(`Request failed: ${response.status}`);
@@ -64,11 +67,16 @@ export function fetchIncidentFilters(): Promise<IncidentFilters> {
   return getJson<IncidentFilters>("/filters");
 }
 
-export function fetchAdminIncidentQueue(): Promise<AdminIncidentQueueResponse> {
-  return getJson<AdminIncidentQueueResponse>("/admin/incidents");
+export function fetchAdminIncidentQueue(
+  adminToken: string,
+): Promise<AdminIncidentQueueResponse> {
+  return getJson<AdminIncidentQueueResponse>("/admin/incidents", undefined, {
+    "X-Admin-Token": adminToken,
+  });
 }
 
 export async function updateAdminIncident(
+  adminToken: string,
   incidentId: string,
   payload: AdminIncidentUpdateRequest,
 ): Promise<AdminIncident> {
@@ -78,6 +86,7 @@ export async function updateAdminIncident(
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
+        "X-Admin-Token": adminToken,
       },
       body: JSON.stringify(payload),
     },

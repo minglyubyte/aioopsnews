@@ -148,6 +148,12 @@ body {
   gap: 1.5rem;
 }
 
+.admin-auth-form {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
 .review-form {
   display: grid;
   gap: 1rem;
@@ -243,5 +249,10 @@ body {
   .review-grid {
     grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
     align-items: start;
+  }
+
+  .admin-auth-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
   }
 }

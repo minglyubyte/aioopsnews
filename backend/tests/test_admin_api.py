@@ -11,7 +11,11 @@ from app.main import create_app
 from app.scrapers.rss import RSSArticle
 
 
-def _build_review_queue_client(database_path: Path) -> TestClient:
+def _build_review_queue_client(
+    database_path: Path,
+    *,
+    admin_api_token: str = "dev-admin-token",
+) -> TestClient:
     repository = SQLiteIncidentRepository(f"sqlite:///{database_path}")
     repository.ingest_rss_article(
         RSSArticle(
@@ -28,13 +32,51 @@ def _build_review_queue_client(database_path: Path) -> TestClient:
         ),
         ingestion_run_id="run-2026-05-01",
     )
-    return TestClient(create_app(database_url=f"sqlite:///{database_path}"))
+    return TestClient(
+        create_app(
+            database_url=f"sqlite:///{database_path}",
+            admin_api_token=admin_api_token,
+        )
+    )
+
+
+def test_get_admin_review_queue_requires_admin_token(tmp_path: Path) -> None:
+    client = _build_review_queue_client(
+        tmp_path / "admin-auth-required.db",
+        admin_api_token="secret-token",
+    )
+
+    response = client.get("/admin/incidents")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Admin access required"
+
+
+def test_get_admin_review_queue_rejects_wrong_admin_token(tmp_path: Path) -> None:
+    client = _build_review_queue_client(
+        tmp_path / "admin-auth-invalid.db",
+        admin_api_token="secret-token",
+    )
+
+    response = client.get(
+        "/admin/incidents",
+        headers={"X-Admin-Token": "wrong-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Admin access required"
 
 
 def test_get_admin_review_queue_returns_pending_incidents(tmp_path: Path) -> None:
-    client = _build_review_queue_client(tmp_path / "admin-queue.db")
+    client = _build_review_queue_client(
+        tmp_path / "admin-queue.db",
+        admin_api_token="secret-token",
+    )
 
-    response = client.get("/admin/incidents")
+    response = client.get(
+        "/admin/incidents",
+        headers={"X-Admin-Token": "secret-token"},
+    )
 
     assert response.status_code == 200
 
@@ -50,13 +92,20 @@ def test_get_admin_review_queue_returns_pending_incidents(tmp_path: Path) -> Non
 
 def test_patch_admin_incident_applies_editor_overrides(tmp_path: Path) -> None:
     database_path = tmp_path / "admin-update.db"
-    client = _build_review_queue_client(database_path)
+    client = _build_review_queue_client(
+        database_path,
+        admin_api_token="secret-token",
+    )
 
-    queue_response = client.get("/admin/incidents")
+    queue_response = client.get(
+        "/admin/incidents",
+        headers={"X-Admin-Token": "secret-token"},
+    )
     incident_id = queue_response.json()["items"][0]["id"]
 
     response = client.patch(
         f"/admin/incidents/{incident_id}",
+        headers={"X-Admin-Token": "secret-token"},
         json={
             "status": "approved",
             "company_involved": "AssistCo",

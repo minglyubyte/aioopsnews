@@ -7,6 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     database_url: str = "sqlite:///./data/ai_reality_check.db"
+    admin_api_token: str = "dev-admin-token"
 
 
 def get_settings() -> Settings:
@@ -14,5 +15,9 @@ def get_settings() -> Settings:
         database_url=os.getenv(
             "DATABASE_URL",
             "sqlite:///./data/ai_reality_check.db",
-        )
+        ),
+        admin_api_token=os.getenv(
+            "ADMIN_API_TOKEN",
+            "dev-admin-token",
+        ),
     )

@@ -2,6 +2,195 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 
 describe("App", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("keeps the admin queue locked until an admin token is entered", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(
+          JSON.stringify({
+            categories: ["Autonomous Systems", "Privacy/Security"],
+            claimants: ["AssistCo", "RoboFleet"],
+            companies: ["AssistCo", "RoboFleet"],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByText("Admin access required"),
+    ).toBeInTheDocument();
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/admin/incidents",
+    );
+  });
+
+  it("loads the admin queue after a valid token is submitted", async () => {
+    const fetchMock = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = input.toString();
+
+        if (url.endsWith("/filters")) {
+          return new Response(
+            JSON.stringify({
+              categories: ["Autonomous Systems", "Privacy/Security"],
+              claimants: ["AssistCo", "RoboFleet"],
+              companies: ["AssistCo", "RoboFleet"],
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+
+        if (url.endsWith("/admin/incidents")) {
+          expect(init?.headers).toMatchObject({
+            "X-Admin-Token": "secret-token",
+          });
+
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  id: "incident-admin-1",
+                  headline: "AssistCo assistant exposes billing notes",
+                  date_logged: "2026-05-01",
+                  company_involved: "Pending classification",
+                  claimant_name: null,
+                  categories: [],
+                  severity_score: 1,
+                  reality_summary:
+                    "A support assistant exposed private billing notes in customer-facing replies.",
+                  status: "pending_review",
+                  matched_claim_id: null,
+                  claim_match_confidence: null,
+                  review_notes: "Awaiting editor review.",
+                  sources: [
+                    {
+                      id: "source-admin-1",
+                      source_url:
+                        "https://example.com/articles/assistco-billing-notes",
+                      source_type: "secondary",
+                      publisher: "Example News",
+                    },
+                  ],
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            items: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      },
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "secret-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "AssistCo assistant exposes billing notes",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a specific admin auth error when the token is rejected", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(
+          JSON.stringify({
+            categories: ["Autonomous Systems", "Privacy/Security"],
+            claimants: ["AssistCo", "RoboFleet"],
+            companies: ["AssistCo", "RoboFleet"],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/admin/incidents")) {
+        return new Response(
+          JSON.stringify({
+            detail: "Admin access required",
+          }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "wrong-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    expect(
+      await screen.findByText("Admin token was rejected."),
+    ).toBeInTheDocument();
+  });
+
   it("opens a detail panel for a selected public incident", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString();
@@ -108,6 +297,8 @@ describe("App", () => {
     });
 
     vi.stubGlobal("fetch", fetchMock);
+
+    window.localStorage.setItem("ai-reality-check-admin-token", "secret-token");
 
     render(<App />);
 
@@ -218,6 +409,8 @@ describe("App", () => {
 
     vi.stubGlobal("fetch", fetchMock);
 
+    window.localStorage.setItem("ai-reality-check-admin-token", "secret-token");
+
     render(<App />);
 
     expect(
@@ -241,6 +434,9 @@ describe("App", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8000/incidents?category=Autonomous+Systems&company=RoboFleet",
+      {
+        headers: undefined,
+      },
     );
   });
 
@@ -342,6 +538,8 @@ describe("App", () => {
     });
 
     vi.stubGlobal("fetch", fetchMock);
+
+    window.localStorage.setItem("ai-reality-check-admin-token", "secret-token");
 
     render(<App />);
 
@@ -489,6 +687,8 @@ describe("App", () => {
     );
 
     vi.stubGlobal("fetch", fetchMock);
+
+    window.localStorage.setItem("ai-reality-check-admin-token", "secret-token");
 
     render(<App />);
 

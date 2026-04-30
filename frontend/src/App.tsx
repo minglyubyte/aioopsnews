@@ -1,3 +1,4 @@
+import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 
 import {
@@ -14,12 +15,15 @@ import type {
   IncidentFilters,
 } from "./types/incident";
 
+const ADMIN_TOKEN_STORAGE_KEY = "ai-reality-check-admin-token";
+
 type FeedState = {
   incidents: Incident[];
   adminIncidents: AdminIncident[];
   filters: IncidentFilters | null;
   isLoading: boolean;
   error: string | null;
+  isAdminLoading: boolean;
   adminError: string | null;
 };
 
@@ -29,18 +33,33 @@ const initialState: FeedState = {
   filters: null,
   isLoading: true,
   error: null,
+  isAdminLoading: false,
   adminError: null,
 };
 
 export default function App() {
   const [
-    { incidents, adminIncidents, filters, isLoading, error, adminError },
+    {
+      incidents,
+      adminIncidents,
+      filters,
+      isLoading,
+      error,
+      isAdminLoading,
+      adminError,
+    },
     setFeedState,
   ] = useState<FeedState>(initialState);
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
   const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [readerFilters, setReaderFilters] = useState<IncidentFeedFilters>({});
+  const [adminTokenInput, setAdminTokenInput] = useState(
+    () => readStoredAdminToken() ?? "",
+  );
+  const [adminToken, setAdminToken] = useState<string | null>(() =>
+    readStoredAdminToken(),
+  );
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
     null,
   );
@@ -59,19 +78,72 @@ export default function App() {
   useEffect(() => {
     let isCancelled = false;
 
-    async function loadMetadata() {
+    async function loadFilters() {
       try {
-        const [filterResponse, adminQueueResponse] = await Promise.all([
-          fetchIncidentFilters(),
-          fetchAdminIncidentQueue(),
-        ]);
+        const filterResponse = await fetchIncidentFilters();
+
+        if (!isCancelled) {
+          setFeedState((currentState) => ({
+            ...currentState,
+            filters: filterResponse,
+          }));
+        }
+      } catch {
+        if (!isCancelled) {
+          setFeedState((currentState) => ({
+            ...currentState,
+            filters: null,
+          }));
+        }
+      }
+    }
+
+    void loadFilters();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const resolvedAdminToken = adminToken;
+
+    if (resolvedAdminToken === null) {
+      setFeedState((currentState) => ({
+        ...currentState,
+        adminIncidents: [],
+        isAdminLoading: false,
+        adminError: "Admin access required",
+      }));
+      setDrafts({});
+      setActiveReviewId(null);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    async function loadAdminQueue() {
+      if (resolvedAdminToken === null) {
+        return;
+      }
+
+      setFeedState((currentState) => ({
+        ...currentState,
+        isAdminLoading: true,
+        adminError: null,
+      }));
+
+      try {
+        const adminQueueResponse =
+          await fetchAdminIncidentQueue(resolvedAdminToken);
 
         if (!isCancelled) {
           const nextActiveIncident = adminQueueResponse.items[0] ?? null;
           setFeedState((currentState) => ({
             ...currentState,
             adminIncidents: adminQueueResponse.items,
-            filters: filterResponse,
+            isAdminLoading: false,
             adminError: null,
           }));
           setDrafts(
@@ -84,24 +156,30 @@ export default function App() {
           );
           setActiveReviewId(nextActiveIncident?.id ?? null);
         }
-      } catch {
+      } catch (loadError) {
         if (!isCancelled) {
           setFeedState((currentState) => ({
             ...currentState,
             adminIncidents: [],
-            filters: null,
-            adminError: "Unable to load the review queue right now.",
+            isAdminLoading: false,
+            adminError:
+              loadError instanceof Error &&
+              loadError.message === "Request failed: 401"
+                ? "Admin token was rejected."
+                : "Unable to load the review queue right now.",
           }));
+          setDrafts({});
+          setActiveReviewId(null);
         }
       }
     }
 
-    void loadMetadata();
+    void loadAdminQueue();
 
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [adminToken]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -144,24 +222,28 @@ export default function App() {
   }, [readerFilters]);
 
   async function handleApproveIncident() {
-    if (!activeIncident || !activeDraft) {
+    if (!activeIncident || !activeDraft || !adminToken) {
       return;
     }
 
     setIsSaving(true);
 
     try {
-      const updatedIncident = await updateAdminIncident(activeIncident.id, {
-        status: "approved",
-        company_involved: activeDraft.company,
-        claimant_name: activeIncident.claimant_name ?? null,
-        categories: activeDraft.category ? [activeDraft.category] : [],
-        severity_score: activeDraft.severity,
-        reality_summary: activeIncident.reality_summary,
-        matched_claim_id: activeIncident.matched_claim_id ?? null,
-        claim_match_confidence: activeIncident.claim_match_confidence ?? null,
-        review_notes: activeDraft.reviewNotes,
-      });
+      const updatedIncident = await updateAdminIncident(
+        adminToken,
+        activeIncident.id,
+        {
+          status: "approved",
+          company_involved: activeDraft.company,
+          claimant_name: activeIncident.claimant_name ?? null,
+          categories: activeDraft.category ? [activeDraft.category] : [],
+          severity_score: activeDraft.severity,
+          reality_summary: activeIncident.reality_summary,
+          matched_claim_id: activeIncident.matched_claim_id ?? null,
+          claim_match_confidence: activeIncident.claim_match_confidence ?? null,
+          review_notes: activeDraft.reviewNotes,
+        },
+      );
 
       setFeedState((currentState) => ({
         ...currentState,
@@ -216,6 +298,20 @@ export default function App() {
         [field]: value,
       },
     }));
+  }
+
+  function handleUnlockAdmin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedToken = adminTokenInput.trim();
+
+    if (!trimmedToken) {
+      window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+      setAdminToken(null);
+      return;
+    }
+
+    window.localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, trimmedToken);
+    setAdminToken(trimmedToken);
   }
 
   return (
@@ -397,9 +493,22 @@ export default function App() {
           <p className="section-kicker">Internal review</p>
           <h2>Editor queue</h2>
         </div>
-        {isLoading ? <p>Loading review queue...</p> : null}
+        <form className="admin-auth-form" onSubmit={handleUnlockAdmin}>
+          <label className="field">
+            <span>Admin token</span>
+            <input
+              name="admin-token"
+              value={adminTokenInput}
+              onChange={(event) => setAdminTokenInput(event.target.value)}
+            />
+          </label>
+          <button className="secondary-action" type="submit">
+            Unlock admin
+          </button>
+        </form>
+        {isAdminLoading ? <p>Loading review queue...</p> : null}
         {adminError ? <p>{adminError}</p> : null}
-        {!isLoading && !adminError && activeIncident && activeDraft ? (
+        {!isAdminLoading && !adminError && activeIncident && activeDraft ? (
           <div className="review-grid">
             <article className="incident-item">
               <div className="incident-meta">
@@ -493,6 +602,14 @@ type ReviewDraft = {
   severity: number;
   reviewNotes: string;
 };
+
+function readStoredAdminToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
+}
 
 function createReviewDraft(incident: AdminIncident): ReviewDraft {
   return {
