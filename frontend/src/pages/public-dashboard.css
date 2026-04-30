@@ -1,0 +1,156 @@
+.public-dashboard {
+  gap: 1.25rem;
+}
+
+.public-hero,
+.public-section {
+  width: min(100%, 72rem);
+}
+
+.public-hero-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.public-locale-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.public-hero-copy {
+  max-width: 42rem;
+}
+
+.public-filter-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.public-status,
+.public-error {
+  margin-top: 1rem;
+}
+
+.public-error {
+  color: #8f3441;
+}
+
+.public-signals-grid,
+.public-dashboard-grid,
+.public-detail-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.public-signal-card,
+.public-spotlight-card,
+.public-archive-card,
+.public-source-item,
+.public-claim-block {
+  padding: 1rem;
+  border: 1px solid rgba(39, 65, 95, 0.12);
+  border-radius: 1rem;
+  background: linear-gradient(
+    180deg,
+    rgba(251, 253, 255, 0.98),
+    rgba(244, 248, 251, 0.98)
+  );
+}
+
+.public-signal-kicker,
+.public-claim-kicker,
+.public-source-publisher {
+  margin: 0 0 0.35rem;
+  color: #556c86;
+  font-size: 0.9rem;
+}
+
+.public-signal-card h3,
+.public-incident-card h3,
+.public-source-list h3 {
+  margin: 0;
+}
+
+.public-signal-list,
+.public-source-list {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.public-signal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(39, 65, 95, 0.1);
+}
+
+.public-incident-card {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.public-archive-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.public-archive-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.public-archive-card.is-selected {
+  border-color: rgba(25, 57, 93, 0.35);
+  box-shadow: 0 12px 32px rgba(16, 35, 63, 0.08);
+}
+
+.public-archive-summary {
+  margin: 0;
+}
+
+.public-detail-button {
+  justify-self: start;
+}
+
+.public-claim-block {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.public-claim-quote {
+  margin: 0;
+  font-style: italic;
+  color: #19395d;
+}
+
+.public-source-item {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.public-source-item a {
+  color: #19395d;
+  word-break: break-word;
+}
+
+@media (min-width: 720px) {
+  .public-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-signals-grid,
+  .public-dashboard-grid,
+  .public-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
