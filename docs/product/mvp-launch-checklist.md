@@ -38,8 +38,8 @@
 
 - [x] Daily ingest runbook exists
 - [x] Backfill runbook exists
-- [ ] Production scheduler wiring is documented
-- [ ] Failure and backlog monitoring expectations are documented
+- [x] Production scheduler wiring is documented
+- [x] Failure and backlog monitoring expectations are documented
 
 ## Release Decision
 

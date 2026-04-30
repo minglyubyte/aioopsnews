@@ -26,7 +26,6 @@ AI Reality Check currently has a working end-to-end MVP implementation in code, 
   - grow the gold sample toward launch-scale coverage
   - add override-rate measurements from real review activity
   - validate metrics against a larger reviewed set
-- Production scheduler wiring and ongoing monitoring expectations are not yet documented.
 
 ## Readiness Call
 
@@ -38,4 +37,4 @@ AI Reality Check currently has a working end-to-end MVP implementation in code, 
 
 1. Add review history and override audit logging.
 2. Expand the gold-sample set and run launch-readiness evaluation on a larger reviewed corpus.
-3. Document production scheduling and monitoring expectations.
+3. Expand the trusted source set and operational routine only after the larger reviewed sample is stable.
