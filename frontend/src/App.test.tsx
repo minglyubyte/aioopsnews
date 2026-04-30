@@ -1,9 +1,74 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import App from "./App";
+import DemoDashboard from "./demo/DemoDashboard";
+
+function renderPath(pathname: string) {
+  window.history.pushState({}, "", pathname);
+
+  if (pathname === "/demo") {
+    return render(<DemoDashboard />);
+  }
+
+  return render(<App />);
+}
 
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.history.pushState({}, "", "/");
+  });
+
+  it("renders the demo dashboard route with hero copy and featured incident content", () => {
+    renderPath("/demo");
+
+    expect(
+      screen.getByRole("heading", {
+        name: "AI failures, without the hype cycle",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("AssistCo assistant exposes private billing notes")
+        .length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("heading", {
+        name: "Spotlight",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: "Incident spotlight",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("updates the incident spotlight when a different demo card is selected", () => {
+    renderPath("/demo");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Open incident detail for RoboFleet robot pilot rollback follows navigation failures/i,
+      }),
+    );
+
+    const spotlight = screen
+      .getByRole("heading", {
+        name: "Incident spotlight",
+      })
+      .closest("section");
+
+    expect(spotlight).not.toBeNull();
+    expect(
+      within(spotlight as HTMLElement).getByRole("heading", {
+        name: "RoboFleet robot pilot rollback follows navigation failures",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the admin queue locked until an admin token is entered", async () => {
