@@ -208,6 +208,16 @@ def test_get_incidents_reads_from_database_records(tmp_path: Path) -> None:
     assert (
         payload["items"][0]["sources"][0]["source_url"] == "https://example.com/privacy"
     )
+    assert payload["items"][0]["matched_claim"] == {
+        "id": "claim-1",
+        "claimant_name": "FutureStack",
+        "company_involved": "FutureStack",
+        "original_claim": "Our copilots will eliminate tier-one support queues.",
+        "claim_date": "2026-01-10",
+        "claim_topic": "job automation",
+        "match_confidence": 0.88,
+    }
+    assert payload["items"][1]["matched_claim"] is None
 
 
 def test_get_filters_reads_distinct_values_from_database(tmp_path: Path) -> None:

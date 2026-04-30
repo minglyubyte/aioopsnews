@@ -16,6 +16,16 @@ class IncidentSourceResponse(BaseModel):
     title: str | None = None
 
 
+class MatchedClaimResponse(BaseModel):
+    id: str
+    claimant_name: str
+    company_involved: str
+    original_claim: str
+    claim_date: str
+    claim_topic: str
+    match_confidence: float
+
+
 class IncidentFeedItemResponse(BaseModel):
     id: str
     headline: str
@@ -26,6 +36,7 @@ class IncidentFeedItemResponse(BaseModel):
     severity_score: int
     reality_summary: str
     status: str
+    matched_claim: MatchedClaimResponse | None = None
     sources: list[IncidentSourceResponse]
 
 

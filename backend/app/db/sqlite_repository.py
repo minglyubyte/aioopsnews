@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.models.claim import ClaimRecord
 from app.scrapers.rss import RSSArticle
+from app.services.claim_matcher import PUBLIC_CLAIM_MATCH_THRESHOLD
 
 _SQLITE_SCHEMA = """
 create table if not exists claims (
@@ -62,6 +64,24 @@ _SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str]] = [
         "Our assistant will eliminate repetitive support escalations.",
         "2026-01-15",
         "job automation",
+        "approved",
+    ),
+    (
+        "claim-2",
+        "RoboFleet",
+        "RoboFleet",
+        "Our fleet will operate safely without sidewalk supervisors.",
+        "2026-02-20",
+        "autonomous operations",
+        "approved",
+    ),
+    (
+        "claim-3",
+        "CodeForge",
+        "CodeForge",
+        "Our coding agent can replace most junior QA workflows end to end.",
+        "2026-03-10",
+        "coding automation",
         "approved",
     ),
 ]
@@ -163,18 +183,28 @@ class SQLiteIncidentRepository:
             incident_rows = connection.execute(
                 """
                 select
-                    id,
-                    headline,
-                    date_logged,
-                    company_involved,
-                    claimant_name,
-                    categories,
-                    severity_score,
-                    reality_summary,
-                    status
+                    incident_logs.id,
+                    incident_logs.headline,
+                    incident_logs.date_logged,
+                    incident_logs.company_involved,
+                    incident_logs.claimant_name,
+                    incident_logs.categories,
+                    incident_logs.severity_score,
+                    incident_logs.reality_summary,
+                    incident_logs.status,
+                    incident_logs.claim_match_confidence,
+                    claims.id as claim_id,
+                    claims.claimant_name as claim_claimant_name,
+                    claims.company_involved as claim_company_involved,
+                    claims.original_claim,
+                    claims.claim_date,
+                    claims.claim_topic,
+                    claims.status as claim_status
                 from incident_logs
-                where status = ?
-                order by date_logged desc
+                left join claims
+                    on claims.id = incident_logs.matched_claim_id
+                where incident_logs.status = ?
+                order by incident_logs.date_logged desc
                 """,
                 ("approved",),
             ).fetchall()
@@ -216,6 +246,7 @@ class SQLiteIncidentRepository:
                 "severity_score": row["severity_score"],
                 "reality_summary": row["reality_summary"],
                 "status": row["status"],
+                "matched_claim": _build_public_claim_payload(row),
                 "sources": sources_by_incident[row["id"]],
             }
             for row in incident_rows
@@ -397,6 +428,7 @@ class SQLiteIncidentRepository:
                 select
                     incident_logs.id,
                     incident_logs.headline,
+                    incident_logs.date_logged,
                     incident_logs.reality_summary,
                     incident_sources.publisher,
                     incident_sources.title,
@@ -414,12 +446,44 @@ class SQLiteIncidentRepository:
             {
                 "id": row["id"],
                 "headline": row["headline"],
+                "date_logged": row["date_logged"],
                 "source_summary": row["reality_summary"],
                 "publisher": row["publisher"],
                 "source_title": row["title"],
                 "source_url": row["source_url"],
             }
             for row in incident_rows
+        ]
+
+    def list_claims(self) -> list[ClaimRecord]:
+        with self._connect() as connection:
+            claim_rows = connection.execute(
+                """
+                select
+                    id,
+                    claimant_name,
+                    company_involved,
+                    original_claim,
+                    claim_date,
+                    claim_topic,
+                    status
+                from claims
+                where status in ('seeded', 'approved')
+                order by claim_date desc, id asc
+                """
+            ).fetchall()
+
+        return [
+            ClaimRecord(
+                id=row["id"],
+                claimant_name=row["claimant_name"],
+                company_involved=row["company_involved"],
+                original_claim=row["original_claim"],
+                claim_date=row["claim_date"],
+                claim_topic=row["claim_topic"],
+                status=row["status"],
+            )
+            for row in claim_rows
         ]
 
     def update_incident_enrichment(
@@ -433,6 +497,8 @@ class SQLiteIncidentRepository:
         reality_summary: str,
         confidence_score: float,
         review_notes: str,
+        matched_claim_id: str | None = None,
+        claim_match_confidence: float | None = None,
     ) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -446,6 +512,8 @@ class SQLiteIncidentRepository:
                     reality_summary = ?,
                     confidence_score = ?,
                     review_notes = ?,
+                    matched_claim_id = ?,
+                    claim_match_confidence = ?,
                     updated_at = current_timestamp
                 where id = ?
                 """,
@@ -457,6 +525,8 @@ class SQLiteIncidentRepository:
                     reality_summary,
                     confidence_score,
                     review_notes,
+                    matched_claim_id,
+                    claim_match_confidence,
                     incident_id,
                 ),
             )
@@ -649,3 +719,24 @@ class SQLiteIncidentRepository:
                 _SEED_SOURCES,
             )
             connection.commit()
+
+
+def _build_public_claim_payload(row: sqlite3.Row) -> dict[str, Any] | None:
+    if row["claim_id"] is None:
+        return None
+    if row["claim_status"] != "approved":
+        return None
+    if row["claim_match_confidence"] is None:
+        return None
+    if row["claim_match_confidence"] < PUBLIC_CLAIM_MATCH_THRESHOLD:
+        return None
+
+    return {
+        "id": row["claim_id"],
+        "claimant_name": row["claim_claimant_name"],
+        "company_involved": row["claim_company_involved"],
+        "original_claim": row["original_claim"],
+        "claim_date": row["claim_date"],
+        "claim_topic": row["claim_topic"],
+        "match_confidence": row["claim_match_confidence"],
+    }

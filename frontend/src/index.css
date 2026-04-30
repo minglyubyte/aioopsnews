@@ -107,6 +107,36 @@ body {
   font-size: 0.9rem;
 }
 
+.claim-block {
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #f6f1e7 0%, #fdf9f2 100%);
+  border: 1px solid rgba(120, 91, 38, 0.16);
+}
+
+.claim-kicker {
+  margin: 0 0 0.45rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7f5d25;
+}
+
+.claim-quote {
+  margin: 0 0 0.65rem;
+  color: #3b2b11;
+  font-size: 1rem;
+}
+
+.claim-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  color: #6d5731;
+  font-size: 0.88rem;
+}
+
 .review-grid {
   display: grid;
   gap: 1.5rem;

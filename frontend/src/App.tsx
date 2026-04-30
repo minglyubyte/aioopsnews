@@ -200,6 +200,28 @@ export default function App() {
                 </div>
                 <h3>{incident.headline}</h3>
                 <p className="body-copy">{incident.reality_summary}</p>
+                {incident.matched_claim ? (
+                  <section
+                    className="claim-block"
+                    aria-label="Claim vs. reality"
+                  >
+                    <p className="claim-kicker">Claim vs. reality</p>
+                    <p className="claim-quote">
+                      {incident.matched_claim.original_claim}
+                    </p>
+                    <div className="claim-meta">
+                      <span>{incident.matched_claim.claimant_name}</span>
+                      <span>{incident.matched_claim.claim_date}</span>
+                      <span>
+                        Confidence{" "}
+                        {Math.round(
+                          incident.matched_claim.match_confidence * 100,
+                        )}
+                        %
+                      </span>
+                    </div>
+                  </section>
+                ) : null}
                 <div className="tag-row">
                   {incident.categories.map((category) => (
                     <span className="tag" key={category}>

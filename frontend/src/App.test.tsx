@@ -71,6 +71,16 @@ describe("App", () => {
               reality_summary:
                 "A support automation rollout leaked internal notes into user-facing replies.",
               status: "approved",
+              matched_claim: {
+                id: "claim-1",
+                claimant_name: "AssistCo",
+                company_involved: "AssistCo",
+                original_claim:
+                  "Our assistant will eliminate repetitive support escalations.",
+                claim_date: "2026-01-15",
+                claim_topic: "job automation",
+                match_confidence: 0.88,
+              },
               sources: [
                 {
                   id: "source-1",
@@ -100,7 +110,13 @@ describe("App", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("Privacy/Security")).toHaveLength(2);
-    expect(screen.getByText("AssistCo")).toBeInTheDocument();
+    expect(screen.getAllByText("AssistCo").length).toBeGreaterThan(0);
+    expect(screen.getByText("Claim vs. reality")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Our assistant will eliminate repetitive support escalations.",
+      ),
+    ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
@@ -208,6 +224,16 @@ describe("App", () => {
                 reality_summary:
                   "A support automation rollout leaked internal notes into user-facing replies.",
                 status: "approved",
+                matched_claim: {
+                  id: "claim-1",
+                  claimant_name: "AssistCo",
+                  company_involved: "AssistCo",
+                  original_claim:
+                    "Our assistant will eliminate repetitive support escalations.",
+                  claim_date: "2026-01-15",
+                  claim_topic: "job automation",
+                  match_confidence: 0.88,
+                },
                 sources: [],
               },
             ],

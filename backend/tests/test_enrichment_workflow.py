@@ -96,7 +96,9 @@ def test_enrichment_workflow_updates_pending_incidents_in_place(
             severity_score,
             reality_summary,
             confidence_score,
-            status
+            status,
+            matched_claim_id,
+            claim_match_confidence
         from incident_logs
         where headline in (
             'AssistCo support bot leaks internal notes',
@@ -121,6 +123,8 @@ def test_enrichment_workflow_updates_pending_incidents_in_place(
             ),
             0.87,
             "pending_review",
+            "claim-1",
+            0.91,
         ),
         (
             "RoboFleet delivery robot pilot pauses after safety interventions",
@@ -135,5 +139,7 @@ def test_enrichment_workflow_updates_pending_incidents_in_place(
             ),
             0.82,
             "pending_review",
+            None,
+            None,
         ),
     ]

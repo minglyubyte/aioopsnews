@@ -6,6 +6,16 @@ export type IncidentSource = {
   title?: string;
 };
 
+export type MatchedClaim = {
+  id: string;
+  claimant_name: string;
+  company_involved: string;
+  original_claim: string;
+  claim_date: string;
+  claim_topic: string;
+  match_confidence: number;
+};
+
 export type Incident = {
   id: string;
   headline: string;
@@ -16,6 +26,7 @@ export type Incident = {
   severity_score: number;
   reality_summary: string;
   status: string;
+  matched_claim?: MatchedClaim | null;
   sources: IncidentSource[];
 };
 
