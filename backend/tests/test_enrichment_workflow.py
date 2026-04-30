@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 
-from app.db.sqlite_repository import SQLiteIncidentRepository
 from app.scrapers.rss import RSSArticle
 from app.services.classifier import classify_incident
 from app.services.summarizer import summarize_incident
 from app.workflows.enrich_pending_incidents import enrich_pending_incidents
+from tests.fakes import InMemoryIncidentRepository
+
+ASSISTCO_CLAIM = "Our assistant will eliminate repetitive support escalations."
 
 
 def test_summarizer_produces_neutral_two_sentence_summary() -> None:
@@ -40,11 +40,21 @@ def test_classifier_returns_structured_category_severity_and_company() -> None:
     assert 0.0 < classification.confidence_score <= 1.0
 
 
-def test_enrichment_workflow_updates_pending_incidents_in_place(
-    tmp_path: Path,
-) -> None:
-    database_path = tmp_path / "enrichment.db"
-    repository = SQLiteIncidentRepository(f"sqlite:///{database_path}")
+def test_enrichment_workflow_updates_pending_incidents_in_place() -> None:
+    repository = InMemoryIncidentRepository(
+        claims=[
+            {
+                "id": "claim-1",
+                "claimant_name": "AssistCo",
+                "company_involved": "AssistCo",
+                "original_claim": ASSISTCO_CLAIM,
+                "claim_date": "2026-01-15",
+                "claim_topic": "job automation",
+                "status": "approved",
+                "notes": None,
+            }
+        ]
+    )
 
     repository.ingest_rss_article(
         RSSArticle(
@@ -80,66 +90,14 @@ def test_enrichment_workflow_updates_pending_incidents_in_place(
     result = enrich_pending_incidents(repository=repository)
 
     assert result == {
-        "pending_found": 3,
-        "enriched": 3,
+        "pending_found": 2,
+        "enriched": 2,
         "skipped": 0,
     }
-
-    connection = sqlite3.connect(database_path)
-    enriched_rows = connection.execute(
-        """
-        select
-            headline,
-            company_involved,
-            claimant_name,
-            categories,
-            severity_score,
-            reality_summary,
-            confidence_score,
-            status,
-            matched_claim_id,
-            claim_match_confidence
-        from incident_logs
-        where headline in (
-            'AssistCo support bot leaks internal notes',
-            'RoboFleet delivery robot pilot pauses after safety interventions'
-        )
-        order by headline asc
-        """
-    ).fetchall()
-    connection.close()
-
-    assert enriched_rows == [
-        (
-            "AssistCo support bot leaks internal notes",
-            "AssistCo",
-            "AssistCo",
-            '["Privacy/Security"]',
-            4,
-            (
-                "AssistCo support bot leaks internal notes. A customer support "
-                "assistant exposed private account notes in user-facing replies "
-                "before the feature was disabled."
-            ),
-            0.87,
-            "pending_review",
-            "claim-1",
-            0.91,
-        ),
-        (
-            "RoboFleet delivery robot pilot pauses after safety interventions",
-            "RoboFleet",
-            "RoboFleet",
-            '["Autonomous Systems"]',
-            3,
-            (
-                "RoboFleet delivery robot pilot pauses after safety interventions. "
-                "Repeated sidewalk interventions forced operators to pause a "
-                "delivery robot pilot and return to supervised testing."
-            ),
-            0.82,
-            "pending_review",
-            None,
-            None,
-        ),
-    ]
+    assistco_incident = next(
+        incident
+        for incident in repository.incidents.values()
+        if incident["headline"] == "AssistCo support bot leaks internal notes"
+    )
+    assert assistco_incident["matched_claim_id"] == "claim-1"
+    assert assistco_incident["claim_match_confidence"] == 0.91

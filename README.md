@@ -53,7 +53,7 @@ It is not yet a full launch-ready MVP. The main remaining gaps are review audit 
    UV_CACHE_DIR=../.uv-cache uv sync --all-groups
    ```
 
-The backend defaults to a local SQLite database at `backend/data/ai_reality_check.db` for the read API. If the file does not exist yet, the app bootstraps a small reviewed incident dataset automatically.
+The backend now expects a PostgreSQL `DATABASE_URL`. Point it at a local PostgreSQL database before starting the API. On first connection, the repository bootstraps the core tables and a small reviewed seed dataset if the incident tables are empty.
 
 ## Run Locally
 
@@ -112,11 +112,12 @@ cd backend
 
 ### Backend Workflows
 
-- SQLite-backed repository for local development
+- PostgreSQL-backed repository for local development
 - RSS ingestion with dedupe and `pending_review` persistence
 - enrichment and heuristic claim matching
 - resumable historical backfill with checkpoint and audit files
 - daily ingestion orchestration with retry and run metrics
+- CSV claim import with `python -m app.scripts.import_claims_csv /path/to/claims.csv --dry-run`
 
 ### Admin Review
 

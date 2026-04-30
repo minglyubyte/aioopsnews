@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from app.core.source_registry import SourceDefinition
-from app.db.sqlite_repository import SQLiteIncidentRepository
+from app.db.repository_protocol import IncidentRepository
 from app.scrapers.rss import RSSArticle
 from app.workflows.enrich_pending_incidents import enrich_pending_incidents
 
@@ -53,7 +53,7 @@ def plan_backfill_batches(
 
 def run_historical_backfill(
     *,
-    repository: SQLiteIncidentRepository,
+    repository: IncidentRepository,
     sources: list[SourceDefinition],
     start_date: date,
     end_date: date,

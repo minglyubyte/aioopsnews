@@ -10,6 +10,16 @@ from app.scrapers.rss import RSSArticle
 from app.services.claim_matcher import PUBLIC_CLAIM_MATCH_THRESHOLD
 from app.services.incident_query import IncidentQueryFilters
 
+try:
+    from psycopg.rows import dict_row
+except ModuleNotFoundError:
+    dict_row = None
+
+try:
+    from psycopg_pool import ConnectionPool
+except ModuleNotFoundError:
+    ConnectionPool = None
+
 _POSTGRES_SCHEMA = """
 create table if not exists claims (
     id text primary key,
@@ -19,8 +29,21 @@ create table if not exists claims (
     claim_date text not null,
     claim_topic text not null,
     status text not null,
+    notes text,
     created_at timestamptz default current_timestamp,
     updated_at timestamptz default current_timestamp
+);
+
+alter table claims
+    add column if not exists notes text;
+
+create table if not exists claim_sources (
+    id text primary key,
+    claim_id text not null references claims(id) on delete cascade,
+    source_url text not null,
+    source_kind text not null,
+    display_order integer not null default 0,
+    created_at timestamptz default current_timestamp
 );
 
 create table if not exists incident_logs (
@@ -53,9 +76,18 @@ create table if not exists incident_sources (
     is_primary integer not null default 0,
     created_at timestamptz default current_timestamp
 );
+
+create unique index if not exists claim_sources_claim_url_unique_idx
+    on claim_sources (claim_id, source_url);
+
+create index if not exists claim_sources_claim_id_idx
+    on claim_sources (claim_id);
+
+create index if not exists claim_sources_source_kind_idx
+    on claim_sources (source_kind);
 """
 
-_SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str]] = [
+_SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str, str | None]] = [
     (
         "claim-1",
         "AssistCo",
@@ -64,6 +96,7 @@ _SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str]] = [
         "2026-01-15",
         "job automation",
         "approved",
+        None,
     ),
     (
         "claim-2",
@@ -73,6 +106,7 @@ _SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str]] = [
         "2026-02-20",
         "autonomous operations",
         "approved",
+        None,
     ),
     (
         "claim-3",
@@ -82,6 +116,7 @@ _SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str]] = [
         "2026-03-10",
         "coding automation",
         "approved",
+        None,
     ),
 ]
 
@@ -174,7 +209,11 @@ class PostgresIncidentRepository:
             )
 
         self._database_url = database_url
+        self._pool = self._build_pool()
         self._initialize_database()
+
+    def close(self) -> None:
+        self._pool.close()
 
     def list_public_incidents(
         self,
@@ -550,7 +589,8 @@ class PostgresIncidentRepository:
                     original_claim,
                     claim_date,
                     claim_topic,
-                    status
+                    status,
+                    notes
                 from claims
                 where status in ('seeded', 'approved')
                 order by claim_date desc, id asc
@@ -566,6 +606,7 @@ class PostgresIncidentRepository:
                 claim_date=row["claim_date"],
                 claim_topic=row["claim_topic"],
                 status=row["status"],
+                notes=row["notes"],
             )
             for row in claim_rows
         ]
@@ -719,6 +760,97 @@ class PostgresIncidentRepository:
             "sources": sources_by_incident[row["id"]],
         }
 
+    def upsert_claim_import_row(
+        self,
+        *,
+        claim_id: str,
+        claimant_name: str,
+        company_involved: str,
+        original_claim: str,
+        claim_date: str,
+        claim_topic: str,
+        status: str,
+        notes: str | None,
+        primary_source_links: list[str],
+        secondary_source_links: list[str],
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                insert into claims (
+                    id,
+                    claimant_name,
+                    company_involved,
+                    original_claim,
+                    claim_date,
+                    claim_topic,
+                    status,
+                    notes
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (id) do update
+                set
+                    claimant_name = excluded.claimant_name,
+                    company_involved = excluded.company_involved,
+                    original_claim = excluded.original_claim,
+                    claim_date = excluded.claim_date,
+                    claim_topic = excluded.claim_topic,
+                    status = excluded.status,
+                    notes = excluded.notes,
+                    updated_at = current_timestamp
+                """,
+                (
+                    claim_id,
+                    claimant_name,
+                    company_involved,
+                    original_claim,
+                    claim_date,
+                    claim_topic,
+                    status,
+                    notes,
+                ),
+            )
+            connection.execute(
+                "delete from claim_sources where claim_id = %s",
+                (claim_id,),
+            )
+
+            source_rows: list[tuple[str, str, str, str, int]] = []
+            for display_order, source_url in enumerate(primary_source_links):
+                source_rows.append(
+                    (
+                        f"claim-source-{uuid4()}",
+                        claim_id,
+                        source_url,
+                        "primary",
+                        display_order,
+                    )
+                )
+            for display_order, source_url in enumerate(secondary_source_links):
+                source_rows.append(
+                    (
+                        f"claim-source-{uuid4()}",
+                        claim_id,
+                        source_url,
+                        "secondary",
+                        display_order,
+                    )
+                )
+
+            self._execute_many(
+                connection,
+                """
+                insert into claim_sources (
+                    id,
+                    claim_id,
+                    source_url,
+                    source_kind,
+                    display_order
+                ) values (%s, %s, %s, %s, %s)
+                """,
+                source_rows,
+            )
+            connection.commit()
+
     def _group_sources_by_incident(
         self,
         source_rows: list[dict[str, Any]],
@@ -757,15 +889,19 @@ class PostgresIncidentRepository:
         }
 
     def _connect(self):
-        try:
-            from psycopg import connect
-            from psycopg.rows import dict_row
-        except ModuleNotFoundError as exc:
-            raise ModuleNotFoundError(
-                "psycopg is required for PostgreSQL DATABASE_URL values."
-            ) from exc
+        return self._pool.connection()
 
-        return connect(self._database_url, row_factory=dict_row)
+    def _build_pool(self):
+        if ConnectionPool is None or dict_row is None:
+            raise ModuleNotFoundError(
+                "psycopg and psycopg_pool are required for "
+                "PostgreSQL DATABASE_URL values."
+            )
+
+        return ConnectionPool(
+            self._database_url,
+            kwargs={"row_factory": dict_row},
+        )
 
     def _initialize_database(self) -> None:
         with self._connect() as connection:
@@ -787,8 +923,9 @@ class PostgresIncidentRepository:
                     original_claim,
                     claim_date,
                     claim_topic,
-                    status
-                ) values (%s, %s, %s, %s, %s, %s, %s)
+                    status,
+                    notes
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 _SEED_CLAIMS,
             )

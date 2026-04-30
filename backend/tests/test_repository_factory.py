@@ -1,18 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import app.db.repository_factory as repository_factory
 from app.db.repository_factory import build_incident_repository
-from app.db.sqlite_repository import SQLiteIncidentRepository
-
-
-def test_build_incident_repository_uses_sqlite_for_sqlite_urls(
-    tmp_path: Path,
-) -> None:
-    repository = build_incident_repository(f"sqlite:///{tmp_path / 'sqlite.db'}")
-
-    assert isinstance(repository, SQLiteIncidentRepository)
 
 
 def test_build_incident_repository_uses_postgres_for_postgresql_urls(
@@ -43,3 +32,12 @@ def test_build_incident_repository_rejects_unknown_schemes() -> None:
         assert "Unsupported DATABASE_URL scheme" in str(exc)
     else:
         raise AssertionError("Expected unknown schemes to raise ValueError")
+
+
+def test_build_incident_repository_rejects_sqlite_urls() -> None:
+    try:
+        build_incident_repository("sqlite:///./data/ai_reality_check.db")
+    except ValueError as exc:
+        assert "Expected postgresql://" in str(exc)
+    else:
+        raise AssertionError("Expected sqlite URLs to raise ValueError")

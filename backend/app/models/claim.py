@@ -16,5 +16,6 @@ class ClaimRecord(BaseModel):
     claim_date: date
     claim_topic: str
     status: ClaimStatus = "seeded"
+    notes: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

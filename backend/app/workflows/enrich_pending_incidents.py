@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.db.sqlite_repository import SQLiteIncidentRepository
+from app.db.repository_protocol import IncidentRepository
 from app.services.claim_matcher import match_incident_to_claim
 from app.services.classifier import classify_incident
 from app.services.summarizer import summarize_incident
@@ -10,7 +10,7 @@ from app.services.summarizer import summarize_incident
 
 def enrich_pending_incidents(
     *,
-    repository: SQLiteIncidentRepository,
+    repository: IncidentRepository,
 ) -> dict[str, int]:
     pending_incidents = repository.list_pending_incidents()
     claims = repository.list_claims()

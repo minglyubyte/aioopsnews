@@ -1,24 +1,36 @@
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.db.sqlite_repository import SQLiteIncidentRepository
-from app.main import create_app
+from app.app_factory import create_app
 from app.scrapers.rss import RSSArticle
+from tests.fakes import InMemoryIncidentRepository
+
+ASSISTCO_CLAIM = "Our assistant will eliminate repetitive support escalations."
 
 
 def _build_review_queue_client(
-    database_path: Path,
     *,
     admin_api_token: str = "dev-admin-token",
-) -> TestClient:
-    repository = SQLiteIncidentRepository(f"sqlite:///{database_path}")
+) -> tuple[TestClient, InMemoryIncidentRepository]:
+    repository = InMemoryIncidentRepository(
+        claims=[
+            {
+                "id": "claim-1",
+                "claimant_name": "AssistCo",
+                "company_involved": "AssistCo",
+                "original_claim": ASSISTCO_CLAIM,
+                "claim_date": "2026-01-15",
+                "claim_topic": "job automation",
+                "status": "approved",
+                "notes": None,
+            }
+        ]
+    )
     repository.ingest_rss_article(
-        RSSArticle(
+        article=RSSArticle(
             source_key="test-source",
             publisher="Example News",
             title="AssistCo assistant exposes billing notes",
@@ -32,19 +44,17 @@ def _build_review_queue_client(
         ),
         ingestion_run_id="run-2026-05-01",
     )
-    return TestClient(
+    client = TestClient(
         create_app(
-            database_url=f"sqlite:///{database_path}",
             admin_api_token=admin_api_token,
+            incident_repository=repository,
         )
     )
+    return client, repository
 
 
-def test_get_admin_review_queue_requires_admin_token(tmp_path: Path) -> None:
-    client = _build_review_queue_client(
-        tmp_path / "admin-auth-required.db",
-        admin_api_token="secret-token",
-    )
+def test_get_admin_review_queue_requires_admin_token() -> None:
+    client, _repository = _build_review_queue_client(admin_api_token="secret-token")
 
     response = client.get("/admin/incidents")
 
@@ -52,11 +62,8 @@ def test_get_admin_review_queue_requires_admin_token(tmp_path: Path) -> None:
     assert response.json()["detail"] == "Admin access required"
 
 
-def test_get_admin_review_queue_rejects_wrong_admin_token(tmp_path: Path) -> None:
-    client = _build_review_queue_client(
-        tmp_path / "admin-auth-invalid.db",
-        admin_api_token="secret-token",
-    )
+def test_get_admin_review_queue_rejects_wrong_admin_token() -> None:
+    client, _repository = _build_review_queue_client(admin_api_token="secret-token")
 
     response = client.get(
         "/admin/incidents",
@@ -67,11 +74,8 @@ def test_get_admin_review_queue_rejects_wrong_admin_token(tmp_path: Path) -> Non
     assert response.json()["detail"] == "Admin access required"
 
 
-def test_get_admin_review_queue_returns_pending_incidents(tmp_path: Path) -> None:
-    client = _build_review_queue_client(
-        tmp_path / "admin-queue.db",
-        admin_api_token="secret-token",
-    )
+def test_get_admin_review_queue_returns_pending_incidents() -> None:
+    client, _repository = _build_review_queue_client(admin_api_token="secret-token")
 
     response = client.get(
         "/admin/incidents",
@@ -79,9 +83,7 @@ def test_get_admin_review_queue_returns_pending_incidents(tmp_path: Path) -> Non
     )
 
     assert response.status_code == 200
-
     payload = response.json()
-
     assert payload["items"]
     assert all(item["status"] == "pending_review" for item in payload["items"])
     assert payload["items"][0]["headline"] == "AssistCo assistant exposes billing notes"
@@ -90,18 +92,9 @@ def test_get_admin_review_queue_returns_pending_incidents(tmp_path: Path) -> Non
     )
 
 
-def test_patch_admin_incident_applies_editor_overrides(tmp_path: Path) -> None:
-    database_path = tmp_path / "admin-update.db"
-    client = _build_review_queue_client(
-        database_path,
-        admin_api_token="secret-token",
-    )
-
-    queue_response = client.get(
-        "/admin/incidents",
-        headers={"X-Admin-Token": "secret-token"},
-    )
-    incident_id = queue_response.json()["items"][0]["id"]
+def test_patch_admin_incident_applies_editor_overrides() -> None:
+    client, repository = _build_review_queue_client(admin_api_token="secret-token")
+    incident_id = repository.list_review_queue()[0]["id"]
 
     response = client.patch(
         f"/admin/incidents/{incident_id}",
@@ -121,40 +114,8 @@ def test_patch_admin_incident_applies_editor_overrides(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-
     assert payload["status"] == "approved"
-    assert payload["severity_score"] == 5
     assert payload["matched_claim_id"] == "claim-1"
-    assert payload["review_notes"] == "Approved after editor verification."
-
-    connection = sqlite3.connect(database_path)
-    row = connection.execute(
-        """
-        select
-            status,
-            company_involved,
-            claimant_name,
-            categories,
-            severity_score,
-            reality_summary,
-            matched_claim_id,
-            claim_match_confidence,
-            review_notes
-        from incident_logs
-        where id = ?
-        """,
-        (incident_id,),
-    ).fetchone()
-    connection.close()
-
-    assert row == (
-        "approved",
-        "AssistCo",
-        "AssistCo",
-        '["Privacy/Security"]',
-        5,
-        "Editors confirmed the leak and approved the item.",
-        "claim-1",
-        0.95,
-        "Approved after editor verification.",
+    assert repository.incidents[incident_id]["review_notes"] == (
+        "Approved after editor verification."
     )

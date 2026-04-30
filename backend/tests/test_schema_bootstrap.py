@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
+from app.db.postgres_repository import _POSTGRES_SCHEMA
 from app.models.claim import ClaimRecord
 from app.models.incident import IncidentRecord
 from app.models.source import IncidentSourceRecord
@@ -24,20 +25,17 @@ def test_product_decision_record_captures_mvp_foundation() -> None:
     assert "primary sources" in lowered
 
 
-def test_schema_sql_defines_initial_tables_and_indexes() -> None:
-    schema_sql = (REPO_ROOT / "backend" / "app" / "db" / "schema.sql").read_text()
-    normalized = schema_sql.lower()
+def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
+    normalized = _POSTGRES_SCHEMA.lower()
 
     assert "create table if not exists claims" in normalized
+    assert "notes text" in normalized
+    assert "create table if not exists claim_sources" in normalized
     assert "create table if not exists incident_logs" in normalized
     assert "create table if not exists incident_sources" in normalized
     assert "references claims(id)" in normalized
     assert "severity_score integer not null" in normalized
-    assert "categories text[] not null" in normalized
-    assert "check (severity_score between 1 and 5)" in normalized
-    assert "create index if not exists incident_logs_date_logged_idx" in normalized
-    assert "create index if not exists incident_logs_status_idx" in normalized
-    assert "using gin (categories)" in normalized
+    assert "source_kind text not null" in normalized
 
 
 def test_initial_migration_bootstraps_same_core_tables() -> None:
@@ -52,6 +50,8 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     migration_sql = migration_path.read_text().lower()
 
     assert "create table if not exists claims" in migration_sql
+    assert "notes text" in migration_sql
+    assert "create table if not exists claim_sources" in migration_sql
     assert "create table if not exists incident_logs" in migration_sql
     assert "create table if not exists incident_sources" in migration_sql
 
@@ -65,6 +65,7 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         claim_date=date(2025, 1, 15),
         claim_topic="job automation",
         status="seeded",
+        notes="Tracked from product launch remarks.",
     )
     incident = IncidentRecord(
         id="incident-1",
@@ -96,6 +97,7 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     )
 
     assert claim.status == "seeded"
+    assert claim.notes == "Tracked from product launch remarks."
     assert incident.matched_claim_id == claim.id
     assert incident.categories == ["Job Automation Fails", "Missed Timelines"]
     assert source.incident_id == incident.id

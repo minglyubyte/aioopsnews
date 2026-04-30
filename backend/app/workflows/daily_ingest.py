@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.core.source_registry import SourceDefinition
-from app.db.sqlite_repository import SQLiteIncidentRepository
+from app.db.repository_protocol import IncidentRepository
 from app.scrapers.rss import RSSArticle, parse_rss_feed
 from app.workflows.enrich_pending_incidents import enrich_pending_incidents
 
 
 def ingest_rss_feed(
     *,
-    repository: SQLiteIncidentRepository,
+    repository: IncidentRepository,
     source: SourceDefinition,
     rss_xml: str,
     ingestion_run_id: str,
@@ -38,7 +38,7 @@ def ingest_rss_feed(
 
 def run_daily_ingestion(
     *,
-    repository: SQLiteIncidentRepository,
+    repository: IncidentRepository,
     sources: list[SourceDefinition],
     fetch_articles: Callable[[str], list[RSSArticle]],
     ingestion_run_id: str,

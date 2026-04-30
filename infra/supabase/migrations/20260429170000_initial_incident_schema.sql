@@ -8,8 +8,19 @@ create table if not exists claims (
     claim_date date not null,
     claim_topic text not null,
     status text not null default 'seeded',
+    notes text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
+);
+
+create table if not exists claim_sources (
+    id uuid primary key default gen_random_uuid(),
+    claim_id uuid not null references claims(id) on delete cascade,
+    source_url text not null,
+    source_kind text not null,
+    display_order integer not null default 0,
+    created_at timestamptz not null default now(),
+    unique (claim_id, source_url)
 );
 
 create table if not exists incident_logs (
@@ -73,3 +84,9 @@ create index if not exists claims_company_involved_idx
 
 create index if not exists claims_claim_date_idx
     on claims (claim_date desc);
+
+create index if not exists claim_sources_claim_id_idx
+    on claim_sources (claim_id);
+
+create index if not exists claim_sources_source_kind_idx
+    on claim_sources (source_kind);

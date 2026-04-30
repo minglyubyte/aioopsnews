@@ -7,7 +7,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Settings:
-    database_url: str = "sqlite:///./data/ai_reality_check.db"
+    database_url: str
     admin_api_token: str = "dev-admin-token"
 
 
@@ -31,11 +31,12 @@ def _load_dotenv_defaults() -> None:
 def get_settings() -> Settings:
     _load_dotenv_defaults()
 
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise ValueError("DATABASE_URL is required and must point to PostgreSQL")
+
     return Settings(
-        database_url=os.getenv(
-            "DATABASE_URL",
-            "sqlite:///./data/ai_reality_check.db",
-        ),
+        database_url=database_url,
         admin_api_token=os.getenv(
             "ADMIN_API_TOKEN",
             "dev-admin-token",
