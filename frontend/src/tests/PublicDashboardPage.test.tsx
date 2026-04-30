@@ -85,7 +85,7 @@ describe("PublicDashboardPage", () => {
       headline: "AssistCo assistant exposes private billing notes",
       headline_en: "AssistCo assistant exposes private billing notes",
       headline_zh: "AssistCo 助手泄露了私密账单备注",
-      date_logged: "2026-04-29",
+      date_logged: "2026-12-29",
       company_involved: "AssistCo",
       categories: ["Privacy/Security"],
       severity_score: 4,
@@ -129,7 +129,16 @@ describe("PublicDashboardPage", () => {
       reality_summary_en:
         "An urban robot pilot paused after repeated routing mistakes.",
       reality_summary_zh: "城市机器人试点在多次路线错误后被暂停。",
-      date_logged: "2026-03-15",
+      date_logged: "2026-10-15",
+      matched_claim: {
+        id: "claim-2",
+        claimant_name: "RoboFleet",
+        company_involved: "RoboFleet",
+        original_claim: "The pilot can already handle dense downtown routing.",
+        claim_date: "2026-10-01",
+        claim_topic: "autonomy",
+        match_confidence: 0.82,
+      },
       sources: [
         {
           id: "source-robot",
@@ -161,6 +170,9 @@ describe("PublicDashboardPage", () => {
     expect(
       await screen.findByRole("heading", { name: "Incident spotlight" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Editor queue" }),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.getByRole("group", { name: "Reader language switch" }),
@@ -172,8 +184,13 @@ describe("PublicDashboardPage", () => {
 
     expect(screen.getByText("2 incidents in current feed")).toBeInTheDocument();
     const monthlySignal = screen.getByLabelText("Monthly incident signal");
-    expect(within(monthlySignal).getByText("Apr 2026")).toBeInTheDocument();
-    expect(within(monthlySignal).getByText("Mar 2026")).toBeInTheDocument();
+    const monthlyItems = within(monthlySignal).getAllByRole("listitem");
+    expect(
+      within(monthlyItems[0] as HTMLElement).getByText("Dec 2026"),
+    ).toBeInTheDocument();
+    expect(
+      within(monthlyItems[1] as HTMLElement).getByText("Oct 2026"),
+    ).toBeInTheDocument();
     expect(within(monthlySignal).getAllByText("1 incident")).toHaveLength(2);
 
     const categorySignal = screen.getByLabelText(
@@ -198,6 +215,16 @@ describe("PublicDashboardPage", () => {
       }),
     ).toBeInTheDocument();
 
+    const archiveControls = screen.getByRole("region", {
+      name: "Archive controls",
+    });
+    expect(
+      within(archiveControls).getByLabelText("Filter by category"),
+    ).toBeInTheDocument();
+    expect(
+      within(archiveControls).getByLabelText("Filter by company"),
+    ).toBeInTheDocument();
+
     const archive = screen.getByRole("region", { name: "Incident archive" });
     expect(
       within(archive).getByText(
@@ -206,6 +233,12 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
     expect(within(archive).getByText("Severity 3")).toBeInTheDocument();
     expect(within(archive).getByText("Autonomous Systems")).toBeInTheDocument();
+    expect(within(archive).getAllByText("Claim vs. reality")).toHaveLength(2);
+    expect(
+      within(archive).getByText(
+        "The pilot can already handle dense downtown routing.",
+      ),
+    ).toBeInTheDocument();
 
     await waitFor(() => {
       expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-1");
@@ -294,5 +327,75 @@ describe("PublicDashboardPage", () => {
       ),
     ).toBeInTheDocument();
     expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
+  });
+
+  it("shows a public feed failure without exposing editor controls", async () => {
+    mockedFetchIncidentFeed.mockRejectedValue(new Error("feed failed"));
+    mockedFetchIncidentDetail.mockImplementation(async () => {
+      throw new Error("detail should not load");
+    });
+
+    render(<PublicDashboardPage />);
+
+    expect(
+      await screen.findByText("Unable to load the incident feed right now."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Editor queue" }),
+    ).not.toBeInTheDocument();
+    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
+  });
+
+  it("shows a localized detail failure and lets readers retry the same incident", async () => {
+    const incident = buildIncident({
+      id: "incident-3",
+      headline: "Warehouse classifier reroutes medical inventory",
+      headline_en: "Warehouse classifier reroutes medical inventory",
+      date_logged: "2026-11-05",
+      company_involved: "SortGrid",
+      categories: ["Operations"],
+      severity_score: 5,
+      reality_summary:
+        "A warehouse classifier repeatedly misrouted urgent medical stock.",
+      reality_summary_en:
+        "A warehouse classifier repeatedly misrouted urgent medical stock.",
+    });
+
+    mockedFetchIncidentFeed.mockResolvedValue({ items: [incident] });
+    mockedFetchIncidentDetail
+      .mockRejectedValueOnce(new Error("detail failed"))
+      .mockResolvedValueOnce(incident);
+
+    render(<PublicDashboardPage />);
+
+    await waitFor(() => {
+      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-3");
+    });
+
+    expect(
+      await screen.findByText("Unable to load incident details right now."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Open source-backed detail for Warehouse classifier reroutes medical inventory/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockedFetchIncidentDetail).toHaveBeenCalledTimes(2);
+    });
+    const detail = screen
+      .getByRole("heading", { name: "Incident detail" })
+      .closest("section");
+    expect(detail).not.toBeNull();
+    expect(
+      screen.queryByText("Unable to load incident details right now."),
+    ).not.toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByRole("heading", {
+        name: "Warehouse classifier reroutes medical inventory",
+      }),
+    ).toBeInTheDocument();
   });
 });

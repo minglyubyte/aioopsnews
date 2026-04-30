@@ -44,6 +44,7 @@ export default function PublicDashboardPage() {
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
     null,
   );
+  const [detailRequestNonce, setDetailRequestNonce] = useState(0);
   const [incidentDetail, setIncidentDetail] = useState<Incident | null>(null);
   const [isFiltersLoading, setIsFiltersLoading] = useState(true);
   const [isFeedLoading, setIsFeedLoading] = useState(true);
@@ -180,7 +181,7 @@ export default function PublicDashboardPage() {
     return () => {
       isCancelled = true;
     };
-  }, [selectedIncidentId]);
+  }, [detailRequestNonce, selectedIncidentId]);
 
   function updateFilter<K extends keyof IncidentFeedFilters>(
     key: K,
@@ -211,6 +212,17 @@ export default function PublicDashboardPage() {
         month,
         page: 1,
       };
+    });
+  }
+
+  function showIncidentDetail(incidentId: string) {
+    setSelectedIncidentId((currentSelectedIncidentId) => {
+      if (currentSelectedIncidentId === incidentId) {
+        setDetailRequestNonce((currentNonce) => currentNonce + 1);
+        return currentSelectedIncidentId;
+      }
+
+      return incidentId;
     });
   }
 
@@ -253,6 +265,126 @@ export default function PublicDashboardPage() {
           the reporting behind each entry.
         </p>
 
+        {isFiltersLoading ? (
+          <p className="body-copy public-status">Loading filters...</p>
+        ) : null}
+        {filtersError ? (
+          <p className="public-error" role="status">
+            {filtersError}
+          </p>
+        ) : null}
+      </section>
+
+      <section
+        className="feed-card public-section public-signals"
+        aria-live="polite"
+      >
+        <div className="section-header">
+          <p className="section-kicker">Signals</p>
+          <h2>Incident signals</h2>
+        </div>
+        <div className="public-signals-grid">
+          <article className="public-signal-card">
+            <p className="public-signal-kicker">Current feed size</p>
+            <h3>{`${incidents.length} incident${incidents.length === 1 ? "" : "s"} in current feed`}</h3>
+            {monthlySignals.length > 0 ? (
+              <ol
+                className="public-signal-list"
+                aria-label="Monthly incident signal"
+              >
+                {monthlySignals.map((signal) => (
+                  <li className="public-signal-row" key={signal.monthKey}>
+                    <span>{signal.label}</span>
+                    <span>
+                      {signal.count} incident{signal.count === 1 ? "" : "s"}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="body-copy">
+                Incident counts will appear here once the current slice has
+                data.
+              </p>
+            )}
+          </article>
+
+          <article className="public-signal-card">
+            <p className="public-signal-kicker">Category distribution</p>
+            <h3>What the current feed is surfacing</h3>
+            {categorySignals.length > 0 ? (
+              <ul
+                className="public-signal-list"
+                aria-label="Category distribution summary"
+              >
+                {categorySignals.map((signal) => (
+                  <li className="public-signal-row" key={signal.category}>
+                    <span>{signal.category}</span>
+                    <span>{`${signal.share}% of current feed`}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="body-copy">
+                Category distribution will appear once incidents are available.
+              </p>
+            )}
+          </article>
+        </div>
+      </section>
+
+      <section className="feed-card public-section" aria-live="polite">
+        <div className="section-header">
+          <p className="section-kicker">Spotlight</p>
+          <h2>Incident spotlight</h2>
+        </div>
+        {isFeedLoading ? <p>Loading incident feed...</p> : null}
+        {feedError ? <p>{feedError}</p> : null}
+        {!isFeedLoading && !feedError && featuredIncident ? (
+          <article className="public-incident-card public-spotlight-card">
+            <div className="incident-meta">
+              <span>{featuredIncident.company_involved}</span>
+              <span>Severity {featuredIncident.severity_score}</span>
+              <span>{formatDate(featuredIncident.date_logged)}</span>
+            </div>
+            <h3>{localizedHeadline(featuredIncident, readerLocale)}</h3>
+            <p className="body-copy">
+              {localizedSummary(featuredIncident, readerLocale)}
+            </p>
+            <div className="tag-row">
+              {featuredIncident.categories.map((category) => (
+                <span className="tag" key={category}>
+                  {category}
+                </span>
+              ))}
+            </div>
+            <button
+              className="secondary-action public-detail-button"
+              type="button"
+              onClick={() => showIncidentDetail(featuredIncident.id)}
+            >
+              Open source-backed detail for{" "}
+              {localizedHeadline(featuredIncident, readerLocale)}
+            </button>
+          </article>
+        ) : null}
+        {!isFeedLoading && !feedError && !featuredIncident ? (
+          <p className="body-copy">No incidents match this slice yet.</p>
+        ) : null}
+      </section>
+
+      <section
+        aria-label="Archive controls"
+        className="feed-card public-section"
+        role="region"
+      >
+        <div className="section-header">
+          <p className="section-kicker">Archive controls</p>
+          <h2>Archive controls</h2>
+        </div>
+        <p className="body-copy">
+          Narrow the public archive by category, company, and timeframe.
+        </p>
         <div className="public-filter-grid">
           <label className="field">
             <span>Filter by category</span>
@@ -331,116 +463,9 @@ export default function PublicDashboardPage() {
             </select>
           </label>
         </div>
-
-        {isFiltersLoading ? (
-          <p className="body-copy public-status">Loading filters...</p>
-        ) : null}
-        {filtersError ? (
-          <p className="public-error" role="status">
-            {filtersError}
-          </p>
-        ) : null}
-      </section>
-
-      <section
-        className="feed-card public-section public-signals"
-        aria-live="polite"
-      >
-        <div className="section-header">
-          <p className="section-kicker">Signals</p>
-          <h2>Incident signals</h2>
-        </div>
-        <div className="public-signals-grid">
-          <article className="public-signal-card">
-            <p className="public-signal-kicker">Current feed size</p>
-            <h3>{`${incidents.length} incident${incidents.length === 1 ? "" : "s"} in current feed`}</h3>
-            {monthlySignals.length > 0 ? (
-              <ol
-                className="public-signal-list"
-                aria-label="Monthly incident signal"
-              >
-                {monthlySignals.map((signal) => (
-                  <li className="public-signal-row" key={signal.monthKey}>
-                    <span>{signal.label}</span>
-                    <span>
-                      {signal.count} incident{signal.count === 1 ? "" : "s"}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="body-copy">
-                Incident counts will appear here once the current slice has
-                data.
-              </p>
-            )}
-          </article>
-
-          <article className="public-signal-card">
-            <p className="public-signal-kicker">Category distribution</p>
-            <h3>What the current feed is surfacing</h3>
-            {categorySignals.length > 0 ? (
-              <ul
-                className="public-signal-list"
-                aria-label="Category distribution summary"
-              >
-                {categorySignals.map((signal) => (
-                  <li className="public-signal-row" key={signal.category}>
-                    <span>{signal.category}</span>
-                    <span>{`${signal.share}% of current feed`}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="body-copy">
-                Category distribution will appear once incidents are available.
-              </p>
-            )}
-          </article>
-        </div>
       </section>
 
       <div className="public-dashboard-grid">
-        <section className="feed-card public-section" aria-live="polite">
-          <div className="section-header">
-            <p className="section-kicker">Spotlight</p>
-            <h2>Incident spotlight</h2>
-          </div>
-          {isFeedLoading ? <p>Loading incident feed...</p> : null}
-          {feedError ? <p>{feedError}</p> : null}
-          {!isFeedLoading && !feedError && featuredIncident ? (
-            <article className="public-incident-card public-spotlight-card">
-              <div className="incident-meta">
-                <span>{featuredIncident.company_involved}</span>
-                <span>Severity {featuredIncident.severity_score}</span>
-                <span>{formatDate(featuredIncident.date_logged)}</span>
-              </div>
-              <h3>{localizedHeadline(featuredIncident, readerLocale)}</h3>
-              <p className="body-copy">
-                {localizedSummary(featuredIncident, readerLocale)}
-              </p>
-              <div className="tag-row">
-                {featuredIncident.categories.map((category) => (
-                  <span className="tag" key={category}>
-                    {category}
-                  </span>
-                ))}
-              </div>
-              <button
-                className="secondary-action public-detail-button"
-                type="button"
-                onClick={() => setSelectedIncidentId(featuredIncident.id)}
-              >
-                Open source-backed detail for{" "}
-                {localizedHeadline(featuredIncident, readerLocale)}
-              </button>
-            </article>
-          ) : null}
-          {!isFeedLoading && !feedError && !featuredIncident ? (
-            <p className="body-copy">No incidents match this slice yet.</p>
-          ) : null}
-        </section>
-
         <section
           aria-label="Incident archive"
           className="feed-card public-section"
@@ -470,6 +495,17 @@ export default function PublicDashboardPage() {
                     <p className="body-copy public-archive-summary">
                       {buildSnippet(localizedSummary(incident, readerLocale))}
                     </p>
+                    {incident.matched_claim ? (
+                      <section
+                        className="public-claim-block"
+                        aria-label="Claim vs. reality"
+                      >
+                        <p className="public-claim-kicker">Claim vs. reality</p>
+                        <p className="public-claim-quote">
+                          {incident.matched_claim.original_claim}
+                        </p>
+                      </section>
+                    ) : null}
                     <div className="tag-row">
                       {incident.categories.map((category) => (
                         <span className="tag" key={category}>
@@ -481,7 +517,7 @@ export default function PublicDashboardPage() {
                       aria-pressed={isSelected}
                       className="secondary-action public-detail-button"
                       type="button"
-                      onClick={() => setSelectedIncidentId(incident.id)}
+                      onClick={() => showIncidentDetail(incident.id)}
                     >
                       Open incident detail for{" "}
                       {localizedHeadline(incident, readerLocale)}
@@ -608,7 +644,7 @@ function buildMonthlySignals(incidents: Incident[]): MonthlySignal[] {
 
   for (const incident of incidents) {
     const date = new Date(`${incident.date_logged}T00:00:00Z`);
-    const monthKey = `${date.getUTCFullYear()}-${date.getUTCMonth() + 1}`;
+    const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
     counts.set(monthKey, (counts.get(monthKey) ?? 0) + 1);
   }
 
