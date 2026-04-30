@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from app.db.repository_protocol import IncidentRepository
+from app.services.incident_deduplication import (
+    IncidentDuplicateJudgeClient,
+    IncidentEmbeddingClient,
+)
 from app.services.incident_import import (
     IncidentImportValidationError,
     import_incidents_csv_text,
@@ -29,8 +33,12 @@ def run_incident_csv_workflow(
     batch_client: IncidentBatchReviewClient,
     escalation_client: IncidentEscalationReviewClient,
     translation_client: IncidentTranslationClient,
+    embedding_client: IncidentEmbeddingClient,
+    duplicate_judge_client: IncidentDuplicateJudgeClient,
     primary_model: str,
     escalation_model: str,
+    embedding_model: str = "text-embedding-3-small",
+    duplicate_judge_model: str | None = None,
     dry_run: bool = False,
     submit_new_batches: bool = True,
     reconcile_ready_batches: bool = True,
@@ -140,6 +148,10 @@ def run_incident_csv_workflow(
                 batch_client=batch_client,
                 escalation_client=escalation_client,
                 translation_client=translation_client,
+                embedding_client=embedding_client,
+                duplicate_judge_client=duplicate_judge_client,
+                embedding_model=embedding_model,
+                duplicate_judge_model=duplicate_judge_model or escalation_model,
                 escalation_model=escalation_model,
             )
             summary["batches_reconciled"] += 1

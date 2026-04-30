@@ -23,6 +23,16 @@ class IncidentRepository(Protocol):
 
     def list_incidents_pending_llm_review(self) -> list[dict[str, Any]]: ...
 
+    def get_incident(self, incident_id: str) -> dict[str, Any] | None: ...
+
+    def list_duplicate_search_pool(
+        self,
+        *,
+        incident_id: str,
+        date_logged: str,
+        date_window_days: int,
+    ) -> list[dict[str, Any]]: ...
+
     def ingest_rss_article(
         self,
         article: RSSArticle,
@@ -113,6 +123,31 @@ class IncidentRepository(Protocol):
         evidence_text: str | None,
         fetch_error: str | None,
         fetched_at: str,
+    ) -> None: ...
+
+    def update_incident_embedding(
+        self,
+        *,
+        incident_id: str,
+        embedding_model: str,
+        embedding_vector: list[float],
+    ) -> None: ...
+
+    def replace_duplicate_candidates(
+        self,
+        *,
+        incident_id: str,
+        candidates: list[dict[str, Any]],
+    ) -> None: ...
+
+    def merge_duplicate_incident(
+        self,
+        *,
+        duplicate_incident_id: str,
+        canonical_incident_id: str,
+        duplicate_status: str,
+        reasoning: str,
+        confidence: float,
     ) -> None: ...
 
     def mark_incidents_review_batch(

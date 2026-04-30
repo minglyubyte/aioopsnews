@@ -37,6 +37,7 @@ def create_app(
         openai_api_key=settings.openai_api_key,
         openai_primary_review_model=settings.openai_primary_review_model,
         openai_escalation_review_model=settings.openai_escalation_review_model,
+        openai_embedding_model=settings.openai_embedding_model,
         deepseek_api_key=settings.deepseek_api_key,
         deepseek_translation_model=settings.deepseek_translation_model,
     )

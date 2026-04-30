@@ -77,6 +77,11 @@ create table if not exists incident_logs (
     translation_status text,
     review_batch_id text,
     review_model text,
+    duplicate_status text,
+    duplicate_of_incident_id text references incident_logs(id),
+    canonical_incident_id text references incident_logs(id),
+    embedding_model text,
+    embedding_vector text,
     reviewed_at timestamptz,
     translated_at timestamptz,
     created_at timestamptz default current_timestamp,
@@ -132,6 +137,21 @@ alter table incident_logs
     add column if not exists review_model text;
 
 alter table incident_logs
+    add column if not exists duplicate_status text;
+
+alter table incident_logs
+    add column if not exists duplicate_of_incident_id text references incident_logs(id);
+
+alter table incident_logs
+    add column if not exists canonical_incident_id text references incident_logs(id);
+
+alter table incident_logs
+    add column if not exists embedding_model text;
+
+alter table incident_logs
+    add column if not exists embedding_vector text;
+
+alter table incident_logs
     add column if not exists reviewed_at timestamptz;
 
 alter table incident_logs
@@ -173,6 +193,18 @@ alter table incident_sources
 alter table incident_sources
     add column if not exists fetched_at timestamptz;
 
+create table if not exists incident_duplicate_candidates (
+    id text primary key,
+    incident_id text not null references incident_logs(id) on delete cascade,
+    candidate_incident_id text not null references incident_logs(id) on delete cascade,
+    embedding_score double precision not null,
+    llm_verdict text not null,
+    confidence double precision not null,
+    reasoning text,
+    status text not null,
+    created_at timestamptz default current_timestamp
+);
+
 create unique index if not exists claim_sources_claim_url_unique_idx
     on claim_sources (claim_id, source_url);
 
@@ -185,6 +217,9 @@ create index if not exists claim_sources_source_kind_idx
 create unique index if not exists incident_logs_external_id_unique_idx
     on incident_logs (external_id)
     where external_id is not null;
+
+create unique index if not exists incident_duplicate_candidates_unique_idx
+    on incident_duplicate_candidates (incident_id, candidate_incident_id);
 """
 
 _SEED_CLAIMS: list[tuple[str, str, str, str, str, str, str, str | None]] = [
@@ -501,12 +536,15 @@ class PostgresIncidentRepository:
                     source_validation_summary,
                     translation_status,
                     review_batch_id,
-                    review_model
+                    review_model,
+                    duplicate_status,
+                    duplicate_of_incident_id,
+                    canonical_incident_id
                 from incident_logs
-                where status = %s
+                where status in (%s, %s)
                 order by date_logged desc, id asc
                 """,
-                ("pending_review",),
+                ("pending_review", "pending_duplicate_review"),
             ).fetchall()
 
             source_rows = connection.execute(
@@ -552,6 +590,10 @@ class PostgresIncidentRepository:
                 "translation_status": row["translation_status"],
                 "review_batch_id": row["review_batch_id"],
                 "review_model": row["review_model"],
+                "duplicate_status": row["duplicate_status"],
+                "duplicate_of_incident_id": row["duplicate_of_incident_id"],
+                "canonical_incident_id": row["canonical_incident_id"],
+                "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
                 "sources": sources_by_incident[row["id"]],
             }
             for row in incident_rows
@@ -583,6 +625,11 @@ class PostgresIncidentRepository:
                     import_notes,
                     review_batch_id,
                     review_model,
+                    duplicate_status,
+                    duplicate_of_incident_id,
+                    canonical_incident_id,
+                    embedding_model,
+                    embedding_vector,
                     translation_status
                 from incident_logs
                 where status = %s
@@ -634,6 +681,235 @@ class PostgresIncidentRepository:
                 "review_batch_id": row["review_batch_id"],
                 "review_model": row["review_model"],
                 "translation_status": row["translation_status"],
+                "sources": sources_by_incident[row["id"]],
+                "duplicate_status": row["duplicate_status"],
+                "duplicate_of_incident_id": row["duplicate_of_incident_id"],
+                "canonical_incident_id": row["canonical_incident_id"],
+                "embedding_model": row["embedding_model"],
+                "embedding_vector": json.loads(row["embedding_vector"])
+                if row.get("embedding_vector")
+                else None,
+            }
+            for row in incident_rows
+        ]
+
+    def get_incident(self, incident_id: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            incident_row = connection.execute(
+                """
+                select
+                    id,
+                    external_id,
+                    headline,
+                    headline_en,
+                    headline_zh,
+                    date_logged,
+                    company_involved,
+                    incident_topic,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
+                    status,
+                    review_notes,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    legitimacy_flag,
+                    confidence_level,
+                    import_notes,
+                    translation_status,
+                    review_batch_id,
+                    review_model,
+                    duplicate_status,
+                    duplicate_of_incident_id,
+                    canonical_incident_id,
+                    embedding_model,
+                    embedding_vector
+                from incident_logs
+                where id = %s
+                limit 1
+                """,
+                (incident_id,),
+            ).fetchone()
+            if incident_row is None:
+                return None
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    canonical_url,
+                    source_type,
+                    publisher,
+                    title,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error
+                from incident_sources
+                where incident_id = %s
+                order by is_primary desc, id asc
+                """,
+                (incident_id,),
+            ).fetchall()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+        return {
+            "id": incident_row["id"],
+            "external_id": incident_row["external_id"],
+            "headline": incident_row["headline"],
+            "headline_en": incident_row["headline_en"],
+            "headline_zh": incident_row["headline_zh"],
+            "date_logged": incident_row["date_logged"],
+            "company_involved": incident_row["company_involved"],
+            "incident_topic": incident_row["incident_topic"],
+            "claimant_name": incident_row["claimant_name"],
+            "categories": json.loads(incident_row["categories"]),
+            "severity_score": incident_row["severity_score"],
+            "reality_summary": incident_row["reality_summary"],
+            "reality_summary_en": incident_row["reality_summary_en"],
+            "reality_summary_zh": incident_row["reality_summary_zh"],
+            "status": incident_row["status"],
+            "review_notes": incident_row["review_notes"],
+            "legitimacy_score": incident_row["legitimacy_score"],
+            "legitimacy_label": incident_row["legitimacy_label"],
+            "legitimacy_reasoning": incident_row["legitimacy_reasoning"],
+            "source_validation_summary": incident_row["source_validation_summary"],
+            "legitimacy_flag": incident_row["legitimacy_flag"],
+            "confidence_level": incident_row["confidence_level"],
+            "import_notes": incident_row["import_notes"],
+            "translation_status": incident_row["translation_status"],
+            "review_batch_id": incident_row["review_batch_id"],
+            "review_model": incident_row["review_model"],
+            "duplicate_status": incident_row["duplicate_status"],
+            "duplicate_of_incident_id": incident_row["duplicate_of_incident_id"],
+            "canonical_incident_id": incident_row["canonical_incident_id"],
+            "embedding_model": incident_row["embedding_model"],
+            "embedding_vector": json.loads(incident_row["embedding_vector"])
+            if incident_row.get("embedding_vector")
+            else None,
+            "duplicate_candidates": self._list_duplicate_candidates(incident_id),
+            "sources": sources_by_incident[incident_id],
+        }
+
+    def list_duplicate_search_pool(
+        self,
+        *,
+        incident_id: str,
+        date_logged: str,
+        date_window_days: int,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            incident_rows = connection.execute(
+                """
+                select
+                    id,
+                    external_id,
+                    headline,
+                    headline_en,
+                    headline_zh,
+                    date_logged,
+                    company_involved,
+                    incident_topic,
+                    claimant_name,
+                    categories,
+                    severity_score,
+                    reality_summary,
+                    reality_summary_en,
+                    reality_summary_zh,
+                    status,
+                    review_notes,
+                    legitimacy_score,
+                    legitimacy_label,
+                    legitimacy_reasoning,
+                    source_validation_summary,
+                    legitimacy_flag,
+                    confidence_level,
+                    import_notes,
+                    translation_status,
+                    review_batch_id,
+                    review_model,
+                    duplicate_status,
+                    duplicate_of_incident_id,
+                    canonical_incident_id,
+                    embedding_model,
+                    embedding_vector
+                from incident_logs
+                where id <> %s
+                  and status <> %s
+                  and abs((date_logged::date - %s::date)) <= %s
+                order by date_logged desc, id asc
+                """,
+                (incident_id, "duplicate_confirmed", date_logged, date_window_days),
+            ).fetchall()
+            source_rows = connection.execute(
+                """
+                select
+                    id,
+                    incident_id,
+                    source_url,
+                    canonical_url,
+                    source_type,
+                    publisher,
+                    title,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error
+                from incident_sources
+                where incident_id in (
+                    select id
+                    from incident_logs
+                    where id <> %s
+                      and status <> %s
+                      and abs((date_logged::date - %s::date)) <= %s
+                )
+                order by is_primary desc, id asc
+                """,
+                (incident_id, "duplicate_confirmed", date_logged, date_window_days),
+            ).fetchall()
+
+        sources_by_incident = self._group_sources_by_incident(source_rows)
+        return [
+            {
+                "id": row["id"],
+                "external_id": row["external_id"],
+                "headline": row["headline"],
+                "headline_en": row["headline_en"],
+                "headline_zh": row["headline_zh"],
+                "date_logged": row["date_logged"],
+                "company_involved": row["company_involved"],
+                "incident_topic": row["incident_topic"],
+                "claimant_name": row["claimant_name"],
+                "categories": json.loads(row["categories"]),
+                "severity_score": row["severity_score"],
+                "reality_summary": row["reality_summary"],
+                "reality_summary_en": row["reality_summary_en"],
+                "reality_summary_zh": row["reality_summary_zh"],
+                "status": row["status"],
+                "review_notes": row["review_notes"],
+                "legitimacy_score": row["legitimacy_score"],
+                "legitimacy_label": row["legitimacy_label"],
+                "legitimacy_reasoning": row["legitimacy_reasoning"],
+                "source_validation_summary": row["source_validation_summary"],
+                "legitimacy_flag": row["legitimacy_flag"],
+                "confidence_level": row["confidence_level"],
+                "import_notes": row["import_notes"],
+                "translation_status": row["translation_status"],
+                "review_batch_id": row["review_batch_id"],
+                "review_model": row["review_model"],
+                "duplicate_status": row["duplicate_status"],
+                "duplicate_of_incident_id": row["duplicate_of_incident_id"],
+                "canonical_incident_id": row["canonical_incident_id"],
+                "embedding_model": row["embedding_model"],
+                "embedding_vector": json.loads(row["embedding_vector"])
+                if row.get("embedding_vector")
+                else None,
                 "sources": sources_by_incident[row["id"]],
             }
             for row in incident_rows
@@ -966,7 +1242,10 @@ class PostgresIncidentRepository:
                     source_validation_summary,
                     translation_status,
                     review_batch_id,
-                    review_model
+                    review_model,
+                    duplicate_status,
+                    duplicate_of_incident_id,
+                    canonical_incident_id
                 from incident_logs
                 where id = %s
                 """,
@@ -1018,6 +1297,10 @@ class PostgresIncidentRepository:
             "translation_status": row["translation_status"],
             "review_batch_id": row["review_batch_id"],
             "review_model": row["review_model"],
+            "duplicate_status": row["duplicate_status"],
+            "duplicate_of_incident_id": row["duplicate_of_incident_id"],
+            "canonical_incident_id": row["canonical_incident_id"],
+            "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
             "sources": sources_by_incident[row["id"]],
         }
 
@@ -1330,6 +1613,220 @@ class PostgresIncidentRepository:
             )
             connection.commit()
 
+    def update_incident_embedding(
+        self,
+        *,
+        incident_id: str,
+        embedding_model: str,
+        embedding_vector: list[float],
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                update incident_logs
+                set
+                    embedding_model = %s,
+                    embedding_vector = %s,
+                    updated_at = current_timestamp
+                where id = %s
+                """,
+                (embedding_model, json.dumps(embedding_vector), incident_id),
+            )
+            connection.commit()
+
+    def replace_duplicate_candidates(
+        self,
+        *,
+        incident_id: str,
+        candidates: list[dict[str, Any]],
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "delete from incident_duplicate_candidates where incident_id = %s",
+                (incident_id,),
+            )
+            for candidate in candidates:
+                connection.execute(
+                    """
+                    insert into incident_duplicate_candidates (
+                        id,
+                        incident_id,
+                        candidate_incident_id,
+                        embedding_score,
+                        llm_verdict,
+                        confidence,
+                        reasoning,
+                        status
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        f"duplicate-candidate-{uuid4()}",
+                        incident_id,
+                        candidate["candidate_incident_id"],
+                        candidate["embedding_score"],
+                        candidate["llm_verdict"],
+                        candidate["confidence"],
+                        candidate["reasoning"],
+                        candidate["status"],
+                    ),
+                )
+            connection.commit()
+
+    def merge_duplicate_incident(
+        self,
+        *,
+        duplicate_incident_id: str,
+        canonical_incident_id: str,
+        duplicate_status: str,
+        reasoning: str,
+        confidence: float,
+    ) -> None:
+        with self._connect() as connection:
+            duplicate_row = connection.execute(
+                """
+                select import_notes
+                from incident_logs
+                where id = %s
+                limit 1
+                """,
+                (duplicate_incident_id,),
+            ).fetchone()
+            canonical_row = connection.execute(
+                """
+                select import_notes
+                from incident_logs
+                where id = %s
+                limit 1
+                """,
+                (canonical_incident_id,),
+            ).fetchone()
+            if duplicate_row is None or canonical_row is None:
+                raise ValueError("Duplicate or canonical incident not found")
+
+            duplicate_note = duplicate_row["import_notes"]
+            if duplicate_note:
+                merged_note = (
+                    f"Merged duplicate {duplicate_incident_id}: {duplicate_note}"
+                )
+                canonical_note = canonical_row["import_notes"]
+                merged_canonical_note = (
+                    f"{canonical_note}\n{merged_note}"
+                    if canonical_note
+                    else merged_note
+                )
+                connection.execute(
+                    """
+                    update incident_logs
+                    set
+                        import_notes = %s,
+                        updated_at = current_timestamp
+                    where id = %s
+                    """,
+                    (merged_canonical_note, canonical_incident_id),
+                )
+
+            existing_source_rows = connection.execute(
+                """
+                select source_url
+                from incident_sources
+                where incident_id = %s
+                """,
+                (canonical_incident_id,),
+            ).fetchall()
+            existing_source_urls = {
+                row["source_url"] for row in existing_source_rows
+            }
+            duplicate_source_rows = connection.execute(
+                """
+                select
+                    source_url,
+                    canonical_url,
+                    source_type,
+                    publisher,
+                    title,
+                    published_at,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error,
+                    fetched_at,
+                    is_primary
+                from incident_sources
+                where incident_id = %s
+                order by id asc
+                """,
+                (duplicate_incident_id,),
+            ).fetchall()
+            for row in duplicate_source_rows:
+                if row["source_url"] in existing_source_urls:
+                    continue
+                connection.execute(
+                    """
+                    insert into incident_sources (
+                        id,
+                        incident_id,
+                        source_url,
+                        canonical_url,
+                        source_type,
+                        publisher,
+                        title,
+                        published_at,
+                        fetch_status,
+                        http_status,
+                        evidence_text,
+                        fetch_error,
+                        fetched_at,
+                        is_primary
+                    ) values (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    """,
+                    (
+                        f"source-{uuid4()}",
+                        canonical_incident_id,
+                        row["source_url"],
+                        row["canonical_url"],
+                        row["source_type"],
+                        row["publisher"],
+                        row["title"],
+                        row["published_at"],
+                        row["fetch_status"],
+                        row["http_status"],
+                        row["evidence_text"],
+                        row["fetch_error"],
+                        row["fetched_at"],
+                        row["is_primary"],
+                    ),
+                )
+                existing_source_urls.add(row["source_url"])
+
+            connection.execute(
+                """
+                update incident_logs
+                set
+                    status = %s,
+                    duplicate_status = %s,
+                    duplicate_of_incident_id = %s,
+                    canonical_incident_id = %s,
+                    translation_status = %s,
+                    review_notes = %s,
+                    legitimacy_score = %s,
+                    updated_at = current_timestamp
+                where id = %s
+                """,
+                (
+                    "duplicate_confirmed",
+                    duplicate_status,
+                    canonical_incident_id,
+                    canonical_incident_id,
+                    "not_requested",
+                    reasoning,
+                    confidence,
+                    duplicate_incident_id,
+                ),
+            )
+            connection.commit()
+
     def mark_incidents_review_batch(
         self,
         *,
@@ -1627,6 +2124,35 @@ class PostgresIncidentRepository:
 
         return sources_by_incident
 
+    def _list_duplicate_candidates(self, incident_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                select
+                    candidate_incident_id,
+                    embedding_score,
+                    llm_verdict,
+                    confidence,
+                    reasoning,
+                    status
+                from incident_duplicate_candidates
+                where incident_id = %s
+                order by embedding_score desc, candidate_incident_id asc
+                """,
+                (incident_id,),
+            ).fetchall()
+        return [
+            {
+                "candidate_incident_id": row["candidate_incident_id"],
+                "embedding_score": row["embedding_score"],
+                "llm_verdict": row["llm_verdict"],
+                "confidence": row["confidence"],
+                "reasoning": row["reasoning"],
+                "status": row["status"],
+            }
+            for row in rows
+        ]
+
     def _serialize_public_incident_row(
         self,
         row: dict[str, Any],
@@ -1651,6 +2177,9 @@ class PostgresIncidentRepository:
             "translation_status": row.get("translation_status"),
             "review_batch_id": row.get("review_batch_id"),
             "review_model": row.get("review_model"),
+            "duplicate_status": row.get("duplicate_status"),
+            "duplicate_of_incident_id": row.get("duplicate_of_incident_id"),
+            "canonical_incident_id": row.get("canonical_incident_id"),
             "matched_claim": _build_public_claim_payload(row),
             "sources": sources,
         }

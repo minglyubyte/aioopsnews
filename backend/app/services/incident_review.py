@@ -8,6 +8,11 @@ from typing import Any, Protocol
 import httpx
 
 from app.db.repository_protocol import IncidentRepository
+from app.services.incident_deduplication import (
+    IncidentDuplicateJudgeClient,
+    IncidentEmbeddingClient,
+    detect_and_merge_duplicate_incident,
+)
 from app.services.incident_translation import (
     IncidentTranslationClient,
     translate_incident_copy,
@@ -320,6 +325,10 @@ def reconcile_incident_review_batch(
     batch_client: IncidentBatchReviewClient,
     escalation_client: IncidentEscalationReviewClient,
     translation_client: IncidentTranslationClient,
+    embedding_client: IncidentEmbeddingClient,
+    duplicate_judge_client: IncidentDuplicateJudgeClient,
+    embedding_model: str,
+    duplicate_judge_model: str,
     escalation_model: str,
     approval_threshold: float = 0.90,
 ) -> IncidentReviewBatchReconciliation:
@@ -376,6 +385,22 @@ def reconcile_incident_review_batch(
         )
 
         if final_status == "approved":
+            duplicate_outcome = detect_and_merge_duplicate_incident(
+                repository,
+                incident_id=incident["id"],
+                embedding_client=embedding_client,
+                duplicate_judge_client=duplicate_judge_client,
+                embedding_model=embedding_model,
+                duplicate_judge_model=duplicate_judge_model,
+            )
+            if duplicate_outcome.is_duplicate:
+                incident["status"] = "duplicate_confirmed"
+                incident["duplicate_of_incident_id"] = (
+                    duplicate_outcome.canonical_incident_id
+                )
+                incident["translation_status"] = "not_requested"
+                continue
+
             translation = translate_incident_copy(
                 headline_en=final_result.headline_en,
                 reality_summary_en=final_result.reality_summary_en,
@@ -495,7 +520,7 @@ def _parse_review_result(
 
 
 def _extract_evidence_text(html: str) -> str:
-    text = html.replace("\r", " ").replace("\n", " ")
+    text = html.replace("\x00", " ").replace("\r", " ").replace("\n", " ")
     collapsed = " ".join(text.split())
     return collapsed[:4000]
 

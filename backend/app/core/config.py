@@ -12,6 +12,7 @@ class Settings:
     openai_api_key: str | None = None
     openai_primary_review_model: str = "gpt-5.4-mini"
     openai_escalation_review_model: str = "gpt-5.2"
+    openai_embedding_model: str = "text-embedding-3-small"
     deepseek_api_key: str | None = None
     deepseek_translation_model: str = "deepseek-v4-flash"
 
@@ -54,6 +55,10 @@ def get_settings() -> Settings:
         openai_escalation_review_model=os.getenv(
             "OPENAI_ESCALATION_REVIEW_MODEL",
             "gpt-5.2",
+        ),
+        openai_embedding_model=os.getenv(
+            "OPENAI_EMBEDDING_MODEL",
+            "text-embedding-3-small",
         ),
         deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
         deepseek_translation_model=os.getenv(

@@ -41,6 +41,10 @@ class AdminIncidentResponse(BaseModel):
     translation_status: str | None = None
     review_batch_id: str | None = None
     review_model: str | None = None
+    duplicate_status: str | None = None
+    duplicate_of_incident_id: str | None = None
+    canonical_incident_id: str | None = None
+    duplicate_candidates: list[dict[str, object]] = Field(default_factory=list)
     sources: list[IncidentSourceResponse]
 
 

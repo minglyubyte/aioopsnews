@@ -23,6 +23,7 @@ class InMemoryIncidentRepository:
         self.claims: dict[str, dict[str, Any]] = {}
         self.claim_sources: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self.incidents: dict[str, dict[str, Any]] = {}
+        self.duplicate_candidates: dict[str, list[dict[str, Any]]] = defaultdict(list)
         self._source_urls: set[str] = set()
         self._incident_sequence = 0
         self._source_sequence = 0
@@ -151,7 +152,7 @@ class InMemoryIncidentRepository:
         incidents = [
             incident
             for incident in self.incidents.values()
-            if incident["status"] == "pending_review"
+            if incident["status"] in {"pending_review", "pending_duplicate_review"}
         ]
         incidents.sort(
             key=lambda incident: (incident["date_logged"], incident["id"]),
@@ -266,6 +267,32 @@ class InMemoryIncidentRepository:
             reverse=True,
         )
         return [self._serialize_admin_incident(incident) for incident in incidents]
+
+    def get_incident(self, incident_id: str) -> dict[str, Any] | None:
+        incident = self.incidents.get(incident_id)
+        return deepcopy(incident) if incident is not None else None
+
+    def list_duplicate_search_pool(
+        self,
+        *,
+        incident_id: str,
+        date_logged: str,
+        date_window_days: int,
+    ) -> list[dict[str, Any]]:
+        from datetime import date, timedelta
+
+        target_date = date.fromisoformat(date_logged)
+        earliest = target_date - timedelta(days=date_window_days)
+        latest = target_date + timedelta(days=date_window_days)
+        incidents = [
+            deepcopy(incident)
+            for candidate_id, incident in self.incidents.items()
+            if candidate_id != incident_id
+            and incident["status"] != "duplicate_confirmed"
+            and earliest <= date.fromisoformat(incident["date_logged"]) <= latest
+        ]
+        incidents.sort(key=lambda incident: (incident["date_logged"], incident["id"]))
+        return incidents
 
     def list_claims(self) -> list[ClaimRecord]:
         claims = [
@@ -483,6 +510,11 @@ class InMemoryIncidentRepository:
             "review_model": None,
             "reviewed_at": None,
             "translated_at": "2026-04-30T12:00:00" if headline_zh else None,
+            "duplicate_status": None,
+            "duplicate_of_incident_id": None,
+            "canonical_incident_id": None,
+            "embedding_model": None,
+            "embedding_vector": None,
             "sources": sources,
         }
 
@@ -524,6 +556,70 @@ class InMemoryIncidentRepository:
             incident = self.incidents[incident_id]
             incident["review_batch_id"] = review_batch_id
             incident["review_model"] = review_model
+
+    def update_incident_embedding(
+        self,
+        *,
+        incident_id: str,
+        embedding_model: str,
+        embedding_vector: list[float],
+    ) -> None:
+        incident = self.incidents[incident_id]
+        incident["embedding_model"] = embedding_model
+        incident["embedding_vector"] = list(embedding_vector)
+
+    def replace_duplicate_candidates(
+        self,
+        *,
+        incident_id: str,
+        candidates: list[dict[str, Any]],
+    ) -> None:
+        self.duplicate_candidates[incident_id] = deepcopy(candidates)
+        if incident_id in self.incidents:
+            self.incidents[incident_id]["duplicate_candidates"] = deepcopy(candidates)
+
+    def merge_duplicate_incident(
+        self,
+        *,
+        duplicate_incident_id: str,
+        canonical_incident_id: str,
+        duplicate_status: str,
+        reasoning: str,
+        confidence: float,
+    ) -> None:
+        duplicate_incident = self.incidents[duplicate_incident_id]
+        canonical_incident = self.incidents[canonical_incident_id]
+
+        duplicate_incident.update(
+            {
+                "status": "duplicate_confirmed",
+                "duplicate_status": duplicate_status,
+                "duplicate_of_incident_id": canonical_incident_id,
+                "canonical_incident_id": canonical_incident_id,
+                "translation_status": "not_requested",
+                "review_notes": reasoning,
+                "legitimacy_score": confidence,
+            }
+        )
+
+        duplicate_note = duplicate_incident.get("import_notes")
+        if duplicate_note:
+            merged_note = (
+                f"Merged duplicate {duplicate_incident_id}: {duplicate_note}"
+            )
+            canonical_note = canonical_incident.get("import_notes")
+            canonical_incident["import_notes"] = (
+                f"{canonical_note}\n{merged_note}" if canonical_note else merged_note
+            )
+
+        existing_urls = {
+            source["source_url"] for source in canonical_incident.get("sources", [])
+        }
+        for source in duplicate_incident.get("sources", []):
+            if source["source_url"] in existing_urls:
+                continue
+            canonical_incident.setdefault("sources", []).append(deepcopy(source))
+            existing_urls.add(source["source_url"])
 
     def apply_incident_review_result(
         self,
@@ -605,6 +701,9 @@ class InMemoryIncidentRepository:
             "translation_status": incident.get("translation_status"),
             "review_batch_id": incident.get("review_batch_id"),
             "review_model": incident.get("review_model"),
+            "duplicate_status": incident.get("duplicate_status"),
+            "duplicate_of_incident_id": incident.get("duplicate_of_incident_id"),
+            "canonical_incident_id": incident.get("canonical_incident_id"),
             "matched_claim": None,
             "sources": deepcopy(incident.get("sources", [])),
         }
@@ -659,5 +758,11 @@ class InMemoryIncidentRepository:
             "translation_status": incident.get("translation_status"),
             "review_batch_id": incident.get("review_batch_id"),
             "review_model": incident.get("review_model"),
+            "duplicate_status": incident.get("duplicate_status"),
+            "duplicate_of_incident_id": incident.get("duplicate_of_incident_id"),
+            "canonical_incident_id": incident.get("canonical_incident_id"),
+            "duplicate_candidates": deepcopy(
+                self.duplicate_candidates.get(incident["id"], [])
+            ),
             "sources": deepcopy(incident.get("sources", [])),
         }

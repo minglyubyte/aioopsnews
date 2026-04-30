@@ -7,9 +7,11 @@ from pydantic import BaseModel, Field
 
 IncidentStatus = Literal[
     "pending_llm_review",
+    "pending_duplicate_review",
     "pending_review",
     "approved",
     "rejected",
+    "duplicate_confirmed",
     "needs_rework",
     "draft",
 ]
@@ -46,6 +48,11 @@ class IncidentRecord(BaseModel):
     translation_status: str | None = None
     review_batch_id: str | None = None
     review_model: str | None = None
+    duplicate_status: str | None = None
+    duplicate_of_incident_id: str | None = None
+    canonical_incident_id: str | None = None
+    embedding_model: str | None = None
+    embedding_vector: list[float] | None = None
     created_at: datetime | None = None
     reviewed_at: datetime | None = None
     translated_at: datetime | None = None

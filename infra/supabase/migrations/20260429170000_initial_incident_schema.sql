@@ -54,6 +54,11 @@ create table if not exists incident_logs (
     translation_status text,
     review_batch_id text,
     review_model text,
+    duplicate_status text,
+    duplicate_of_incident_id uuid references incident_logs(id),
+    canonical_incident_id uuid references incident_logs(id),
+    embedding_model text,
+    embedding_vector text,
     reviewed_at timestamptz,
     translated_at timestamptz,
     created_at timestamptz not null default now(),
@@ -83,6 +88,19 @@ create table if not exists incident_sources (
     is_primary boolean not null default false,
     created_at timestamptz not null default now(),
     unique (incident_id, source_url)
+);
+
+create table if not exists incident_duplicate_candidates (
+    id uuid primary key default gen_random_uuid(),
+    incident_id uuid not null references incident_logs(id) on delete cascade,
+    candidate_incident_id uuid not null references incident_logs(id) on delete cascade,
+    embedding_score numeric(6, 5) not null,
+    llm_verdict text not null,
+    confidence numeric(4, 3) not null,
+    reasoning text,
+    status text not null,
+    created_at timestamptz not null default now(),
+    unique (incident_id, candidate_incident_id)
 );
 
 create index if not exists incident_logs_date_logged_idx

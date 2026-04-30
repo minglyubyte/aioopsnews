@@ -50,11 +50,17 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "translated_at timestamptz" in normalized
     assert "review_batch_id text" in normalized
     assert "review_model text" in normalized
+    assert "duplicate_status text" in normalized
+    assert "duplicate_of_incident_id text references incident_logs(id)" in normalized
+    assert "canonical_incident_id text references incident_logs(id)" in normalized
+    assert "embedding_model text" in normalized
+    assert "embedding_vector text" in normalized
     assert "reviewed_at timestamptz" in normalized
     assert "canonical_url text" in normalized
     assert "fetch_status text" in normalized
     assert "http_status integer" in normalized
     assert "evidence_text text" in normalized
+    assert "create table if not exists incident_duplicate_candidates" in normalized
 
 
 def test_initial_migration_bootstraps_same_core_tables() -> None:
@@ -80,6 +86,9 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     assert "translation_status text" in migration_sql
     assert "review_batch_id text" in migration_sql
     assert "review_model text" in migration_sql
+    assert "duplicate_status text" in migration_sql
+    assert "embedding_model text" in migration_sql
+    assert "create table if not exists incident_duplicate_candidates" in migration_sql
     assert "canonical_url text" in migration_sql
 
 
@@ -123,6 +132,11 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         import_notes="Imported from 2023 editorial batch.",
         review_batch_id="batch-123",
         review_model="gpt-5.2",
+        duplicate_status="suspected",
+        duplicate_of_incident_id="incident-0",
+        canonical_incident_id="incident-0",
+        embedding_model="text-embedding-3-small",
+        embedding_vector=[0.1, 0.9],
         created_at=datetime(2026, 4, 29, 12, 0, 0),
         reviewed_at=datetime(2026, 4, 29, 12, 2, 0),
         translated_at=datetime(2026, 4, 29, 12, 3, 0),
@@ -148,6 +162,9 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     assert incident.translation_status == "completed"
     assert incident.review_batch_id == "batch-123"
     assert incident.review_model == "gpt-5.2"
+    assert incident.duplicate_status == "suspected"
+    assert incident.canonical_incident_id == "incident-0"
+    assert incident.embedding_model == "text-embedding-3-small"
     assert incident.headline_zh == "智能体发布导致错误客户升级"
     assert incident.categories == ["Job Automation Fails", "Missed Timelines"]
     assert source.incident_id == incident.id
