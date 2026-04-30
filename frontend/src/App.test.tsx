@@ -2,6 +2,120 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 
 describe("App", () => {
+  it("refetches the public feed when a reader applies filters", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(
+          JSON.stringify({
+            categories: ["Autonomous Systems", "Privacy/Security"],
+            claimants: ["AssistCo", "RoboFleet"],
+            companies: ["AssistCo", "RoboFleet"],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/admin/incidents")) {
+        return new Response(
+          JSON.stringify({
+            items: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (
+        url.includes("/incidents?category=Autonomous+Systems&company=RoboFleet")
+      ) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: "incident-robot-1",
+                headline:
+                  "Warehouse robot rollback follows navigation failures",
+                date_logged: "2026-04-24",
+                company_involved: "RoboFleet",
+                claimant_name: "RoboFleet",
+                categories: ["Autonomous Systems"],
+                severity_score: 3,
+                reality_summary:
+                  "Operators paused a pilot after repeated pathing failures.",
+                status: "approved",
+                matched_claim: null,
+                sources: [],
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "incident-1",
+              headline: "Customer support bot exposes private account notes",
+              date_logged: "2026-04-29",
+              company_involved: "AssistCo",
+              claimant_name: "AssistCo",
+              categories: ["Privacy/Security"],
+              severity_score: 4,
+              reality_summary:
+                "A support automation rollout leaked internal notes into user-facing replies.",
+              status: "approved",
+              matched_claim: null,
+              sources: [],
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Customer support bot exposes private account notes",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filter by category"), {
+      target: { value: "Autonomous Systems" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter by company"), {
+      target: { value: "RoboFleet" },
+    });
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Warehouse robot rollback follows navigation failures",
+      }),
+    ).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/incidents?category=Autonomous+Systems&company=RoboFleet",
+    );
+  });
+
   it("renders the public incident feed from the API", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = input.toString();

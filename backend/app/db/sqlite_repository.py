@@ -10,6 +10,7 @@ from uuid import uuid4
 from app.models.claim import ClaimRecord
 from app.scrapers.rss import RSSArticle
 from app.services.claim_matcher import PUBLIC_CLAIM_MATCH_THRESHOLD
+from app.services.incident_query import IncidentQueryFilters
 
 _SQLITE_SCHEMA = """
 create table if not exists claims (
@@ -178,10 +179,34 @@ class SQLiteIncidentRepository:
         self._database_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize_database()
 
-    def list_public_incidents(self) -> list[dict[str, Any]]:
+    def list_public_incidents(
+        self,
+        filters: IncidentQueryFilters,
+    ) -> list[dict[str, Any]]:
+        where_clauses = ["incident_logs.status = ?"]
+        params: list[Any] = ["approved"]
+
+        if filters.category:
+            where_clauses.append("incident_logs.categories like ?")
+            params.append(f"%{json.dumps(filters.category).strip('"')}%")
+        if filters.company:
+            where_clauses.append("incident_logs.company_involved = ?")
+            params.append(filters.company)
+        if filters.claimant:
+            where_clauses.append("incident_logs.claimant_name = ?")
+            params.append(filters.claimant)
+        if filters.severity_min is not None:
+            where_clauses.append("incident_logs.severity_score >= ?")
+            params.append(filters.severity_min)
+        if filters.severity_max is not None:
+            where_clauses.append("incident_logs.severity_score <= ?")
+            params.append(filters.severity_max)
+
+        offset = (filters.page - 1) * filters.page_size
+
         with self._connect() as connection:
             incident_rows = connection.execute(
-                """
+                f"""
                 select
                     incident_logs.id,
                     incident_logs.headline,
@@ -203,10 +228,11 @@ class SQLiteIncidentRepository:
                 from incident_logs
                 left join claims
                     on claims.id = incident_logs.matched_claim_id
-                where incident_logs.status = ?
+                where {" and ".join(where_clauses)}
                 order by incident_logs.date_logged desc
+                limit ? offset ?
                 """,
-                ("approved",),
+                (*params, filters.page_size, offset),
             ).fetchall()
 
             source_rows = connection.execute(
@@ -312,7 +338,7 @@ class SQLiteIncidentRepository:
         ]
 
     def get_filter_values(self) -> dict[str, list[str]]:
-        incidents = self.list_public_incidents()
+        incidents = self.list_public_incidents(IncidentQueryFilters())
 
         categories = sorted(
             {category for incident in incidents for category in incident["categories"]}

@@ -40,6 +40,16 @@ export type IncidentFilters = {
   companies: string[];
 };
 
+export type IncidentFeedFilters = {
+  category?: string;
+  company?: string;
+  claimant?: string;
+  severityMin?: number;
+  severityMax?: number;
+  page?: number;
+  pageSize?: number;
+};
+
 export type AdminIncident = Incident & {
   claimant_name?: string | null;
   matched_claim_id?: string | null;

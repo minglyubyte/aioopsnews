@@ -9,6 +9,7 @@ import {
 import type {
   AdminIncident,
   Incident,
+  IncidentFeedFilters,
   IncidentFilters,
 } from "./types/incident";
 
@@ -38,6 +39,7 @@ export default function App() {
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
   const [activeReviewId, setActiveReviewId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [readerFilters, setReaderFilters] = useState<IncidentFeedFilters>({});
 
   const activeIncident =
     adminIncidents.find((incident) => incident.id === activeReviewId) ??
@@ -50,25 +52,21 @@ export default function App() {
   useEffect(() => {
     let isCancelled = false;
 
-    async function loadFeed() {
+    async function loadMetadata() {
       try {
-        const [feedResponse, filterResponse, adminQueueResponse] =
-          await Promise.all([
-            fetchIncidentFeed(),
-            fetchIncidentFilters(),
-            fetchAdminIncidentQueue(),
-          ]);
+        const [filterResponse, adminQueueResponse] = await Promise.all([
+          fetchIncidentFilters(),
+          fetchAdminIncidentQueue(),
+        ]);
 
         if (!isCancelled) {
           const nextActiveIncident = adminQueueResponse.items[0] ?? null;
-          setFeedState({
-            incidents: feedResponse.items,
+          setFeedState((currentState) => ({
+            ...currentState,
             adminIncidents: adminQueueResponse.items,
             filters: filterResponse,
-            isLoading: false,
-            error: null,
             adminError: null,
-          });
+          }));
           setDrafts(
             Object.fromEntries(
               adminQueueResponse.items.map((incident) => [
@@ -81,24 +79,62 @@ export default function App() {
         }
       } catch {
         if (!isCancelled) {
-          setFeedState({
-            incidents: [],
+          setFeedState((currentState) => ({
+            ...currentState,
             adminIncidents: [],
             filters: null,
-            isLoading: false,
-            error: "Unable to load the incident feed right now.",
             adminError: "Unable to load the review queue right now.",
-          });
+          }));
         }
       }
     }
 
-    void loadFeed();
+    void loadMetadata();
 
     return () => {
       isCancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadIncidents() {
+      setFeedState((currentState) => ({
+        ...currentState,
+        isLoading: true,
+        error: null,
+      }));
+
+      try {
+        const feedResponse = await fetchIncidentFeed(readerFilters);
+
+        if (!isCancelled) {
+          setFeedState((currentState) => ({
+            ...currentState,
+            incidents: feedResponse.items,
+            isLoading: false,
+            error: null,
+          }));
+        }
+      } catch {
+        if (!isCancelled) {
+          setFeedState((currentState) => ({
+            ...currentState,
+            incidents: [],
+            isLoading: false,
+            error: "Unable to load the incident feed right now.",
+          }));
+        }
+      }
+    }
+
+    void loadIncidents();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [readerFilters]);
 
   async function handleApproveIncident() {
     if (!activeIncident || !activeDraft) {
@@ -168,17 +204,56 @@ export default function App() {
           A calm feed of reviewed AI failures, grounded in credible reporting.
         </p>
         <p className="body-copy">
-          This slice now pairs the public feed with a lightweight editor queue
-          so reviewers can approve enriched incidents without leaving the app.
+          This slice pairs a searchable public feed with a lightweight editor
+          queue so readers and reviewers can both work from the same source of
+          truth.
         </p>
         {filters ? (
-          <div className="filter-row" aria-label="Available filters">
-            {filters.categories.map((category) => (
-              <span className="filter-pill" key={category}>
-                {category}
-              </span>
-            ))}
-          </div>
+          <>
+            <div className="reader-filter-grid">
+              <label className="field">
+                <span>Filter by category</span>
+                <select
+                  value={readerFilters.category ?? ""}
+                  onChange={(event) =>
+                    setReaderFilters((current) => ({
+                      ...current,
+                      category: event.target.value || undefined,
+                      page: 1,
+                    }))
+                  }
+                >
+                  <option value="">All categories</option>
+                  {filters.categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Filter by company</span>
+                <select
+                  value={readerFilters.company ?? ""}
+                  onChange={(event) =>
+                    setReaderFilters((current) => ({
+                      ...current,
+                      company: event.target.value || undefined,
+                      page: 1,
+                    }))
+                  }
+                >
+                  <option value="">All companies</option>
+                  {filters.companies.map((company) => (
+                    <option key={company} value={company}>
+                      {company}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </>
         ) : null}
       </section>
 

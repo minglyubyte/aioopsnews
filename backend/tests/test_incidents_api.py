@@ -220,6 +220,34 @@ def test_get_incidents_reads_from_database_records(tmp_path: Path) -> None:
     assert payload["items"][1]["matched_claim"] is None
 
 
+def test_get_incidents_supports_filters_and_pagination(tmp_path: Path) -> None:
+    database_path = tmp_path / "filtered-incidents.db"
+    _build_test_database(database_path)
+    client = TestClient(create_app(database_url=f"sqlite:///{database_path}"))
+
+    filtered_response = client.get(
+        "/incidents",
+        params={
+            "category": "Privacy/Security",
+            "company": "FutureStack",
+            "claimant": "FutureStack",
+            "severity_min": 4,
+            "severity_max": 5,
+        },
+    )
+    paged_response = client.get("/incidents", params={"page": 2, "page_size": 1})
+
+    assert filtered_response.status_code == 200
+    assert [item["headline"] for item in filtered_response.json()["items"]] == [
+        "Database-backed feed shows a reviewed privacy incident",
+    ]
+
+    assert paged_response.status_code == 200
+    assert [item["headline"] for item in paged_response.json()["items"]] == [
+        "Warehouse robot rollback follows navigation failures",
+    ]
+
+
 def test_get_filters_reads_distinct_values_from_database(tmp_path: Path) -> None:
     database_path = tmp_path / "filters.db"
     _build_test_database(database_path)
