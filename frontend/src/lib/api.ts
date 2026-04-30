@@ -49,6 +49,12 @@ export function fetchIncidentFeed(
   if (filters?.severityMax) {
     searchParams.set("severity_max", String(filters.severityMax));
   }
+  if (filters?.year) {
+    searchParams.set("year", String(filters.year));
+  }
+  if (filters?.month) {
+    searchParams.set("month", String(filters.month));
+  }
   if (filters?.page && filters.page > 1) {
     searchParams.set("page", String(filters.page));
   }

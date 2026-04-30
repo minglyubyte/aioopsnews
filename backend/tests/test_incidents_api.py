@@ -98,6 +98,22 @@ def _build_test_database(database_path: Path) -> None:
         """,
         [
             (
+                "incident-4",
+                "May escalation shows archive filters can narrow results",
+                "2026-05-03",
+                "MayOps",
+                "MayOps",
+                json.dumps(["Model Governance"]),
+                2,
+                "A separate approved May incident supports archive filtering coverage.",
+                "approved",
+                "run-3",
+                0.72,
+                "editor reviewed",
+                None,
+                None,
+            ),
+            (
                 "incident-1",
                 "Database-backed feed shows a reviewed privacy incident",
                 "2026-04-30",
@@ -125,6 +141,25 @@ def _build_test_database(database_path: Path) -> None:
                 "approved",
                 "run-1",
                 0.84,
+                "editor reviewed",
+                None,
+                None,
+            ),
+            (
+                "incident-5",
+                "Prior-year incident proves year archives can narrow results",
+                "2025-12-18",
+                "ArchiveAI",
+                "ArchiveAI",
+                json.dumps(["Model Governance"]),
+                2,
+                (
+                    "An older approved incident should only appear when the "
+                    "matching archive year is selected."
+                ),
+                "approved",
+                "run-0",
+                0.66,
                 "editor reviewed",
                 None,
                 None,
@@ -201,14 +236,16 @@ def test_get_incidents_reads_from_database_records(tmp_path: Path) -> None:
     payload = response.json()
 
     assert [item["headline"] for item in payload["items"]] == [
+        "May escalation shows archive filters can narrow results",
         "Database-backed feed shows a reviewed privacy incident",
         "Warehouse robot rollback follows navigation failures",
+        "Prior-year incident proves year archives can narrow results",
     ]
     assert all(item["status"] == "approved" for item in payload["items"])
     assert (
-        payload["items"][0]["sources"][0]["source_url"] == "https://example.com/privacy"
+        payload["items"][1]["sources"][0]["source_url"] == "https://example.com/privacy"
     )
-    assert payload["items"][0]["matched_claim"] == {
+    assert payload["items"][1]["matched_claim"] == {
         "id": "claim-1",
         "claimant_name": "FutureStack",
         "company_involved": "FutureStack",
@@ -217,7 +254,7 @@ def test_get_incidents_reads_from_database_records(tmp_path: Path) -> None:
         "claim_topic": "job automation",
         "match_confidence": 0.88,
     }
-    assert payload["items"][1]["matched_claim"] is None
+    assert payload["items"][0]["matched_claim"] is None
 
 
 def test_get_incidents_supports_filters_and_pagination(tmp_path: Path) -> None:
@@ -244,8 +281,56 @@ def test_get_incidents_supports_filters_and_pagination(tmp_path: Path) -> None:
 
     assert paged_response.status_code == 200
     assert [item["headline"] for item in paged_response.json()["items"]] == [
+        "Database-backed feed shows a reviewed privacy incident",
+    ]
+
+
+def test_get_incidents_supports_year_and_month_archives(tmp_path: Path) -> None:
+    database_path = tmp_path / "archived-incidents.db"
+    _build_test_database(database_path)
+    client = TestClient(create_app(database_url=f"sqlite:///{database_path}"))
+
+    yearly_response = client.get("/incidents", params={"year": 2026})
+    monthly_response = client.get("/incidents", params={"year": 2026, "month": 4})
+    category_archive_response = client.get(
+        "/incidents",
+        params={"year": 2026, "month": 4, "category": "Privacy/Security"},
+    )
+
+    assert yearly_response.status_code == 200
+    assert [item["headline"] for item in yearly_response.json()["items"]] == [
+        "May escalation shows archive filters can narrow results",
+        "Database-backed feed shows a reviewed privacy incident",
         "Warehouse robot rollback follows navigation failures",
     ]
+
+    assert monthly_response.status_code == 200
+    assert [item["headline"] for item in monthly_response.json()["items"]] == [
+        "Database-backed feed shows a reviewed privacy incident",
+        "Warehouse robot rollback follows navigation failures",
+    ]
+
+    assert category_archive_response.status_code == 200
+    assert [item["headline"] for item in category_archive_response.json()["items"]] == [
+        "Database-backed feed shows a reviewed privacy incident",
+    ]
+
+
+def test_get_incidents_rejects_month_without_year_or_invalid_month(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "invalid-archive-incidents.db"
+    _build_test_database(database_path)
+    client = TestClient(create_app(database_url=f"sqlite:///{database_path}"))
+
+    month_only_response = client.get("/incidents", params={"month": 4})
+    invalid_month_response = client.get(
+        "/incidents",
+        params={"year": 2026, "month": 13},
+    )
+
+    assert month_only_response.status_code == 422
+    assert invalid_month_response.status_code == 422
 
 
 def test_get_incident_detail_returns_public_record_with_sources(tmp_path: Path) -> None:
@@ -283,16 +368,26 @@ def test_get_filters_reads_distinct_values_from_database(tmp_path: Path) -> None
     assert response.json() == {
         "categories": [
             "Autonomous Systems",
+            "Model Governance",
             "Privacy/Security",
         ],
         "claimants": [
+            "ArchiveAI",
             "FutureStack",
+            "MayOps",
             "RoboOps",
         ],
         "companies": [
+            "ArchiveAI",
             "FutureStack",
+            "MayOps",
             "RoboOps",
         ],
+        "years": [2026, 2025],
+        "months_by_year": {
+            "2026": [5, 4],
+            "2025": [12],
+        },
     }
 
 

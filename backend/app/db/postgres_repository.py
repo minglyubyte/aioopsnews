@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -12,7 +10,7 @@ from app.scrapers.rss import RSSArticle
 from app.services.claim_matcher import PUBLIC_CLAIM_MATCH_THRESHOLD
 from app.services.incident_query import IncidentQueryFilters
 
-_SQLITE_SCHEMA = """
+_POSTGRES_SCHEMA = """
 create table if not exists claims (
     id text primary key,
     claimant_name text not null,
@@ -21,8 +19,8 @@ create table if not exists claims (
     claim_date text not null,
     claim_topic text not null,
     status text not null,
-    created_at text default current_timestamp,
-    updated_at text default current_timestamp
+    created_at timestamptz default current_timestamp,
+    updated_at timestamptz default current_timestamp
 );
 
 create table if not exists incident_logs (
@@ -36,12 +34,12 @@ create table if not exists incident_logs (
     reality_summary text not null,
     status text not null,
     ingestion_run_id text,
-    confidence_score real,
+    confidence_score double precision,
     review_notes text,
     matched_claim_id text references claims(id),
-    claim_match_confidence real,
-    created_at text default current_timestamp,
-    updated_at text default current_timestamp
+    claim_match_confidence double precision,
+    created_at timestamptz default current_timestamp,
+    updated_at timestamptz default current_timestamp
 );
 
 create table if not exists incident_sources (
@@ -53,7 +51,7 @@ create table if not exists incident_sources (
     title text,
     published_at text,
     is_primary integer not null default 0,
-    created_at text default current_timestamp
+    created_at timestamptz default current_timestamp
 );
 """
 
@@ -168,45 +166,48 @@ _SEED_SOURCES: list[tuple[Any, ...]] = [
 ]
 
 
-class SQLiteIncidentRepository:
+class PostgresIncidentRepository:
     def __init__(self, database_url: str) -> None:
-        if not database_url.startswith("sqlite:///"):
+        if not database_url.startswith(("postgresql://", "postgres://")):
             raise ValueError(
-                "Only sqlite:/// DATABASE_URL values are supported right now."
+                "Only postgresql:// or postgres:// DATABASE_URL values are supported."
             )
 
-        self._database_path = Path(database_url.removeprefix("sqlite:///"))
-        self._database_path.parent.mkdir(parents=True, exist_ok=True)
+        self._database_url = database_url
         self._initialize_database()
 
     def list_public_incidents(
         self,
         filters: IncidentQueryFilters,
     ) -> list[dict[str, Any]]:
-        where_clauses = ["incident_logs.status = ?"]
+        where_clauses = ["incident_logs.status = %s"]
         params: list[Any] = ["approved"]
 
         if filters.category:
-            where_clauses.append("incident_logs.categories like ?")
+            where_clauses.append("incident_logs.categories like %s")
             params.append(f"%{json.dumps(filters.category).strip('"')}%")
         if filters.company:
-            where_clauses.append("incident_logs.company_involved = ?")
+            where_clauses.append("incident_logs.company_involved = %s")
             params.append(filters.company)
         if filters.claimant:
-            where_clauses.append("incident_logs.claimant_name = ?")
+            where_clauses.append("incident_logs.claimant_name = %s")
             params.append(filters.claimant)
         if filters.severity_min is not None:
-            where_clauses.append("incident_logs.severity_score >= ?")
+            where_clauses.append("incident_logs.severity_score >= %s")
             params.append(filters.severity_min)
         if filters.severity_max is not None:
-            where_clauses.append("incident_logs.severity_score <= ?")
+            where_clauses.append("incident_logs.severity_score <= %s")
             params.append(filters.severity_max)
         if filters.year is not None:
-            where_clauses.append("strftime('%Y', incident_logs.date_logged) = ?")
-            params.append(str(filters.year))
+            where_clauses.append(
+                "extract(year from incident_logs.date_logged::date) = %s"
+            )
+            params.append(filters.year)
         if filters.month is not None:
-            where_clauses.append("strftime('%m', incident_logs.date_logged) = ?")
-            params.append(f"{filters.month:02d}")
+            where_clauses.append(
+                "extract(month from incident_logs.date_logged::date) = %s"
+            )
+            params.append(filters.month)
 
         offset = (filters.page - 1) * filters.page_size
 
@@ -236,7 +237,7 @@ class SQLiteIncidentRepository:
                     on claims.id = incident_logs.matched_claim_id
                 where {" and ".join(where_clauses)}
                 order by incident_logs.date_logged desc
-                limit ? offset ?
+                limit %s offset %s
                 """,
                 (*params, filters.page_size, offset),
             ).fetchall()
@@ -287,7 +288,7 @@ class SQLiteIncidentRepository:
                 from incident_logs
                 left join claims
                     on claims.id = incident_logs.matched_claim_id
-                where incident_logs.id = ? and incident_logs.status = ?
+                where incident_logs.id = %s and incident_logs.status = %s
                 limit 1
                 """,
                 (incident_id, "approved"),
@@ -306,7 +307,7 @@ class SQLiteIncidentRepository:
                     publisher,
                     title
                 from incident_sources
-                where incident_id = ?
+                where incident_id = %s
                 order by published_at desc, id asc
                 """,
                 (incident_id,),
@@ -336,7 +337,7 @@ class SQLiteIncidentRepository:
                     claim_match_confidence,
                     review_notes
                 from incident_logs
-                where status = ?
+                where status = %s
                 order by date_logged desc, id asc
                 """,
                 ("pending_review",),
@@ -426,7 +427,7 @@ class SQLiteIncidentRepository:
                 """
                 select incident_id
                 from incident_sources
-                where source_url = ?
+                where source_url = %s
                 limit 1
                 """,
                 (article.url,),
@@ -454,7 +455,7 @@ class SQLiteIncidentRepository:
                     review_notes,
                     matched_claim_id,
                     claim_match_confidence
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     incident_id,
@@ -487,7 +488,7 @@ class SQLiteIncidentRepository:
                     title,
                     published_at,
                     is_primary
-                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     source_id,
@@ -519,7 +520,7 @@ class SQLiteIncidentRepository:
                 from incident_logs
                 left join incident_sources
                     on incident_sources.incident_id = incident_logs.id
-                where incident_logs.status = ?
+                where incident_logs.status = %s
                 order by incident_logs.date_logged desc, incident_logs.id asc
                 """,
                 ("pending_review",),
@@ -588,17 +589,17 @@ class SQLiteIncidentRepository:
                 """
                 update incident_logs
                 set
-                    company_involved = ?,
-                    claimant_name = ?,
-                    categories = ?,
-                    severity_score = ?,
-                    reality_summary = ?,
-                    confidence_score = ?,
-                    review_notes = ?,
-                    matched_claim_id = ?,
-                    claim_match_confidence = ?,
+                    company_involved = %s,
+                    claimant_name = %s,
+                    categories = %s,
+                    severity_score = %s,
+                    reality_summary = %s,
+                    confidence_score = %s,
+                    review_notes = %s,
+                    matched_claim_id = %s,
+                    claim_match_confidence = %s,
                     updated_at = current_timestamp
-                where id = ?
+                where id = %s
                 """,
                 (
                     company_involved,
@@ -634,17 +635,17 @@ class SQLiteIncidentRepository:
                 """
                 update incident_logs
                 set
-                    status = ?,
-                    company_involved = ?,
-                    claimant_name = ?,
-                    categories = ?,
-                    severity_score = ?,
-                    reality_summary = ?,
-                    matched_claim_id = ?,
-                    claim_match_confidence = ?,
-                    review_notes = ?,
+                    status = %s,
+                    company_involved = %s,
+                    claimant_name = %s,
+                    categories = %s,
+                    severity_score = %s,
+                    reality_summary = %s,
+                    matched_claim_id = %s,
+                    claim_match_confidence = %s,
+                    review_notes = %s,
                     updated_at = current_timestamp
-                where id = ?
+                where id = %s
                 """,
                 (
                     status,
@@ -678,7 +679,7 @@ class SQLiteIncidentRepository:
                     claim_match_confidence,
                     review_notes
                 from incident_logs
-                where id = ?
+                where id = %s
                 """,
                 (incident_id,),
             ).fetchone()
@@ -692,7 +693,7 @@ class SQLiteIncidentRepository:
                     publisher,
                     title
                 from incident_sources
-                where incident_id = ?
+                where incident_id = %s
                 order by published_at desc, id asc
                 """,
                 (incident_id,),
@@ -720,7 +721,7 @@ class SQLiteIncidentRepository:
 
     def _group_sources_by_incident(
         self,
-        source_rows: list[sqlite3.Row],
+        source_rows: list[dict[str, Any]],
     ) -> dict[str, list[dict[str, Any]]]:
         sources_by_incident: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in source_rows:
@@ -738,7 +739,7 @@ class SQLiteIncidentRepository:
 
     def _serialize_public_incident_row(
         self,
-        row: sqlite3.Row,
+        row: dict[str, Any],
         sources: list[dict[str, Any]],
     ) -> dict[str, Any]:
         return {
@@ -755,22 +756,29 @@ class SQLiteIncidentRepository:
             "sources": sources,
         }
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self._database_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+    def _connect(self):
+        try:
+            from psycopg import connect
+            from psycopg.rows import dict_row
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "psycopg is required for PostgreSQL DATABASE_URL values."
+            ) from exc
+
+        return connect(self._database_url, row_factory=dict_row)
 
     def _initialize_database(self) -> None:
         with self._connect() as connection:
-            connection.executescript(_SQLITE_SCHEMA)
+            connection.execute(_POSTGRES_SCHEMA)
 
             incident_count = connection.execute(
-                "select count(*) from incident_logs"
-            ).fetchone()[0]
+                "select count(*) as count from incident_logs"
+            ).fetchone()["count"]
             if incident_count:
                 return
 
-            connection.executemany(
+            self._execute_many(
+                connection,
                 """
                 insert into claims (
                     id,
@@ -780,11 +788,12 @@ class SQLiteIncidentRepository:
                     claim_date,
                     claim_topic,
                     status
-                ) values (?, ?, ?, ?, ?, ?, ?)
+                ) values (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 _SEED_CLAIMS,
             )
-            connection.executemany(
+            self._execute_many(
+                connection,
                 """
                 insert into incident_logs (
                     id,
@@ -801,11 +810,12 @@ class SQLiteIncidentRepository:
                     review_notes,
                     matched_claim_id,
                     claim_match_confidence
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 _SEED_INCIDENTS,
             )
-            connection.executemany(
+            self._execute_many(
+                connection,
                 """
                 insert into incident_sources (
                     id,
@@ -816,14 +826,23 @@ class SQLiteIncidentRepository:
                     title,
                     published_at,
                     is_primary
-                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 _SEED_SOURCES,
             )
             connection.commit()
 
+    def _execute_many(
+        self,
+        connection,
+        query: str,
+        rows: list[tuple[Any, ...]],
+    ) -> None:
+        for row in rows:
+            connection.execute(query, row)
 
-def _build_public_claim_payload(row: sqlite3.Row) -> dict[str, Any] | None:
+
+def _build_public_claim_payload(row: dict[str, Any]) -> dict[str, Any] | None:
     if row["claim_id"] is None:
         return None
     if row["claim_status"] != "approved":

@@ -71,6 +71,12 @@ body {
   margin-top: 1.5rem;
 }
 
+.signals-card {
+  background:
+    radial-gradient(circle at top right, rgba(192, 103, 45, 0.08), transparent 35%),
+    rgba(255, 255, 255, 0.92);
+}
+
 .filter-pill,
 .tag {
   padding: 0.35rem 0.7rem;
@@ -80,8 +86,176 @@ body {
   font-size: 0.9rem;
 }
 
+.filter-pill-button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #e6edf5;
+  color: #27415f;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.filter-pill-button.is-active {
+  background: #19395d;
+  color: #fff;
+}
+
+.filter-pill-button:focus-visible,
+.secondary-action:focus-visible,
+.primary-action:focus-visible,
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: 2px solid #19395d;
+  outline-offset: 2px;
+}
+
 .section-header {
   margin-bottom: 1.5rem;
+}
+
+.signals-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.signal-panel {
+  padding: 1.35rem;
+  border: 1px solid rgba(39, 65, 95, 0.12);
+  border-radius: 1.25rem;
+  background: linear-gradient(180deg, rgba(251, 253, 255, 0.98), rgba(244, 248, 251, 0.98));
+}
+
+.signal-panel-header {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.signal-panel-kicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a6040;
+}
+
+.signal-panel h3 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.signal-panel-note,
+.signal-fallback {
+  margin: 0;
+  color: #556c86;
+  font-size: 0.95rem;
+}
+
+.signal-timeline {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.signal-timeline-row {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.signal-timeline-copy {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: #304760;
+  font-size: 0.95rem;
+}
+
+.signal-bar-track {
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(29, 71, 99, 0.08);
+}
+
+.signal-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1d4763 0%, #c0672d 100%);
+}
+
+.signal-distribution {
+  display: grid;
+  gap: 1.1rem;
+  align-items: center;
+}
+
+.donut-chart {
+  display: grid;
+  place-items: center;
+  width: min(15rem, 100%);
+  aspect-ratio: 1;
+  margin-inline: auto;
+  border-radius: 50%;
+  background-image: conic-gradient(#1d4763 0deg 360deg);
+}
+
+.donut-chart-core {
+  display: grid;
+  place-items: center;
+  width: 62%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(251, 253, 255, 0.96);
+  color: #19395d;
+  text-align: center;
+}
+
+.donut-chart-core strong {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.donut-chart-core span {
+  color: #556c86;
+  font-size: 0.9rem;
+}
+
+.distribution-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.distribution-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  color: #304760;
+}
+
+.distribution-swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+}
+
+.distribution-label {
+  min-width: 0;
+}
+
+.distribution-count,
+.distribution-percentage {
+  font-variant-numeric: tabular-nums;
+  color: #556c86;
 }
 
 .section-kicker {
@@ -239,6 +413,19 @@ body {
 @media (min-width: 960px) {
   .reader-filter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .signals-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .signal-panel-header {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 15rem);
+    align-items: start;
+  }
+
+  .signal-distribution {
+    grid-template-columns: minmax(12rem, 14rem) minmax(0, 1fr);
   }
 
   .detail-grid {

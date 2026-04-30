@@ -53,6 +53,8 @@ class IncidentFilterResponse(BaseModel):
     categories: list[str]
     claimants: list[str]
     companies: list[str]
+    years: list[int]
+    months_by_year: dict[str, list[int]]
 
 
 def get_incident_repository(request: Request):
@@ -66,10 +68,15 @@ def get_incidents(
     claimant: str | None = None,
     severity_min: int | None = Query(default=None, ge=1, le=5),
     severity_max: int | None = Query(default=None, ge=1, le=5),
+    year: int | None = Query(default=None, ge=1900, le=3000),
+    month: int | None = Query(default=None, ge=1, le=12),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     repository=Depends(get_incident_repository),
 ) -> IncidentFeedResponse:
+    if month is not None and year is None:
+        raise HTTPException(status_code=422, detail="month requires year")
+
     return IncidentFeedResponse(
         items=list_public_incidents(
             repository,
@@ -79,6 +86,8 @@ def get_incidents(
                 claimant=claimant,
                 severity_min=severity_min,
                 severity_max=severity_max,
+                year=year,
+                month=month,
                 page=page,
                 page_size=page_size,
             ),

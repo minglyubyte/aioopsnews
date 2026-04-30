@@ -18,10 +18,71 @@ function renderPath(pathname: string) {
   return render(<App />);
 }
 
+function mockMatchMedia(matches: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
+function buildReaderFiltersResponse() {
+  return {
+    categories: ["Autonomous Systems", "Privacy/Security"],
+    claimants: ["AssistCo", "RoboFleet"],
+    companies: ["AssistCo", "RoboFleet"],
+    years: [2026, 2025],
+    months_by_year: {
+      "2026": [5, 4],
+      "2025": [12],
+    },
+  };
+}
+
+function buildIncident(
+  overrides: Partial<{
+    id: string;
+    headline: string;
+    date_logged: string;
+    company_involved: string;
+    claimant_name: string;
+    categories: string[];
+    severity_score: number;
+    reality_summary: string;
+    status: string;
+  }> = {},
+) {
+  return {
+    id: overrides.id ?? "incident-1",
+    headline:
+      overrides.headline ?? "Customer support bot exposes private account notes",
+    date_logged: overrides.date_logged ?? "2026-04-29",
+    company_involved: overrides.company_involved ?? "AssistCo",
+    claimant_name: overrides.claimant_name ?? "AssistCo",
+    categories: overrides.categories ?? ["Privacy/Security"],
+    severity_score: overrides.severity_score ?? 4,
+    reality_summary:
+      overrides.reality_summary ??
+      "A support automation rollout leaked internal notes into user-facing replies.",
+    status: overrides.status ?? "approved",
+    matched_claim: null,
+    sources: [],
+  };
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.history.pushState({}, "", "/");
+    mockMatchMedia(false);
   });
 
   it("renders the demo dashboard route with hero copy and featured incident content", () => {
@@ -48,6 +109,87 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders demo theme and language controls and defaults to light mode", () => {
+    renderPath("/demo");
+
+    expect(
+      screen.getByRole("group", { name: "Demo language switch" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Demo theme switch" }),
+    ).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "English" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    expect(screen.getByRole("main")).toHaveAttribute("data-theme", "light");
+  });
+
+  it("defaults the demo route to dark mode when the system preference is dark", () => {
+    mockMatchMedia(true);
+
+    renderPath("/demo");
+
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("main")).toHaveAttribute("data-theme", "dark");
+  });
+
+  it("switches the demo route to Chinese copy and preserves spotlight selection", () => {
+    renderPath("/demo");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Open incident detail for RoboFleet robot pilot rollback follows navigation failures/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "中文" }));
+
+    expect(
+      screen.getByRole("heading", {
+        name: "AI 故障，不该被热潮掩盖",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("RoboFleet 机器人试点因导航失误而回滚").length,
+    ).toBeGreaterThan(0);
+    expect(window.localStorage.getItem("ai-oops-demo-locale")).toBe("zh");
+
+    const spotlight = screen
+      .getByRole("heading", {
+        name: "事件聚焦",
+      })
+      .closest("section");
+
+    expect(spotlight).not.toBeNull();
+    expect(
+      within(spotlight as HTMLElement).getByRole("heading", {
+        name: "RoboFleet 机器人试点因导航失误而回滚",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("persists a manual dark theme choice on the demo route", () => {
+    renderPath("/demo");
+
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+
+    expect(screen.getByRole("main")).toHaveAttribute("data-theme", "dark");
+    expect(window.localStorage.getItem("ai-oops-demo-theme")).toBe("dark");
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
   it("updates the incident spotlight when a different demo card is selected", () => {
     renderPath("/demo");
 
@@ -67,6 +209,41 @@ describe("App", () => {
     expect(
       within(spotlight as HTMLElement).getByRole("heading", {
         name: "RoboFleet robot pilot rollback follows navigation failures",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders demo incident signals with monthly counts and category distribution", () => {
+    renderPath("/demo");
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Incident signals",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Apr 2026")).toBeInTheDocument();
+    expect(screen.getByText("May 2026")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name: "Demo category distribution donut chart",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("localizes demo incident signals when switching to Chinese", () => {
+    renderPath("/demo");
+
+    fireEvent.click(screen.getByRole("button", { name: "中文" }));
+
+    expect(
+      screen.getByRole("heading", {
+        name: "事件信号",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("2026年4月")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", {
+        name: "演示分类分布环形图",
       }),
     ).toBeInTheDocument();
   });
@@ -391,17 +568,10 @@ describe("App", () => {
       const url = input.toString();
 
       if (url.endsWith("/filters")) {
-        return new Response(
-          JSON.stringify({
-            categories: ["Autonomous Systems", "Privacy/Security"],
-            claimants: ["AssistCo", "RoboFleet"],
-            companies: ["AssistCo", "RoboFleet"],
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
+        return new Response(JSON.stringify(buildReaderFiltersResponse()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       if (url.includes("/admin/incidents")) {
@@ -499,6 +669,163 @@ describe("App", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8000/incidents?category=Autonomous+Systems&company=RoboFleet",
+      {
+        headers: undefined,
+      },
+    );
+  });
+
+  it("renders tag and archive controls and preserves detail view with active archive filters", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(JSON.stringify(buildReaderFiltersResponse()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/admin/incidents")) {
+        return new Response(
+          JSON.stringify({
+            items: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/incidents/incident-robot-1")) {
+        return new Response(
+          JSON.stringify({
+            id: "incident-robot-1",
+            headline: "Warehouse robot rollback follows navigation failures",
+            date_logged: "2026-04-24",
+            company_involved: "RoboFleet",
+            claimant_name: "RoboFleet",
+            categories: ["Autonomous Systems"],
+            severity_score: 3,
+            reality_summary:
+              "Operators paused a pilot after repeated pathing failures.",
+            status: "approved",
+            matched_claim: null,
+            sources: [
+              {
+                id: "source-robot-1",
+                source_url: "https://example.com/robotics",
+                source_type: "primary",
+                publisher: "City Ledger",
+                title: "Warehouse robot rollback follows navigation failures",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (
+        url.includes("/incidents?category=Autonomous+Systems&year=2026&month=4")
+      ) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                id: "incident-robot-1",
+                headline:
+                  "Warehouse robot rollback follows navigation failures",
+                date_logged: "2026-04-24",
+                company_involved: "RoboFleet",
+                claimant_name: "RoboFleet",
+                categories: ["Autonomous Systems"],
+                severity_score: 3,
+                reality_summary:
+                  "Operators paused a pilot after repeated pathing failures.",
+                status: "approved",
+                matched_claim: null,
+                sources: [],
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              id: "incident-1",
+              headline: "Customer support bot exposes private account notes",
+              date_logged: "2025-12-18",
+              company_involved: "AssistCo",
+              claimant_name: "AssistCo",
+              categories: ["Privacy/Security"],
+              severity_score: 4,
+              reality_summary:
+                "A support automation rollout leaked internal notes into user-facing replies.",
+              status: "approved",
+              matched_claim: null,
+              sources: [],
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Customer support bot exposes private account notes",
+      }),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("button", { name: "Autonomous Systems" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter by year")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter by month")).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Autonomous Systems" }));
+    fireEvent.change(screen.getByLabelText("Filter by year"), {
+      target: { value: "2026" },
+    });
+    fireEvent.change(screen.getByLabelText("Filter by month"), {
+      target: { value: "4" },
+    });
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Warehouse robot rollback follows navigation failures",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View details" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Incident detail",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("City Ledger")).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/incidents?category=Autonomous+Systems&year=2026&month=4",
       {
         headers: undefined,
       },
@@ -614,7 +941,7 @@ describe("App", () => {
         name: "Customer support bot exposes private account notes",
       }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Privacy/Security")).toHaveLength(2);
+    expect(screen.getAllByText("Privacy/Security").length).toBeGreaterThan(1);
     expect(screen.getAllByText("AssistCo").length).toBeGreaterThan(0);
     expect(screen.getByText("Claim vs. reality")).toBeInTheDocument();
     expect(
@@ -789,6 +1116,199 @@ describe("App", () => {
     expect(await screen.findByText("approved")).toBeInTheDocument();
     expect(
       screen.getByText("Approved after editor verification."),
+    ).toBeInTheDocument();
+  });
+
+  it("renders incident signals with chronological monthly counts and category distribution", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(JSON.stringify(buildReaderFiltersResponse()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/admin/incidents")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [
+            buildIncident({
+              id: "incident-march-1",
+              headline: "Policy assistant invents a reimbursement rule",
+              date_logged: "2026-03-07",
+              categories: ["Policy"],
+            }),
+            buildIncident({
+              id: "incident-april-1",
+              headline: "Support bot exposes private account notes",
+              date_logged: "2026-04-18",
+              categories: ["Privacy/Security"],
+            }),
+            buildIncident({
+              id: "incident-april-2",
+              headline: "Pilot robot rollback follows route drift",
+              date_logged: "2026-04-29",
+              company_involved: "RoboFleet",
+              claimant_name: "RoboFleet",
+              categories: ["Autonomous Systems"],
+            }),
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Incident signals",
+      }),
+    ).toBeInTheDocument();
+
+    expect(screen.getByText("Mar 2026")).toBeInTheDocument();
+    expect(screen.getByText("Apr 2026")).toBeInTheDocument();
+    expect(screen.getByText("1 incident")).toBeInTheDocument();
+    expect(screen.getByText("2 incidents")).toBeInTheDocument();
+    const categoryPanel = screen
+      .getByRole("heading", {
+        name: "Category distribution",
+      })
+      .closest("article");
+
+    expect(categoryPanel).not.toBeNull();
+    expect(
+      within(categoryPanel as HTMLElement).getByRole("img", {
+        name: "Category distribution donut chart",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(categoryPanel as HTMLElement).getByText("Policy"),
+    ).toBeInTheDocument();
+    expect(
+      within(categoryPanel as HTMLElement).getByText("Privacy/Security"),
+    ).toBeInTheDocument();
+    expect(
+      within(categoryPanel as HTMLElement).getByText("Autonomous Systems"),
+    ).toBeInTheDocument();
+    expect(
+      within(categoryPanel as HTMLElement).getAllByText("33%").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("updates incident signals with reader filters and shows an empty summary state", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+
+      if (url.endsWith("/filters")) {
+        return new Response(JSON.stringify(buildReaderFiltersResponse()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/admin/incidents")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/incidents?category=Autonomous+Systems")) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              buildIncident({
+                id: "incident-robot-1",
+                headline: "Warehouse robot rollback follows navigation failures",
+                date_logged: "2026-04-24",
+                company_involved: "RoboFleet",
+                claimant_name: "RoboFleet",
+                categories: ["Autonomous Systems"],
+              }),
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/incidents?company=RoboFleet")) {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          items: [
+            buildIncident({
+              id: "incident-1",
+              headline: "Customer support bot exposes private account notes",
+              date_logged: "2026-04-29",
+              categories: ["Privacy/Security"],
+            }),
+            buildIncident({
+              id: "incident-2",
+              headline: "Warehouse robot rollback follows navigation failures",
+              date_logged: "2026-04-24",
+              company_involved: "RoboFleet",
+              claimant_name: "RoboFleet",
+              categories: ["Autonomous Systems"],
+            }),
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Customer support bot exposes private account notes",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Autonomous Systems" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Warehouse robot rollback follows navigation failures",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Apr 2026")).toBeInTheDocument();
+    expect(screen.getByText("1 incident")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Autonomous Systems" }));
+    fireEvent.change(screen.getByLabelText("Filter by company"), {
+      target: { value: "RoboFleet" },
+    });
+
+    expect(
+      await screen.findByText("No incidents match this slice yet."),
     ).toBeInTheDocument();
   });
 });

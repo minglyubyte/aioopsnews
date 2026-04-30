@@ -38,6 +38,8 @@ export type IncidentFilters = {
   categories: string[];
   claimants: string[];
   companies: string[];
+  years: number[];
+  months_by_year: Record<string, number[]>;
 };
 
 export type IncidentFeedFilters = {
@@ -46,6 +48,8 @@ export type IncidentFeedFilters = {
   claimant?: string;
   severityMin?: number;
   severityMax?: number;
+  year?: number;
+  month?: number;
   page?: number;
   pageSize?: number;
 };

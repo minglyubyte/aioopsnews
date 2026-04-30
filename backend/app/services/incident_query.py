@@ -11,6 +11,8 @@ class IncidentQueryFilters:
     claimant: str | None = None
     severity_min: int | None = None
     severity_max: int | None = None
+    year: int | None = None
+    month: int | None = None
     page: int = 1
     page_size: int = 20
 
@@ -23,7 +25,7 @@ class IncidentReadRepository(Protocol):
 
     def get_public_incident(self, incident_id: str) -> dict[str, object] | None: ...
 
-    def get_filter_values(self) -> dict[str, list[str]]: ...
+    def get_filter_values(self) -> dict[str, object]: ...
 
 
 def list_public_incidents(
@@ -40,5 +42,5 @@ def get_public_incident(
     return repository.get_public_incident(incident_id)
 
 
-def get_filter_values(repository: IncidentReadRepository) -> dict[str, list[str]]:
+def get_filter_values(repository: IncidentReadRepository) -> dict[str, object]:
     return repository.get_filter_values()

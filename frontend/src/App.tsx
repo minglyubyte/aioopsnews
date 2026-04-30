@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { useEffect, useState } from "react";
 
 import {
@@ -35,6 +35,34 @@ const initialState: FeedState = {
   error: null,
   isAdminLoading: false,
   adminError: null,
+};
+
+const MONTH_LABEL_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+const SIGNAL_COLORS = [
+  "#1d4763",
+  "#c0672d",
+  "#8f3441",
+  "#597b53",
+  "#9c8453",
+  "#5a5f8f",
+];
+
+type MonthlyIncidentPoint = {
+  monthKey: string;
+  label: string;
+  count: number;
+};
+
+type CategoryDistributionSegment = {
+  category: string;
+  count: number;
+  percentage: number;
+  color: string;
 };
 
 export default function App() {
@@ -74,6 +102,17 @@ export default function App() {
   const activeDraft = activeIncident
     ? (drafts[activeIncident.id] ?? createReviewDraft(activeIncident))
     : null;
+  const availableYears = filters?.years ?? [];
+  const availableMonths = readerFilters.year
+    ? (filters?.months_by_year?.[String(readerFilters.year)] ?? [])
+    : [];
+  const monthlyIncidentPoints = buildMonthlyIncidentPoints(incidents);
+  const categorySegments = buildCategoryDistributionSegments(incidents);
+  const donutChartStyle = buildDonutChartStyle(categorySegments);
+  const maxMonthlyCount = Math.max(
+    ...monthlyIncidentPoints.map((point) => point.count),
+    1,
+  );
 
   useEffect(() => {
     let isCancelled = false;
@@ -314,6 +353,43 @@ export default function App() {
     setAdminToken(trimmedToken);
   }
 
+  function handleCategoryFilterChange(category: string | undefined) {
+    setReaderFilters((current) => ({
+      ...current,
+      category,
+      page: 1,
+    }));
+  }
+
+  function handleYearFilterChange(yearValue: string) {
+    const nextYear = yearValue ? Number(yearValue) : undefined;
+
+    setReaderFilters((current) => {
+      const validMonths = nextYear
+        ? (filters?.months_by_year?.[String(nextYear)] ?? [])
+        : [];
+      const nextMonth =
+        current.month && validMonths.includes(current.month)
+          ? current.month
+          : undefined;
+
+      return {
+        ...current,
+        year: nextYear,
+        month: nextMonth,
+        page: 1,
+      };
+    });
+  }
+
+  function handleMonthFilterChange(monthValue: string) {
+    setReaderFilters((current) => ({
+      ...current,
+      month: monthValue ? Number(monthValue) : undefined,
+      page: 1,
+    }));
+  }
+
   return (
     <main className="page-shell">
       <section className="hero-card">
@@ -329,23 +405,74 @@ export default function App() {
         </p>
         {filters ? (
           <>
+            <div className="filter-row" aria-label="Category tags">
+              {filters.categories.map((category) => (
+                <button
+                  aria-pressed={readerFilters.category === category}
+                  className={`filter-pill-button${readerFilters.category === category ? " is-active" : ""}`}
+                  key={category}
+                  type="button"
+                  onClick={() =>
+                    handleCategoryFilterChange(
+                      readerFilters.category === category
+                        ? undefined
+                        : category,
+                    )
+                  }
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+
             <div className="reader-filter-grid">
               <label className="field">
                 <span>Filter by category</span>
                 <select
                   value={readerFilters.category ?? ""}
                   onChange={(event) =>
-                    setReaderFilters((current) => ({
-                      ...current,
-                      category: event.target.value || undefined,
-                      page: 1,
-                    }))
+                    handleCategoryFilterChange(event.target.value || undefined)
                   }
                 >
                   <option value="">All categories</option>
                   {filters.categories.map((category) => (
                     <option key={category} value={category}>
                       {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Filter by year</span>
+                <select
+                  value={readerFilters.year?.toString() ?? ""}
+                  onChange={(event) =>
+                    handleYearFilterChange(event.target.value)
+                  }
+                >
+                  <option value="">All years</option>
+                  {availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Filter by month</span>
+                <select
+                  disabled={!readerFilters.year}
+                  value={readerFilters.month?.toString() ?? ""}
+                  onChange={(event) =>
+                    handleMonthFilterChange(event.target.value)
+                  }
+                >
+                  <option value="">All months</option>
+                  {availableMonths.map((month) => (
+                    <option key={month} value={month}>
+                      {month}
                     </option>
                   ))}
                 </select>
@@ -373,6 +500,104 @@ export default function App() {
               </label>
             </div>
           </>
+        ) : null}
+      </section>
+
+      <section className="feed-card signals-card" aria-live="polite">
+        <div className="section-header">
+          <p className="section-kicker">Current slice</p>
+          <h2>Incident signals</h2>
+        </div>
+        {!isLoading && !error && incidents.length === 0 ? (
+          <p className="body-copy">No incidents match this slice yet.</p>
+        ) : null}
+        {!isLoading && !error && incidents.length > 0 ? (
+          <div className="signals-grid">
+            <article className="signal-panel">
+              <div className="signal-panel-header">
+                <div>
+                  <p className="signal-panel-kicker">Monthly count</p>
+                  <h3>Monthly incident count</h3>
+                </div>
+                <p className="signal-panel-note">
+                  Built from the incidents currently in view.
+                </p>
+              </div>
+              {monthlyIncidentPoints.length < 2 ? (
+                <p className="signal-fallback">
+                  Only one month is currently in view, so this chart stays
+                  intentionally minimal.
+                </p>
+              ) : null}
+              <ol className="signal-timeline" aria-label="Monthly incident count">
+                {monthlyIncidentPoints.map((point) => {
+                  const incidentLabel =
+                    point.count === 1 ? "1 incident" : `${point.count} incidents`;
+
+                  return (
+                    <li className="signal-timeline-row" key={point.monthKey}>
+                      <div className="signal-timeline-copy">
+                        <span>{point.label}</span>
+                        <span>{incidentLabel}</span>
+                      </div>
+                      <div className="signal-bar-track" aria-hidden="true">
+                        <div
+                          className="signal-bar"
+                          style={{
+                            width: `${Math.max(
+                              (point.count / maxMonthlyCount) * 100,
+                              16,
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </article>
+
+            <article className="signal-panel">
+              <div className="signal-panel-header">
+                <div>
+                  <p className="signal-panel-kicker">Category mix</p>
+                  <h3>Category distribution</h3>
+                </div>
+                <p className="signal-panel-note">
+                  Shared tags across the incidents currently in view.
+                </p>
+              </div>
+              <div className="signal-distribution">
+                <div
+                  aria-label="Category distribution donut chart"
+                  className="donut-chart"
+                  role="img"
+                  style={donutChartStyle}
+                >
+                  <div className="donut-chart-core">
+                    <strong>{incidents.length}</strong>
+                    <span>{incidents.length === 1 ? "incident" : "incidents"}</span>
+                  </div>
+                </div>
+                <ul className="distribution-list">
+                  {categorySegments.map((segment) => (
+                    <li className="distribution-item" key={segment.category}>
+                      <span
+                        aria-hidden="true"
+                        className="distribution-swatch"
+                        style={{ backgroundColor: segment.color }}
+                      />
+                      <span className="distribution-label">{segment.category}</span>
+                      <span className="distribution-count">{segment.count}</span>
+                      <span className="distribution-percentage">
+                        {segment.percentage}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </article>
+          </div>
         ) : null}
       </section>
 
@@ -617,5 +842,88 @@ function createReviewDraft(incident: AdminIncident): ReviewDraft {
     category: incident.categories[0] ?? "",
     severity: incident.severity_score,
     reviewNotes: incident.review_notes ?? "",
+  };
+}
+
+function buildMonthlyIncidentPoints(
+  incidents: Incident[],
+): MonthlyIncidentPoint[] {
+  const monthCounts = new Map<string, number>();
+
+  for (const incident of incidents) {
+    const monthKey = incident.date_logged.slice(0, 7);
+    monthCounts.set(monthKey, (monthCounts.get(monthKey) ?? 0) + 1);
+  }
+
+  return Array.from(monthCounts.entries())
+    .sort(([leftMonth], [rightMonth]) => leftMonth.localeCompare(rightMonth))
+    .map(([monthKey, count]) => ({
+      monthKey,
+      count,
+      label: MONTH_LABEL_FORMATTER.format(new Date(`${monthKey}-01T00:00:00Z`)),
+    }));
+}
+
+function buildCategoryDistributionSegments(
+  incidents: Incident[],
+): CategoryDistributionSegment[] {
+  const categoryCounts = new Map<string, number>();
+
+  for (const incident of incidents) {
+    for (const category of incident.categories) {
+      categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
+    }
+  }
+
+  const totalCategoryCount = Array.from(categoryCounts.values()).reduce(
+    (total, count) => total + count,
+    0,
+  );
+
+  return Array.from(categoryCounts.entries())
+    .sort(([leftCategory, leftCount], [rightCategory, rightCount]) => {
+      if (leftCount !== rightCount) {
+        return rightCount - leftCount;
+      }
+
+      return leftCategory.localeCompare(rightCategory);
+    })
+    .map(([category, count], index) => ({
+      category,
+      count,
+      percentage:
+        totalCategoryCount === 0
+          ? 0
+          : Math.round((count / totalCategoryCount) * 100),
+      color: SIGNAL_COLORS[index % SIGNAL_COLORS.length],
+    }));
+}
+
+function buildDonutChartStyle(
+  segments: CategoryDistributionSegment[],
+): CSSProperties {
+  if (segments.length === 0) {
+    return {
+      backgroundImage:
+        "conic-gradient(rgba(39, 65, 95, 0.12) 0deg 360deg)",
+    };
+  }
+
+  let currentAngle = 0;
+  const gradientStops = segments.map((segment) => {
+    const startAngle = currentAngle;
+    const nextAngle = currentAngle + segment.percentage * 3.6;
+    currentAngle = nextAngle;
+    return `${segment.color} ${startAngle}deg ${nextAngle}deg`;
+  });
+
+  if (currentAngle < 360) {
+    gradientStops.push(
+      `${segments[segments.length - 1].color} ${currentAngle}deg 360deg`,
+    );
+  }
+
+  return {
+    backgroundImage: `conic-gradient(${gradientStops.join(", ")})`,
   };
 }

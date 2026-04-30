@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.admin import router as admin_router
 from app.api.incidents import router as incidents_router
 from app.core.config import get_settings
-from app.db.sqlite_repository import SQLiteIncidentRepository
+from app.db.repository_factory import build_incident_repository
 
 
 def create_app(
@@ -19,7 +19,7 @@ def create_app(
     app = FastAPI(title="AI Reality Check API")
     app.state.settings = effective_settings
 
-    app.state.incident_repository = SQLiteIncidentRepository(
+    app.state.incident_repository = build_incident_repository(
         effective_settings.database_url
     )
 
