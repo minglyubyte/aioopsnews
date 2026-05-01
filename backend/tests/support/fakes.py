@@ -663,7 +663,7 @@ class InMemoryIncidentRepository:
         severity_decision_source: str | None,
         severity_suggested_at: str,
         review_model: str,
-        review_batch_id: str,
+        review_batch_id: str | None,
         reviewed_at: str,
     ) -> dict[str, Any] | None:
         incident = self.incidents.get(incident_id)
@@ -772,6 +772,7 @@ class InMemoryIncidentRepository:
     def _serialize_admin_incident(self, incident: dict[str, Any]) -> dict[str, Any]:
         return {
             "id": incident["id"],
+            "external_id": incident.get("external_id"),
             "headline": incident["headline"],
             "headline_en": incident.get("headline_en", incident["headline"]),
             "headline_zh": incident.get("headline_zh"),
@@ -781,6 +782,7 @@ class InMemoryIncidentRepository:
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),
             "severity_score": incident["severity_score"],
+            "suggested_severity_score": incident.get("suggested_severity_score"),
             "reality_summary": incident["reality_summary"],
             "reality_summary_en": incident.get(
                 "reality_summary_en",
@@ -793,6 +795,9 @@ class InMemoryIncidentRepository:
             "review_notes": incident.get("review_notes"),
             "legitimacy_score": incident.get("legitimacy_score"),
             "legitimacy_label": incident.get("legitimacy_label"),
+            "legitimacy_flag": incident.get("legitimacy_flag"),
+            "confidence_level": incident.get("confidence_level"),
+            "import_notes": incident.get("import_notes"),
             "severity_confidence": incident.get("severity_confidence"),
             "severity_reasoning": incident.get("severity_reasoning"),
             "severity_flags": list(incident.get("severity_flags", [])),

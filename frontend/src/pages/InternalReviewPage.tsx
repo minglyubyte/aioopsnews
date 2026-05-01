@@ -1,8 +1,8 @@
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { fetchAdminIncidentQueue, updateAdminIncident } from "../lib/api";
-import type { AdminIncident } from "../types/incident";
+import type { AdminIncident, AdminIncidentUpdateRequest } from "../types/incident";
 
 const ADMIN_TOKEN_STORAGE_KEY = "ai-reality-check-admin-token";
 
@@ -26,14 +26,38 @@ export default function InternalReviewPage() {
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [shouldRevealReviewPanel, setShouldRevealReviewPanel] = useState(false);
+  const reviewPanelRef = useRef<HTMLElement | null>(null);
+  const sortedAdminIncidents = sortAdminIncidents(adminIncidents);
 
   const activeIncident =
-    adminIncidents.find((incident) => incident.id === activeReviewId) ??
-    adminIncidents[0] ??
+    sortedAdminIncidents.find((incident) => incident.id === activeReviewId) ??
+    sortedAdminIncidents[0] ??
     null;
   const activeDraft = activeIncident
     ? (drafts[activeIncident.id] ?? createReviewDraft(activeIncident))
     : null;
+
+  useEffect(() => {
+    if (!shouldRevealReviewPanel || !activeIncident) {
+      return;
+    }
+
+    setShouldRevealReviewPanel(false);
+
+    if (
+      typeof window === "undefined" ||
+      !window.matchMedia("(max-width: 959px)").matches
+    ) {
+      return;
+    }
+
+    reviewPanelRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    reviewPanelRef.current?.focus();
+  }, [activeIncident, shouldRevealReviewPanel]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -72,6 +96,7 @@ export default function InternalReviewPage() {
             ]),
           ),
         );
+        const sortedResponseItems = sortAdminIncidents(response.items);
         setActiveReviewId((currentActiveReviewId) => {
           if (
             currentActiveReviewId &&
@@ -80,7 +105,7 @@ export default function InternalReviewPage() {
             return currentActiveReviewId;
           }
 
-          return response.items[0]?.id ?? null;
+          return sortedResponseItems[0]?.id ?? null;
         });
       } catch (loadError) {
         if (isCancelled) {
@@ -140,7 +165,12 @@ export default function InternalReviewPage() {
     }));
   }
 
-  async function handleApproveIncident() {
+  function handleSelectIncident(incidentId: string) {
+    setActiveReviewId(incidentId);
+    setShouldRevealReviewPanel(true);
+  }
+
+  async function handleSubmitReview(status: AdminIncidentUpdateRequest["status"]) {
     if (!activeIncident || !activeDraft || !adminToken) {
       return;
     }
@@ -150,7 +180,7 @@ export default function InternalReviewPage() {
 
     try {
       const updatedIncident = await updateAdminIncident(adminToken, activeIncident.id, {
-        status: "approved",
+        status,
         company_involved: activeDraft.company,
         claimant_name: activeIncident.claimant_name ?? null,
         categories: activeDraft.category ? [activeDraft.category] : [],
@@ -178,8 +208,8 @@ export default function InternalReviewPage() {
   }
 
   return (
-    <main className="page-shell">
-      <section className="hero-card">
+    <main className="page-shell internal-review-page">
+      <section className="hero-card internal-review-hero">
         <p className="eyebrow">Hidden route</p>
         <h1>Internal review</h1>
         <p className="lede">
@@ -193,7 +223,7 @@ export default function InternalReviewPage() {
         </p>
       </section>
 
-      <section className="feed-card" aria-live="polite">
+      <section className="feed-card internal-review-auth" aria-live="polite">
         <div className="section-header">
           <p className="section-kicker">Authentication</p>
           <h2>Admin access</h2>
@@ -214,41 +244,54 @@ export default function InternalReviewPage() {
         {adminError ? <p>{adminError}</p> : null}
       </section>
 
-      <div className="public-dashboard-grid">
+      <div className="internal-review-workspace">
         <section
           aria-label="Review queue"
-          className="feed-card public-section"
+          className="feed-card internal-review-queue"
           role="region"
         >
           <div className="section-header">
             <p className="section-kicker">Queue</p>
             <h2>Editor queue</h2>
+            <p className="body-copy internal-review-section-copy">
+              Choose an incident waiting for editorial review.
+            </p>
           </div>
           {isAdminLoading ? <p>Loading review queue...</p> : null}
           {!isAdminLoading && !adminError && adminIncidents.length === 0 ? (
             <p className="body-copy">No incidents are waiting for review right now.</p>
           ) : null}
           {!isAdminLoading && !adminError && adminIncidents.length > 0 ? (
-            <div className="public-archive-list">
-              {adminIncidents.map((incident) => {
+            <div className="public-archive-list internal-review-queue-list">
+              {sortedAdminIncidents.map((incident) => {
                 const isSelected = incident.id === activeIncident?.id;
 
                 return (
                   <button
+                    aria-label={`Open review for ${incident.headline_en ?? incident.headline}`}
                     aria-pressed={isSelected}
-                    className={`public-archive-item${isSelected ? " is-selected" : ""}`}
+                    className={`public-archive-item internal-review-queue-item${isSelected ? " is-selected" : ""}`}
                     key={incident.id}
                     type="button"
-                    onClick={() => setActiveReviewId(incident.id)}
+                    onClick={() => handleSelectIncident(incident.id)}
                   >
-                    <span className="public-archive-item-date">
-                      {formatQueueStatus(incident.status)}
+                    <span className="internal-review-queue-status">
+                      Status: {incident.status}
                     </span>
-                    <span className="public-archive-item-title">
+                    <span className="public-archive-item-title internal-review-queue-title">
                       {incident.headline_en ?? incident.headline}
                     </span>
-                    <span className="public-archive-item-meta">
-                      Open review for {incident.headline_en ?? incident.headline}
+                    <span className="internal-review-queue-details">
+                      <span className="internal-review-queue-detail">
+                        {incident.company_involved}
+                      </span>
+                      <span className="internal-review-queue-detail">
+                        Severity{" "}
+                        {incident.suggested_severity_score ?? incident.severity_score}
+                      </span>
+                      <span className="internal-review-queue-detail">
+                        {incident.date_logged}
+                      </span>
                     </span>
                   </button>
                 );
@@ -257,143 +300,205 @@ export default function InternalReviewPage() {
           ) : null}
         </section>
 
-        <section className="feed-card public-section" aria-live="polite">
+        <section
+          ref={reviewPanelRef}
+          aria-live="polite"
+          className="feed-card internal-review-panel"
+          tabIndex={-1}
+        >
           <div className="section-header">
             <p className="section-kicker">Review operations</p>
             <h2>Incident review</h2>
+            <p className="body-copy internal-review-section-copy">
+              Review and approve the selected incident.
+            </p>
           </div>
           {!isAdminLoading && !adminError && activeIncident && activeDraft ? (
-            <div className="review-grid">
-              <article className="incident-item">
+            <div className="internal-review-panel-body">
+              <div className="internal-review-active-summary">
+                <p className="eyebrow internal-review-summary-kicker">
+                  Selected incident
+                </p>
+                <h3>{activeIncident.headline_en ?? activeIncident.headline}</h3>
                 <div className="incident-meta">
+                  <span>{formatQueueStatus(activeIncident.status)}</span>
                   <span>{activeIncident.company_involved}</span>
-                  <span>Severity {activeIncident.severity_score}</span>
                   <span>{activeIncident.date_logged}</span>
                 </div>
-                <h3>{activeIncident.headline_en ?? activeIncident.headline}</h3>
-                <p className="body-copy">{activeIncident.reality_summary_en ?? activeIncident.reality_summary}</p>
-                {activeIncident.review_notes ? (
-                  <p className="body-copy">{activeIncident.review_notes}</p>
-                ) : null}
-                {activeIncident.legitimacy_score !== null &&
-                activeIncident.legitimacy_score !== undefined ? (
-                  <p className="body-copy">
-                    Legitimacy score {Math.round(activeIncident.legitimacy_score * 100)}%
-                  </p>
-                ) : null}
-                {activeIncident.legitimacy_label ? (
-                  <p className="body-copy">{activeIncident.legitimacy_label}</p>
-                ) : null}
-                {activeIncident.suggested_severity_score ? (
-                  <div className="body-copy">
-                    <p>
-                      Suggested severity {activeIncident.suggested_severity_score}
-                    </p>
-                    {activeIncident.severity_confidence !== null &&
-                    activeIncident.severity_confidence !== undefined ? (
-                      <p>
-                        Confidence{" "}
-                        {Math.round(activeIncident.severity_confidence * 100)}%
-                      </p>
-                    ) : null}
-                    {activeIncident.severity_flags &&
-                    activeIncident.severity_flags.length > 0 ? (
-                      <p>Flags: {activeIncident.severity_flags.join(", ")}</p>
-                    ) : null}
-                    {activeIncident.severity_reasoning ? (
-                      <p>{activeIncident.severity_reasoning}</p>
-                    ) : null}
-                    {activeIncident.severity_model ? (
-                      <p>Suggested by {activeIncident.severity_model}</p>
-                    ) : null}
+              </div>
+
+              <div className="review-grid">
+                <article className="incident-item">
+                  <div className="incident-meta">
+                    <span>{activeIncident.company_involved}</span>
+                    <span>Severity {activeIncident.severity_score}</span>
+                    <span>{activeIncident.date_logged}</span>
                   </div>
-                ) : null}
-                {activeIncident.legitimacy_reasoning ? (
-                  <p className="body-copy">{activeIncident.legitimacy_reasoning}</p>
-                ) : null}
-                {activeIncident.source_validation_summary ? (
-                  <p className="body-copy">{activeIncident.source_validation_summary}</p>
-                ) : null}
-                {activeIncident.duplicate_status ? (
+                  <h3>{activeIncident.headline_en ?? activeIncident.headline}</h3>
                   <p className="body-copy">
-                    Duplicate status {activeIncident.duplicate_status}
+                    {activeIncident.reality_summary_en ?? activeIncident.reality_summary}
                   </p>
-                ) : null}
-                {activeIncident.duplicate_of_incident_id ? (
-                  <p className="body-copy">
-                    Canonical incident {activeIncident.duplicate_of_incident_id}
-                  </p>
-                ) : null}
-                {activeIncident.canonical_incident_id ? (
-                  <p className="body-copy">
-                    Canonical record {activeIncident.canonical_incident_id}
-                  </p>
-                ) : null}
-                {activeIncident.duplicate_candidates.map((candidate) => (
-                  <p className="body-copy" key={candidate.candidate_incident_id}>
-                    Potential duplicate: {candidate.candidate_incident_id} ({Math.round(candidate.embedding_score * 100)}%)
-                  </p>
-                ))}
-              </article>
+                  {activeIncident.review_notes ? (
+                    <p className="body-copy">{activeIncident.review_notes}</p>
+                  ) : null}
+                  {activeIncident.legitimacy_score !== null &&
+                  activeIncident.legitimacy_score !== undefined ? (
+                    <p className="body-copy">
+                      Legitimacy score {Math.round(activeIncident.legitimacy_score * 100)}%
+                    </p>
+                  ) : null}
+                  {activeIncident.legitimacy_label ? (
+                    <p className="body-copy">{activeIncident.legitimacy_label}</p>
+                  ) : null}
+                  {activeIncident.suggested_severity_score ? (
+                    <div className="body-copy">
+                      <p>
+                        Suggested severity {activeIncident.suggested_severity_score}
+                      </p>
+                      {activeIncident.severity_confidence !== null &&
+                      activeIncident.severity_confidence !== undefined ? (
+                        <p>
+                          Confidence{" "}
+                          {Math.round(activeIncident.severity_confidence * 100)}%
+                        </p>
+                      ) : null}
+                      {activeIncident.severity_flags &&
+                      activeIncident.severity_flags.length > 0 ? (
+                        <p>Flags: {activeIncident.severity_flags.join(", ")}</p>
+                      ) : null}
+                      {activeIncident.severity_reasoning ? (
+                        <p>{activeIncident.severity_reasoning}</p>
+                      ) : null}
+                      {activeIncident.severity_model ? (
+                        <p>Suggested by {activeIncident.severity_model}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {activeIncident.legitimacy_reasoning ? (
+                    <p className="body-copy">{activeIncident.legitimacy_reasoning}</p>
+                  ) : null}
+                  {activeIncident.source_validation_summary ? (
+                    <p className="body-copy">{activeIncident.source_validation_summary}</p>
+                  ) : null}
+                  {activeIncident.sources.length > 0 ? (
+                    <section className="source-list internal-review-source-list">
+                      <h4 className="internal-review-source-heading">Sources</h4>
+                      {activeIncident.sources.map((source) => (
+                        <article className="source-item" key={source.id}>
+                          <p className="internal-review-source-type">
+                            {formatSourceTypeLabel(source.source_type)}
+                          </p>
+                          {source.publisher ? (
+                            <p className="source-publisher">{source.publisher}</p>
+                          ) : null}
+                          <a
+                            className="internal-review-source-link"
+                            href={source.source_url}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {source.title ?? source.source_url}
+                          </a>
+                          <p className="internal-review-source-url">
+                            {source.source_url}
+                          </p>
+                        </article>
+                      ))}
+                    </section>
+                  ) : null}
+                  {activeIncident.duplicate_status ? (
+                    <p className="body-copy">
+                      Duplicate status {activeIncident.duplicate_status}
+                    </p>
+                  ) : null}
+                  {activeIncident.duplicate_of_incident_id ? (
+                    <p className="body-copy">
+                      Canonical incident {activeIncident.duplicate_of_incident_id}
+                    </p>
+                  ) : null}
+                  {activeIncident.canonical_incident_id ? (
+                    <p className="body-copy">
+                      Canonical record {activeIncident.canonical_incident_id}
+                    </p>
+                  ) : null}
+                  {activeIncident.duplicate_candidates.map((candidate) => (
+                    <p className="body-copy" key={candidate.candidate_incident_id}>
+                      Potential duplicate: {candidate.candidate_incident_id} ({Math.round(candidate.embedding_score * 100)}%)
+                    </p>
+                  ))}
+                </article>
 
-              <form
-                className="review-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleApproveIncident();
-                }}
-              >
-                <label className="field">
-                  <span>Company</span>
-                  <input
-                    name="company"
-                    value={activeDraft.company}
-                    onChange={(event) => updateDraft("company", event.target.value)}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Category</span>
-                  <input
-                    name="category"
-                    value={activeDraft.category}
-                    onChange={(event) => updateDraft("category", event.target.value)}
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Severity</span>
-                  <input
-                    max="5"
-                    min="1"
-                    name="severity"
-                    type="number"
-                    value={activeDraft.severity}
-                    onChange={(event) =>
-                      updateDraft("severity", Number(event.target.value))
-                    }
-                  />
-                </label>
-
-                <label className="field">
-                  <span>Review notes</span>
-                  <input
-                    name="review-notes"
-                    value={activeDraft.reviewNotes}
-                    onChange={(event) =>
-                      updateDraft("reviewNotes", event.target.value)
-                    }
-                  />
-                </label>
-
-                <button
-                  className="primary-action"
-                  disabled={isSaving}
-                  type="submit"
+                <form
+                  className="review-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSubmitReview("approved");
+                  }}
                 >
-                  {isSaving ? "Saving..." : "Approve incident"}
-                </button>
-              </form>
+                  <label className="field">
+                    <span>Company</span>
+                    <input
+                      name="company"
+                      value={activeDraft.company}
+                      onChange={(event) => updateDraft("company", event.target.value)}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Category</span>
+                    <input
+                      name="category"
+                      value={activeDraft.category}
+                      onChange={(event) => updateDraft("category", event.target.value)}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Severity</span>
+                    <input
+                      max="5"
+                      min="1"
+                      name="severity"
+                      type="number"
+                      value={activeDraft.severity}
+                      onChange={(event) =>
+                        updateDraft("severity", Number(event.target.value))
+                      }
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Review notes</span>
+                    <input
+                      name="review-notes"
+                      value={activeDraft.reviewNotes}
+                      onChange={(event) =>
+                        updateDraft("reviewNotes", event.target.value)
+                      }
+                    />
+                  </label>
+
+                  <div className="review-actions">
+                    <button
+                      className="primary-action"
+                      disabled={isSaving}
+                      type="submit"
+                    >
+                      {isSaving ? "Saving..." : "Approve incident"}
+                    </button>
+                    <button
+                      className="secondary-action danger-action"
+                      disabled={isSaving}
+                      type="button"
+                      onClick={() => {
+                        void handleSubmitReview("rejected");
+                      }}
+                    >
+                      {isSaving ? "Saving..." : "Reject incident"}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           ) : null}
         </section>
@@ -427,4 +532,24 @@ function formatQueueStatus(status: string): string {
     return "pending llm escalation";
   }
   return status;
+}
+
+function formatSourceTypeLabel(sourceType: string): string {
+  if (sourceType === "primary") {
+    return "Primary source";
+  }
+  if (sourceType === "secondary") {
+    return "Secondary source";
+  }
+  if (sourceType === "imported") {
+    return "Imported source";
+  }
+
+  return `${sourceType.split("_").join(" ")} source`;
+}
+
+function sortAdminIncidents(incidents: AdminIncident[]): AdminIncident[] {
+  return [...incidents].sort((left, right) =>
+    right.date_logged.localeCompare(left.date_logged),
+  );
 }

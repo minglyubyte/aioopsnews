@@ -1955,7 +1955,7 @@ class PostgresIncidentRepository:
         severity_decision_source: str | None,
         severity_suggested_at: str,
         review_model: str,
-        review_batch_id: str,
+        review_batch_id: str | None,
         reviewed_at: str,
     ) -> dict[str, Any] | None:
         with self._connect() as connection:

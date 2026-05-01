@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -89,6 +90,43 @@ class IncidentReviewBatchReconciliation:
     escalated: int
 
 
+@dataclass(frozen=True)
+class IncidentReviewFailure:
+    incident_id: str
+    external_id: str | None
+    error: str
+
+
+@dataclass(frozen=True)
+class IncidentReviewRunSummary:
+    reviews_attempted: int
+    reviews_completed: int
+    reviews_failed: int
+    approved: int
+    pending_review: int
+    rejected: int
+    escalated: int
+    translations_completed: int
+    translations_failed: int
+    review_failures: list[IncidentReviewFailure]
+
+
+@dataclass(frozen=True)
+class IncidentReviewDecision:
+    result: IncidentReviewResult
+    escalated: bool
+    force_human_review: bool
+
+
+@dataclass(frozen=True)
+class IncidentReviewApplicationResult:
+    approved: int
+    pending_review: int
+    rejected: int
+    translations_completed: int
+    translations_failed: int
+
+
 class IncidentSourceFetcher(Protocol):
     def fetch(self, source_url: str) -> FetchedIncidentSource: ...
 
@@ -104,6 +142,15 @@ class IncidentBatchReviewClient(Protocol):
     ) -> IncidentReviewBatchSubmission: ...
 
     def get_batch_results(self, *, batch_id: str) -> list[IncidentReviewResult]: ...
+
+
+class AsyncIncidentReviewClient(Protocol):
+    async def review_incident(
+        self,
+        *,
+        incident: dict[str, Any],
+        model: str,
+    ) -> IncidentReviewResult: ...
 
 
 class IncidentEscalationReviewClient(Protocol):
@@ -297,6 +344,48 @@ class OpenAIIncidentReviewClient:
         return response.json()
 
 
+class AsyncOpenAIIncidentReviewClient:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str = "https://api.openai.com/v1",
+        timeout_seconds: float = 60.0,
+    ) -> None:
+        try:
+            from openai import AsyncOpenAI
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "The openai package is required for async incident review."
+            ) from exc
+
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=timeout_seconds,
+        )
+
+    async def review_incident(
+        self,
+        *,
+        incident: dict[str, Any],
+        model: str,
+    ) -> IncidentReviewResult:
+        payload = await self._client.chat.completions.create(
+            model=model,
+            response_format=_build_review_response_format(),
+            messages=_build_review_messages(incident),
+        )
+        content = payload.choices[0].message.content
+        if not isinstance(content, str):
+            raise RuntimeError("Expected structured review content from OpenAI")
+        return _parse_review_result(
+            incident_id=incident["id"],
+            model=payload.model,
+            content=content,
+        )
+
+
 def submit_incident_review_batch(
     repository: IncidentRepository,
     *,
@@ -309,18 +398,11 @@ def submit_incident_review_batch(
         for incident in repository.list_incidents_pending_llm_review()
         if not incident.get("review_batch_id")
     ]
-    for incident in incidents:
-        for source in incident.get("sources", []):
-            fetched = source_fetcher.fetch(source["source_url"])
-            repository.update_incident_source_evidence(
-                source_id=source["id"],
-                canonical_url=fetched.canonical_url,
-                fetch_status=fetched.fetch_status,
-                http_status=fetched.http_status,
-                evidence_text=fetched.evidence_text,
-                fetch_error=fetched.fetch_error,
-                fetched_at=_now_isoformat(),
-            )
+    _refresh_source_evidence(
+        repository,
+        incidents=incidents,
+        source_fetcher=source_fetcher,
+    )
 
     refreshed_incidents = [
         incident
@@ -346,6 +428,132 @@ def submit_incident_review_batch(
         review_model=primary_model,
     )
     return submission
+
+
+async def review_pending_incidents(
+    repository: IncidentRepository,
+    *,
+    source_fetcher: IncidentSourceFetcher,
+    review_client: AsyncIncidentReviewClient,
+    escalation_client: IncidentEscalationReviewClient,
+    translation_client: IncidentTranslationClient,
+    embedding_client: IncidentEmbeddingClient,
+    duplicate_judge_client: IncidentDuplicateJudgeClient,
+    primary_model: str,
+    escalation_model: str,
+    embedding_model: str,
+    duplicate_judge_model: str,
+    concurrency: int = 8,
+    max_attempts: int = 3,
+    approval_threshold: float = AUTO_APPROVAL_LEGITIMACY_THRESHOLD,
+) -> IncidentReviewRunSummary:
+    incidents = repository.list_incidents_pending_llm_review()
+    if not incidents:
+        return IncidentReviewRunSummary(
+            reviews_attempted=0,
+            reviews_completed=0,
+            reviews_failed=0,
+            approved=0,
+            pending_review=0,
+            rejected=0,
+            escalated=0,
+            translations_completed=0,
+            translations_failed=0,
+            review_failures=[],
+        )
+
+    _refresh_source_evidence(
+        repository,
+        incidents=incidents,
+        source_fetcher=source_fetcher,
+    )
+    refreshed_incidents = repository.list_incidents_pending_llm_review()
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def _process_incident(
+        incident: dict[str, Any],
+    ) -> tuple[IncidentReviewApplicationResult, bool, IncidentReviewFailure | None]:
+        async with semaphore:
+            try:
+                primary_result = await _review_incident_with_retries(
+                    review_client,
+                    incident=incident,
+                    model=primary_model,
+                    max_attempts=max_attempts,
+                )
+            except Exception as exc:
+                return (
+                    IncidentReviewApplicationResult(
+                        approved=0,
+                        pending_review=0,
+                        rejected=0,
+                        translations_completed=0,
+                        translations_failed=0,
+                    ),
+                    False,
+                    IncidentReviewFailure(
+                        incident_id=incident["id"],
+                        external_id=incident.get("external_id"),
+                        error=str(exc),
+                    ),
+                )
+
+            decision = _resolve_review_decision(
+                incident=incident,
+                initial_result=primary_result,
+                escalation_client=escalation_client,
+                escalation_model=escalation_model,
+                approval_threshold=approval_threshold,
+            )
+            application_result = _apply_review_decision(
+                repository,
+                incident=incident,
+                decision=decision,
+                translation_client=translation_client,
+                embedding_client=embedding_client,
+                duplicate_judge_client=duplicate_judge_client,
+                embedding_model=embedding_model,
+                duplicate_judge_model=duplicate_judge_model,
+                escalation_model=escalation_model,
+                approval_threshold=approval_threshold,
+                review_batch_id=incident.get("review_batch_id"),
+            )
+            return application_result, decision.escalated, None
+
+    results = await asyncio.gather(
+        *(_process_incident(incident) for incident in refreshed_incidents)
+    )
+
+    approved = 0
+    pending_review = 0
+    rejected = 0
+    escalated = 0
+    translations_completed = 0
+    translations_failed = 0
+    review_failures: list[IncidentReviewFailure] = []
+    for application_result, was_escalated, failure in results:
+        approved += application_result.approved
+        pending_review += application_result.pending_review
+        rejected += application_result.rejected
+        translations_completed += application_result.translations_completed
+        translations_failed += application_result.translations_failed
+        if was_escalated:
+            escalated += 1
+        if failure is not None:
+            review_failures.append(failure)
+
+    return IncidentReviewRunSummary(
+        reviews_attempted=len(refreshed_incidents),
+        reviews_completed=len(refreshed_incidents) - len(review_failures),
+        reviews_failed=len(review_failures),
+        approved=approved,
+        pending_review=pending_review,
+        rejected=rejected,
+        escalated=escalated,
+        translations_completed=translations_completed,
+        translations_failed=translations_failed,
+        review_failures=review_failures,
+    )
 
 
 def reconcile_incident_review_batch(
@@ -376,116 +584,31 @@ def reconcile_incident_review_batch(
         if incident is None:
             continue
 
-        normalized_result = _normalize_review_result(result, incident=incident)
-        final_result = normalized_result
-        if _should_escalate(normalized_result, approval_threshold=approval_threshold):
-            final_result = escalation_client.review_incident(
-                incident=incident,
-                model=escalation_model,
-            )
-            final_result = _normalize_review_result(final_result, incident=incident)
-            escalated += 1
-
-        final_status = _resolve_final_status(
-            final_result,
+        decision = _resolve_review_decision(
+            incident=incident,
+            initial_result=result,
+            escalation_client=escalation_client,
+            escalation_model=escalation_model,
             approval_threshold=approval_threshold,
         )
-        final_severity_score = (
-            final_result.suggested_severity_score
-            if final_status == "approved"
-            and final_result.suggested_severity_score is not None
-            else incident.get("severity_score")
-        )
-        severity_decision_source = (
-            "escalation_llm"
-            if final_status == "approved"
-            and final_result.reviewed_model == escalation_model
-            and final_result.suggested_severity_score is not None
-            else "primary_llm"
-            if final_status == "approved"
-            and final_result.suggested_severity_score is not None
-            else None
-        )
-        repository.apply_incident_review_result(
-            incident_id=incident["id"],
-            status=final_status,
-            legitimacy_score=final_result.score,
-            legitimacy_label=final_result.verdict,
-            legitimacy_reasoning=final_result.reasoning,
-            source_validation_summary=final_result.source_quality_summary,
-            headline_en=final_result.headline_en,
-            reality_summary_en=final_result.reality_summary_en,
-            categories=final_result.categories or list(incident.get("categories", [])),
-            severity_score=final_severity_score,
-            suggested_severity_score=final_result.suggested_severity_score,
-            severity_confidence=final_result.severity_confidence,
-            severity_reasoning=final_result.severity_reasoning,
-            severity_flags=final_result.severity_flags or [],
-            severity_model=final_result.reviewed_model,
-            severity_decision_source=severity_decision_source,
-            severity_suggested_at=_now_isoformat(),
-            review_model=final_result.reviewed_model,
+        application_result = _apply_review_decision(
+            repository,
+            incident=incident,
+            decision=decision,
+            translation_client=translation_client,
+            embedding_client=embedding_client,
+            duplicate_judge_client=duplicate_judge_client,
+            embedding_model=embedding_model,
+            duplicate_judge_model=duplicate_judge_model,
+            escalation_model=escalation_model,
+            approval_threshold=approval_threshold,
             review_batch_id=batch_id,
-            reviewed_at=_now_isoformat(),
         )
-        incident.update(
-            {
-                "status": final_status,
-                "headline_en": final_result.headline_en,
-                "reality_summary_en": final_result.reality_summary_en,
-                "categories": final_result.categories or list(incident.get("categories", [])),
-                "legitimacy_score": final_result.score,
-                "legitimacy_label": final_result.verdict,
-                "legitimacy_reasoning": final_result.reasoning,
-                "source_validation_summary": final_result.source_quality_summary,
-                "severity_score": final_severity_score,
-                "suggested_severity_score": final_result.suggested_severity_score,
-                "severity_confidence": final_result.severity_confidence,
-                "severity_reasoning": final_result.severity_reasoning,
-                "severity_flags": final_result.severity_flags or [],
-                "severity_model": final_result.reviewed_model,
-                "severity_decision_source": severity_decision_source,
-                "review_model": final_result.reviewed_model,
-            }
-        )
-
-        if final_status == "approved":
-            duplicate_outcome = detect_and_merge_duplicate_incident(
-                repository,
-                incident_id=incident["id"],
-                embedding_client=embedding_client,
-                duplicate_judge_client=duplicate_judge_client,
-                embedding_model=embedding_model,
-                duplicate_judge_model=duplicate_judge_model,
-            )
-            if duplicate_outcome.is_duplicate:
-                incident["status"] = "duplicate_confirmed"
-                incident["duplicate_of_incident_id"] = (
-                    duplicate_outcome.canonical_incident_id
-                )
-                incident["translation_status"] = "not_requested"
-                continue
-
-            translation = translate_incident_copy(
-                headline_en=final_result.headline_en,
-                reality_summary_en=final_result.reality_summary_en,
-                client=translation_client,
-            )
-            repository.update_incident_translation(
-                incident_id=incident["id"],
-                headline_zh=translation.headline_zh,
-                reality_summary_zh=translation.reality_summary_zh,
-                translation_status=translation.status,
-                translated_at=_now_isoformat(),
-            )
-            incident["translation_status"] = translation.status
-            incident["headline_zh"] = translation.headline_zh
-            incident["reality_summary_zh"] = translation.reality_summary_zh
-            approved += 1
-        elif final_status == "rejected":
-            rejected += 1
-        else:
-            pending_review += 1
+        approved += application_result.approved
+        pending_review += application_result.pending_review
+        rejected += application_result.rejected
+        if decision.escalated:
+            escalated += 1
 
     return IncidentReviewBatchReconciliation(
         approved=approved,
@@ -535,11 +658,17 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 "You are an editorial reviewer for an AI incident database. "
                 "Return JSON only with keys: verdict, score, reasoning, "
                 "source_quality_summary, date_confirmed, company_confirmed, "
-                "headline_en, reality_summary_en, categories, suggested_severity_score, "
-                "severity_confidence, severity_reasoning, severity_flags. "
+                "headline_en, reality_summary_en, categories, "
+                "suggested_severity_score, "
+                "severity_confidence, severity_reasoning, severity_flags, "
+                "needs_escalation. "
                 "Return severity_confidence as a number between 0 and 1, "
                 "not a word or label. Choose one or more categories from the "
                 "approved taxonomy only. "
+                "Set needs_escalation to true when source quality is weak, "
+                "date or company attribution remains unresolved, severity is "
+                "materially unclear, the evidence conflicts, or you believe "
+                "human review or a stronger second pass is required. "
                 "Use this impact-first severity rubric: 1=minor, quickly "
                 "reversible, no meaningful external harm; 2=real but limited "
                 "impact, localized and reversible; 3=clear operational or "
@@ -560,12 +689,12 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 {
                     "incident_id": incident["id"],
                     "external_id": incident.get("external_id"),
-                        "company": incident["company_involved"],
-                        "incident_topic": incident.get("incident_topic"),
-                        "approved_categories": list(INCIDENT_CATEGORY_TAXONOMY),
-                        "incident_date": incident["date_logged"],
-                        "headline": incident["headline"],
-                        "reality_summary": incident["reality_summary"],
+                    "company": incident["company_involved"],
+                    "incident_topic": incident.get("incident_topic"),
+                    "approved_categories": list(INCIDENT_CATEGORY_TAXONOMY),
+                    "incident_date": incident["date_logged"],
+                    "headline": incident["headline"],
+                    "reality_summary": incident["reality_summary"],
                     "editorial_input": {
                         "legitimacy_flag": incident.get("legitimacy_flag"),
                         "confidence_level": incident.get("confidence_level"),
@@ -631,6 +760,7 @@ def _build_review_response_format() -> dict[str, Any]:
                         "type": "array",
                         "items": {"type": "string"},
                     },
+                    "needs_escalation": {"type": "boolean"},
                 },
                 "required": [
                     "verdict",
@@ -646,6 +776,7 @@ def _build_review_response_format() -> dict[str, Any]:
                     "severity_confidence",
                     "severity_reasoning",
                     "severity_flags",
+                    "needs_escalation",
                 ],
             },
         },
@@ -685,7 +816,7 @@ def _parse_review_result(
             str(flag) for flag in payload.get("severity_flags", []) if str(flag)
         ],
         needs_escalation=(
-            bool(payload.get("needs_escalation", False))
+            bool(payload["needs_escalation"])
             or invalid_categories
             or invalid_severity_confidence
         ),
@@ -784,13 +915,18 @@ def _can_auto_approve(
         return False
     if (not result.date_confirmed) or (not result.company_confirmed):
         return False
-    return not any(flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or [])
+    return not any(
+        flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or []
+    )
 
 
 def _requires_editor_review(result: IncidentReviewResult) -> bool:
     if result.suggested_severity_score is None:
         return False
-    if result.suggested_severity_score is not None and result.suggested_severity_score >= 3:
+    if (
+        result.suggested_severity_score is not None
+        and result.suggested_severity_score >= 3
+    ):
         return True
     return any(flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or [])
 
@@ -799,6 +935,226 @@ def _extract_evidence_text(html: str) -> str:
     text = html.replace("\x00", " ").replace("\r", " ").replace("\n", " ")
     collapsed = " ".join(text.split())
     return collapsed[:4000]
+
+
+def _refresh_source_evidence(
+    repository: IncidentRepository,
+    *,
+    incidents: list[dict[str, Any]],
+    source_fetcher: IncidentSourceFetcher,
+) -> None:
+    for incident in incidents:
+        for source in incident.get("sources", []):
+            fetched = source_fetcher.fetch(source["source_url"])
+            repository.update_incident_source_evidence(
+                source_id=source["id"],
+                canonical_url=fetched.canonical_url,
+                fetch_status=fetched.fetch_status,
+                http_status=fetched.http_status,
+                evidence_text=fetched.evidence_text,
+                fetch_error=fetched.fetch_error,
+                fetched_at=_now_isoformat(),
+            )
+
+
+async def _review_incident_with_retries(
+    review_client: AsyncIncidentReviewClient,
+    *,
+    incident: dict[str, Any],
+    model: str,
+    max_attempts: int,
+) -> IncidentReviewResult:
+    last_error: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            return await review_client.review_incident(incident=incident, model=model)
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if attempt == max_attempts - 1:
+                break
+            await asyncio.sleep(2**attempt)
+    if last_error is None:
+        raise RuntimeError("Review failed without an exception")
+    raise last_error
+
+
+def _resolve_review_decision(
+    *,
+    incident: dict[str, Any],
+    initial_result: IncidentReviewResult,
+    escalation_client: IncidentEscalationReviewClient,
+    escalation_model: str,
+    approval_threshold: float,
+) -> IncidentReviewDecision:
+    normalized_result = _normalize_review_result(initial_result, incident=incident)
+    if not _should_escalate(
+        normalized_result,
+        approval_threshold=approval_threshold,
+    ):
+        return IncidentReviewDecision(
+            result=normalized_result,
+            escalated=False,
+            force_human_review=False,
+        )
+
+    escalation_result = escalation_client.review_incident(
+        incident=incident,
+        model=escalation_model,
+    )
+    normalized_escalation_result = _normalize_review_result(
+        escalation_result,
+        incident=incident,
+    )
+    return IncidentReviewDecision(
+        result=normalized_escalation_result,
+        escalated=True,
+        force_human_review=normalized_escalation_result.needs_escalation,
+    )
+
+
+def _apply_review_decision(
+    repository: IncidentRepository,
+    *,
+    incident: dict[str, Any],
+    decision: IncidentReviewDecision,
+    translation_client: IncidentTranslationClient,
+    embedding_client: IncidentEmbeddingClient,
+    duplicate_judge_client: IncidentDuplicateJudgeClient,
+    embedding_model: str,
+    duplicate_judge_model: str,
+    escalation_model: str,
+    approval_threshold: float,
+    review_batch_id: str | None,
+) -> IncidentReviewApplicationResult:
+    final_result = decision.result
+    final_status = (
+        "pending_editor_review"
+        if decision.force_human_review
+        else _resolve_final_status(
+            final_result,
+            approval_threshold=approval_threshold,
+        )
+    )
+    final_severity_score = (
+        final_result.suggested_severity_score
+        if final_status == "approved"
+        and final_result.suggested_severity_score is not None
+        else incident.get("severity_score")
+    )
+    severity_decision_source = (
+        "escalation_llm"
+        if final_status == "approved"
+        and final_result.reviewed_model == escalation_model
+        and final_result.suggested_severity_score is not None
+        else "primary_llm"
+        if final_status == "approved"
+        and final_result.suggested_severity_score is not None
+        else None
+    )
+    repository.apply_incident_review_result(
+        incident_id=incident["id"],
+        status=final_status,
+        legitimacy_score=final_result.score,
+        legitimacy_label=final_result.verdict,
+        legitimacy_reasoning=final_result.reasoning,
+        source_validation_summary=final_result.source_quality_summary,
+        headline_en=final_result.headline_en,
+        reality_summary_en=final_result.reality_summary_en,
+        categories=final_result.categories or list(incident.get("categories", [])),
+        severity_score=final_severity_score,
+        suggested_severity_score=final_result.suggested_severity_score,
+        severity_confidence=final_result.severity_confidence,
+        severity_reasoning=final_result.severity_reasoning,
+        severity_flags=final_result.severity_flags or [],
+        severity_model=final_result.reviewed_model,
+        severity_decision_source=severity_decision_source,
+        severity_suggested_at=_now_isoformat(),
+        review_model=final_result.reviewed_model,
+        review_batch_id=review_batch_id,
+        reviewed_at=_now_isoformat(),
+    )
+    incident.update(
+        {
+            "status": final_status,
+            "headline_en": final_result.headline_en,
+            "reality_summary_en": final_result.reality_summary_en,
+            "categories": final_result.categories
+            or list(incident.get("categories", [])),
+            "legitimacy_score": final_result.score,
+            "legitimacy_label": final_result.verdict,
+            "legitimacy_reasoning": final_result.reasoning,
+            "source_validation_summary": final_result.source_quality_summary,
+            "severity_score": final_severity_score,
+            "suggested_severity_score": final_result.suggested_severity_score,
+            "severity_confidence": final_result.severity_confidence,
+            "severity_reasoning": final_result.severity_reasoning,
+            "severity_flags": final_result.severity_flags or [],
+            "severity_model": final_result.reviewed_model,
+            "severity_decision_source": severity_decision_source,
+            "review_model": final_result.reviewed_model,
+            "review_batch_id": review_batch_id,
+        }
+    )
+
+    if final_status != "approved":
+        if final_status == "rejected":
+            return IncidentReviewApplicationResult(
+                approved=0,
+                pending_review=0,
+                rejected=1,
+                translations_completed=0,
+                translations_failed=0,
+            )
+        return IncidentReviewApplicationResult(
+            approved=0,
+            pending_review=1,
+            rejected=0,
+            translations_completed=0,
+            translations_failed=0,
+        )
+
+    duplicate_outcome = detect_and_merge_duplicate_incident(
+        repository,
+        incident_id=incident["id"],
+        embedding_client=embedding_client,
+        duplicate_judge_client=duplicate_judge_client,
+        embedding_model=embedding_model,
+        duplicate_judge_model=duplicate_judge_model,
+    )
+    if duplicate_outcome.is_duplicate:
+        incident["status"] = "duplicate_confirmed"
+        incident["duplicate_of_incident_id"] = duplicate_outcome.canonical_incident_id
+        incident["translation_status"] = "not_requested"
+        return IncidentReviewApplicationResult(
+            approved=0,
+            pending_review=0,
+            rejected=0,
+            translations_completed=0,
+            translations_failed=0,
+        )
+
+    translation = translate_incident_copy(
+        headline_en=final_result.headline_en,
+        reality_summary_en=final_result.reality_summary_en,
+        client=translation_client,
+    )
+    repository.update_incident_translation(
+        incident_id=incident["id"],
+        headline_zh=translation.headline_zh,
+        reality_summary_zh=translation.reality_summary_zh,
+        translation_status=translation.status,
+        translated_at=_now_isoformat(),
+    )
+    incident["translation_status"] = translation.status
+    incident["headline_zh"] = translation.headline_zh
+    incident["reality_summary_zh"] = translation.reality_summary_zh
+    return IncidentReviewApplicationResult(
+        approved=1,
+        pending_review=0,
+        rejected=0,
+        translations_completed=1 if translation.status == "completed" else 0,
+        translations_failed=0 if translation.status == "completed" else 1,
+    )
 
 
 def _now_isoformat() -> str:

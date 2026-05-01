@@ -10,10 +10,12 @@ from app.core.incident_taxonomy import (
     CATEGORY_PRIVACY_SECURITY,
 )
 
+
 @dataclass(frozen=True)
 class IncidentClassification:
     company_involved: str
     categories: list[str]
+    severity_score: int
     confidence_score: float
 
 
@@ -34,6 +36,7 @@ def classify_incident(*, headline: str, source_summary: str) -> IncidentClassifi
         return IncidentClassification(
             company_involved=company_involved,
             categories=[CATEGORY_PRIVACY_SECURITY],
+            severity_score=4,
             confidence_score=0.87,
         )
 
@@ -44,6 +47,7 @@ def classify_incident(*, headline: str, source_summary: str) -> IncidentClassifi
         return IncidentClassification(
             company_involved=company_involved,
             categories=[CATEGORY_AUTONOMOUS_SYSTEMS],
+            severity_score=3,
             confidence_score=0.82,
         )
 
@@ -51,11 +55,13 @@ def classify_incident(*, headline: str, source_summary: str) -> IncidentClassifi
         return IncidentClassification(
             company_involved=company_involved,
             categories=[CATEGORY_MISSED_TIMELINES],
+            severity_score=2,
             confidence_score=0.74,
         )
 
     return IncidentClassification(
         company_involved=company_involved,
         categories=[CATEGORY_HALLUCINATIONS],
+        severity_score=2,
         confidence_score=0.61,
     )

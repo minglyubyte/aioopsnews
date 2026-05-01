@@ -15,22 +15,21 @@ from app.services.incident_import import (
     import_incidents_csv_text,
 )
 from app.services.incident_review import (
-    IncidentBatchReviewClient,
+    AsyncIncidentReviewClient,
     IncidentEscalationReviewClient,
     IncidentSourceFetcher,
-    reconcile_incident_review_batch,
-    submit_incident_review_batch,
+    review_pending_incidents,
 )
 from app.services.incident_translation import IncidentTranslationClient
 
 
-def run_incident_csv_workflow(
+async def run_incident_csv_workflow(
     *,
     repository: IncidentRepository,
     inbox_dir: Path,
     archive_dir: Path,
     source_fetcher: IncidentSourceFetcher,
-    batch_client: IncidentBatchReviewClient,
+    review_client: AsyncIncidentReviewClient,
     escalation_client: IncidentEscalationReviewClient,
     translation_client: IncidentTranslationClient,
     embedding_client: IncidentEmbeddingClient,
@@ -40,8 +39,6 @@ def run_incident_csv_workflow(
     embedding_model: str = "text-embedding-3-small",
     duplicate_judge_model: str | None = None,
     dry_run: bool = False,
-    submit_new_batches: bool = True,
-    reconcile_ready_batches: bool = True,
 ) -> dict[str, Any]:
     csv_paths = (
         sorted(path for path in inbox_dir.glob("*.csv"))
@@ -54,16 +51,16 @@ def run_incident_csv_workflow(
         "files_imported": 0,
         "files_failed": 0,
         "incidents_imported": 0,
-        "batches_submitted": 0,
-        "batches_reconciled": 0,
-        "batches_skipped": 0,
+        "reviews_attempted": 0,
+        "reviews_completed": 0,
+        "reviews_failed": 0,
+        "review_failures": [],
         "approved": 0,
         "pending_review": 0,
         "rejected": 0,
         "translations_completed": 0,
         "translations_failed": 0,
         "file_results": [],
-        "batch_results": [],
     }
 
     for csv_path in csv_paths:
@@ -101,75 +98,35 @@ def run_incident_csv_workflow(
     if dry_run:
         return summary
 
-    if submit_new_batches:
-        pending_without_batch = [
-            incident
-            for incident in repository.list_incidents_pending_llm_review()
-            if not incident.get("review_batch_id")
-        ]
-        if pending_without_batch:
-            batch_submission = submit_incident_review_batch(
-                repository,
-                source_fetcher=source_fetcher,
-                batch_client=batch_client,
-                primary_model=primary_model,
-            )
-            summary["batches_submitted"] += 1
-            summary["batch_results"].append(
-                {
-                    "batch_id": batch_submission.batch_id,
-                    "status": "submitted",
-                    "submitted": batch_submission.submitted,
-                }
-            )
-
-    if reconcile_ready_batches:
-        pending_incidents = repository.list_incidents_pending_llm_review()
-        seen_batch_ids: set[str] = set()
-        for incident in pending_incidents:
-            batch_id = incident.get("review_batch_id")
-            if not batch_id or batch_id in seen_batch_ids:
-                continue
-            seen_batch_ids.add(batch_id)
-            batch_status = batch_client.get_batch_status(batch_id=batch_id)
-            if batch_status != "completed":
-                summary["batches_skipped"] += 1
-                summary["batch_results"].append(
-                    {
-                        "batch_id": batch_id,
-                        "status": batch_status,
-                    }
-                )
-                continue
-
-            reconcile_summary = reconcile_incident_review_batch(
-                repository,
-                batch_id=batch_id,
-                batch_client=batch_client,
-                escalation_client=escalation_client,
-                translation_client=translation_client,
-                embedding_client=embedding_client,
-                duplicate_judge_client=duplicate_judge_client,
-                embedding_model=embedding_model,
-                duplicate_judge_model=duplicate_judge_model or escalation_model,
-                escalation_model=escalation_model,
-            )
-            summary["batches_reconciled"] += 1
-            summary["approved"] += reconcile_summary.approved
-            summary["pending_review"] += reconcile_summary.pending_review
-            summary["rejected"] += reconcile_summary.rejected
-            summary["translations_completed"] += reconcile_summary.approved
-            summary["batch_results"].append(
-                {
-                    "batch_id": batch_id,
-                    "status": "completed",
-                    "approved": reconcile_summary.approved,
-                    "pending_review": reconcile_summary.pending_review,
-                    "rejected": reconcile_summary.rejected,
-                    "escalated": reconcile_summary.escalated,
-                }
-            )
-
+    review_summary = await review_pending_incidents(
+        repository,
+        source_fetcher=source_fetcher,
+        review_client=review_client,
+        escalation_client=escalation_client,
+        translation_client=translation_client,
+        embedding_client=embedding_client,
+        duplicate_judge_client=duplicate_judge_client,
+        primary_model=primary_model,
+        escalation_model=escalation_model,
+        embedding_model=embedding_model,
+        duplicate_judge_model=duplicate_judge_model or escalation_model,
+    )
+    summary["reviews_attempted"] = review_summary.reviews_attempted
+    summary["reviews_completed"] = review_summary.reviews_completed
+    summary["reviews_failed"] = review_summary.reviews_failed
+    summary["review_failures"] = [
+        {
+            "incident_id": failure.incident_id,
+            "external_id": failure.external_id,
+            "error": failure.error,
+        }
+        for failure in review_summary.review_failures
+    ]
+    summary["approved"] = review_summary.approved
+    summary["pending_review"] = review_summary.pending_review
+    summary["rejected"] = review_summary.rejected
+    summary["translations_completed"] = review_summary.translations_completed
+    summary["translations_failed"] = review_summary.translations_failed
     return summary
 
 

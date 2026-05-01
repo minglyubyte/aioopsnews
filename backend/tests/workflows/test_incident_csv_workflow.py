@@ -1,13 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from app.services.incident_deduplication import DuplicateJudgeDecision
-from app.services.incident_review import (
-    FetchedIncidentSource,
-    IncidentReviewBatchSubmission,
-    IncidentReviewResult,
-)
+from app.services.incident_review import FetchedIncidentSource, IncidentReviewResult
 from tests.support.fakes import InMemoryIncidentRepository
 from tests.support.incident_csv_fixtures import INVALID_IMPORT_CSV, VALID_IMPORT_CSV
 
@@ -24,32 +21,39 @@ class FakeSourceFetcher:
         )
 
 
-class FakeBatchReviewClient:
-    def __init__(self, *, status_by_batch_id: dict[str, str] | None = None) -> None:
-        self.status_by_batch_id = status_by_batch_id or {}
-        self.submissions: list[tuple[str, list[dict[str, object]]]] = []
-        self.results_by_batch_id: dict[str, list[IncidentReviewResult]] = {}
-
-    def submit_batch(
+class FakeAsyncReviewClient:
+    def __init__(
         self,
         *,
-        incidents: list[dict[str, object]],
+        results_by_external_id: dict[str, list[IncidentReviewResult | Exception]],
+    ) -> None:
+        self.results_by_external_id = {
+            key: list(value) for key, value in results_by_external_id.items()
+        }
+        self.calls: list[tuple[str, str]] = []
+
+    async def review_incident(
+        self,
+        *,
+        incident: dict[str, object],
         model: str,
-    ) -> IncidentReviewBatchSubmission:
-        self.submissions.append((model, incidents))
-        batch_id = f"batch-{len(self.submissions)}"
-        self.status_by_batch_id.setdefault(batch_id, "validating")
-        return IncidentReviewBatchSubmission(
-            batch_id=batch_id,
-            submitted=len(incidents),
-            model=model,
-        )
+    ) -> IncidentReviewResult:
+        external_id = str(incident["external_id"])
+        self.calls.append((external_id, model))
+        response = self.results_by_external_id[external_id].pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
-    def get_batch_status(self, *, batch_id: str) -> str:
-        return self.status_by_batch_id[batch_id]
 
-    def get_batch_results(self, *, batch_id: str) -> list[IncidentReviewResult]:
-        return self.results_by_batch_id[batch_id]
+class FakeEscalationReviewClient:
+    def __init__(
+        self,
+        *,
+        results_by_external_id: dict[str, IncidentReviewResult] | None = None,
+    ) -> None:
+        self.results_by_external_id = results_by_external_id or {}
+        self.calls: list[tuple[str, str]] = []
 
     def review_incident(
         self,
@@ -57,7 +61,9 @@ class FakeBatchReviewClient:
         incident: dict[str, object],
         model: str,
     ) -> IncidentReviewResult:
-        raise AssertionError("Escalation should not be needed in this workflow test")
+        external_id = str(incident["external_id"])
+        self.calls.append((external_id, model))
+        return self.results_by_external_id[external_id]
 
 
 class FakeTranslationClient:
@@ -105,7 +111,7 @@ class FakeDuplicateJudgeClient:
         )
 
 
-def test_run_incident_csv_workflow_imports_archives_and_submits_new_batches(
+def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_immediately(  # noqa: E501
     tmp_path,
 ) -> None:
     from app.workflows.incident_csv_workflow import run_incident_csv_workflow
@@ -115,37 +121,83 @@ def test_run_incident_csv_workflow_imports_archives_and_submits_new_batches(
     archive_dir = tmp_path / "archive"
     inbox_dir.mkdir()
     (inbox_dir / "2023-a.csv").write_text(VALID_IMPORT_CSV, encoding="utf-8")
-    batch_client = FakeBatchReviewClient()
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-openai-001": [
+                IncidentReviewResult(
+                    incident_id="unused-openai",
+                    verdict="approved",
+                    score=0.96,
+                    reasoning="Strong source support.",
+                    source_quality_summary="3 fetched sources agree on the event.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="OpenAI filing included fake legal citations",
+                    reality_summary_en="Court records confirm the filing incident.",
+                    categories=["Hallucinations"],
+                    suggested_severity_score=2,
+                    severity_confidence=0.93,
+                    severity_reasoning="Limited but confirmed harm.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+            "inc-school-002": [
+                IncidentReviewResult(
+                    incident_id="unused-school",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Date ambiguity remains.",
+                    source_quality_summary="One source remains ambiguous.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="School chatbot gave inaccurate enrollment guidance",
+                    reality_summary_en="Reporting indicates the incident occurred.",
+                    categories=["Autonomous Systems"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Still unresolved.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+        }
+    )
 
-    summary = run_incident_csv_workflow(
-        repository=repository,
-        inbox_dir=inbox_dir,
-        archive_dir=archive_dir,
-        source_fetcher=FakeSourceFetcher(),
-        batch_client=batch_client,
-        escalation_client=batch_client,
-        translation_client=FakeTranslationClient(),
-        primary_model="gpt-5.4-mini",
-        escalation_model="gpt-5.2",
-        embedding_client=FakeEmbeddingClient(),
-        duplicate_judge_client=FakeDuplicateJudgeClient(),
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+        )
     )
 
     assert summary["files_found"] == 1
     assert summary["files_imported"] == 1
     assert summary["files_failed"] == 0
     assert summary["incidents_imported"] == 2
-    assert summary["batches_submitted"] == 1
-    assert summary["batches_reconciled"] == 0
-    assert summary["batches_skipped"] == 1
-    assert summary["translations_completed"] == 0
+    assert summary["reviews_attempted"] == 2
+    assert summary["reviews_completed"] == 2
+    assert summary["reviews_failed"] == 0
+    assert summary["review_failures"] == []
+    assert summary["approved"] == 1
+    assert summary["pending_review"] == 1
+    assert summary["rejected"] == 0
+    assert summary["translations_completed"] == 1
     assert summary["translations_failed"] == 0
+    assert "batches_submitted" not in summary
     assert not (inbox_dir / "2023-a.csv").exists()
     assert len(list(archive_dir.glob("2023-a*.csv"))) == 1
-    assert all(
-        incident["status"] == "pending_llm_review"
-        for incident in repository.incidents.values()
-    )
 
 
 def test_run_incident_csv_workflow_leaves_invalid_csv_in_inbox_and_continues(
@@ -159,111 +211,151 @@ def test_run_incident_csv_workflow_leaves_invalid_csv_in_inbox_and_continues(
     inbox_dir.mkdir()
     (inbox_dir / "bad.csv").write_text(INVALID_IMPORT_CSV, encoding="utf-8")
     (inbox_dir / "good.csv").write_text(VALID_IMPORT_CSV, encoding="utf-8")
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-openai-001": [
+                IncidentReviewResult(
+                    incident_id="unused-openai",
+                    verdict="rejected",
+                    score=0.1,
+                    reasoning="Not verified.",
+                    source_quality_summary="Weak evidence.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="Rejected",
+                    reality_summary_en="Rejected",
+                    categories=["Hallucinations"],
+                    suggested_severity_score=None,
+                    severity_confidence=None,
+                    severity_reasoning="Rejected.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+            "inc-school-002": [
+                IncidentReviewResult(
+                    incident_id="unused-school",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Needs more review.",
+                    source_quality_summary="Conflicting source details.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="School chatbot gave inaccurate enrollment guidance",
+                    reality_summary_en="Reporting indicates the incident occurred.",
+                    categories=["Autonomous Systems"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Needs review.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+        }
+    )
 
-    summary = run_incident_csv_workflow(
-        repository=repository,
-        inbox_dir=inbox_dir,
-        archive_dir=archive_dir,
-        source_fetcher=FakeSourceFetcher(),
-        batch_client=FakeBatchReviewClient(),
-        escalation_client=FakeBatchReviewClient(),
-        translation_client=FakeTranslationClient(),
-        primary_model="gpt-5.4-mini",
-        escalation_model="gpt-5.2",
-        embedding_client=FakeEmbeddingClient(),
-        duplicate_judge_client=FakeDuplicateJudgeClient(),
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+        )
     )
 
     assert summary["files_found"] == 2
     assert summary["files_imported"] == 1
     assert summary["files_failed"] == 1
+    assert summary["reviews_attempted"] == 2
     assert (inbox_dir / "bad.csv").exists()
     assert not (inbox_dir / "good.csv").exists()
     assert len(list(archive_dir.glob("good*.csv"))) == 1
 
 
-def test_run_incident_csv_workflow_reconciles_completed_batches_and_translates_approved_rows(  # noqa: E501
+def test_run_incident_csv_workflow_reports_unrecoverable_review_failures(
     tmp_path,
 ) -> None:
-    from app.services.incident_import import import_incidents_csv_text
-    from app.services.incident_review import submit_incident_review_batch
     from app.workflows.incident_csv_workflow import run_incident_csv_workflow
 
     repository = InMemoryIncidentRepository()
-    import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
-    batch_client = FakeBatchReviewClient(status_by_batch_id={"batch-1": "completed"})
-    submit_incident_review_batch(
-        repository,
-        source_fetcher=FakeSourceFetcher(),
-        batch_client=batch_client,
-        primary_model="gpt-5.4-mini",
+    inbox_dir = tmp_path / "inbox"
+    archive_dir = tmp_path / "archive"
+    inbox_dir.mkdir()
+    (inbox_dir / "2023-a.csv").write_text(VALID_IMPORT_CSV, encoding="utf-8")
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-openai-001": [
+                IncidentReviewResult(
+                    incident_id="unused-openai",
+                    verdict="approved",
+                    score=0.96,
+                    reasoning="Strong source support.",
+                    source_quality_summary="3 fetched sources agree on the event.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="OpenAI filing included fake legal citations",
+                    reality_summary_en="Court records confirm the filing incident.",
+                    categories=["Hallucinations"],
+                    suggested_severity_score=2,
+                    severity_confidence=0.93,
+                    severity_reasoning="Limited but confirmed harm.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+            "inc-school-002": [
+                RuntimeError("temporary outage"),
+                RuntimeError("temporary outage"),
+                RuntimeError("temporary outage"),
+            ],
+        }
     )
-    incidents_by_external_id = {
-        incident["external_id"]: incident
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+        )
+    )
+
+    school_incident = next(
+        incident
         for incident in repository.incidents.values()
-    }
-    batch_client.results_by_batch_id["batch-1"] = [
-        IncidentReviewResult(
-            incident_id=incidents_by_external_id["inc-openai-001"]["id"],
-            verdict="approved",
-            score=0.96,
-            reasoning="Strong source support.",
-            source_quality_summary="3 fetched sources agree on the event.",
-            date_confirmed=True,
-            company_confirmed=True,
-            headline_en="OpenAI filing included fake legal citations",
-            reality_summary_en="Court records confirm the filing incident.",
-            needs_escalation=False,
-            reviewed_model="gpt-5.4-mini",
-        ),
-        IncidentReviewResult(
-            incident_id=incidents_by_external_id["inc-school-002"]["id"],
-            verdict="pending_review",
-            score=0.62,
-            reasoning="Date ambiguity remains.",
-            source_quality_summary="One source remains ambiguous.",
-            date_confirmed=True,
-            company_confirmed=True,
-            headline_en="School chatbot gave inaccurate enrollment guidance",
-            reality_summary_en="Reporting indicates the incident occurred.",
-            needs_escalation=False,
-            reviewed_model="gpt-5.4-mini",
-        ),
-    ]
-    translation_client = FakeTranslationClient()
-
-    summary = run_incident_csv_workflow(
-        repository=repository,
-        inbox_dir=tmp_path / "empty-inbox",
-        archive_dir=tmp_path / "archive",
-        source_fetcher=FakeSourceFetcher(),
-        batch_client=batch_client,
-        escalation_client=batch_client,
-        translation_client=translation_client,
-        primary_model="gpt-5.4-mini",
-        escalation_model="gpt-5.2",
-        embedding_client=FakeEmbeddingClient(),
-        duplicate_judge_client=FakeDuplicateJudgeClient(),
+        if incident["external_id"] == "inc-school-002"
     )
 
-    assert summary["files_found"] == 0
-    assert summary["batches_submitted"] == 0
-    assert summary["batches_reconciled"] == 1
-    assert summary["batches_skipped"] == 0
+    assert summary["reviews_attempted"] == 2
+    assert summary["reviews_completed"] == 1
+    assert summary["reviews_failed"] == 1
+    assert len(summary["review_failures"]) == 1
+    assert summary["review_failures"][0]["external_id"] == "inc-school-002"
     assert summary["approved"] == 1
-    assert summary["pending_review"] == 1
-    assert summary["rejected"] == 0
-    assert summary["translations_completed"] == 1
-    assert incidents_by_external_id["inc-openai-001"]["headline_zh"] == (
-        "ZH:OpenAI filing included fake legal citations"
-    )
+    assert school_incident["status"] == "pending_llm_review"
 
 
 def test_run_incident_csv_workflow_merges_confirmed_duplicates_without_publicizing_duplicate(  # noqa: E501
     tmp_path,
 ) -> None:
     from app.services.incident_import import import_incidents_csv_text
-    from app.services.incident_review import submit_incident_review_batch
     from app.workflows.incident_csv_workflow import run_incident_csv_workflow
 
     repository = InMemoryIncidentRepository(
@@ -324,66 +416,80 @@ def test_run_incident_csv_workflow_merges_confirmed_duplicates_without_publicizi
         ]
     )
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
-    batch_client = FakeBatchReviewClient(status_by_batch_id={"batch-1": "completed"})
-    submit_incident_review_batch(
-        repository,
-        source_fetcher=FakeSourceFetcher(),
-        batch_client=batch_client,
-        primary_model="gpt-5.4-mini",
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-openai-001": [
+                IncidentReviewResult(
+                    incident_id="unused-openai",
+                    verdict="approved",
+                    score=0.96,
+                    reasoning="Primary review found strong source support.",
+                    source_quality_summary="3 fetched sources agree on the event.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="OpenAI filing included fake legal citations",
+                    reality_summary_en=(
+                        "Court records and reporting confirm the filing "
+                        "incident."
+                    ),
+                    categories=["Hallucinations"],
+                    suggested_severity_score=2,
+                    severity_confidence=0.93,
+                    severity_reasoning="Limited but confirmed harm.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+            "inc-school-002": [
+                IncidentReviewResult(
+                    incident_id="unused-school",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Primary review found unresolved source ambiguity.",
+                    source_quality_summary=(
+                        "One source is weak and requires closer review."
+                    ),
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="School chatbot gave inaccurate enrollment guidance",
+                    reality_summary_en=(
+                        "Local reporting suggests the issue happened but "
+                        "details conflict."
+                    ),
+                    categories=["Autonomous Systems"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Needs review.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+        }
     )
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=tmp_path / "empty-inbox",
+            archive_dir=tmp_path / "archive",
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+        )
+    )
+
     imported_incident = next(
         incident
         for incident in repository.incidents.values()
         if incident.get("external_id") == "inc-openai-001"
     )
-    second_incident = next(
-        incident
-        for incident in repository.incidents.values()
-        if incident.get("external_id") == "inc-school-002"
-    )
-    batch_client.results_by_batch_id["batch-1"] = [
-        IncidentReviewResult(
-            incident_id=imported_incident["id"],
-            verdict="approved",
-            score=0.96,
-            reasoning="Strong source support.",
-            source_quality_summary="3 fetched sources agree on the event.",
-            date_confirmed=True,
-            company_confirmed=True,
-            headline_en="OpenAI filing included fake legal citations",
-            reality_summary_en="Court records confirm the filing incident.",
-            needs_escalation=False,
-            reviewed_model="gpt-5.4-mini",
-        ),
-        IncidentReviewResult(
-            incident_id=second_incident["id"],
-            verdict="pending_review",
-            score=0.62,
-            reasoning="Date ambiguity remains.",
-            source_quality_summary="One source remains ambiguous.",
-            date_confirmed=True,
-            company_confirmed=True,
-            headline_en="School chatbot gave inaccurate enrollment guidance",
-            reality_summary_en="Reporting indicates the incident occurred.",
-            needs_escalation=False,
-            reviewed_model="gpt-5.4-mini",
-        ),
-    ]
-
-    summary = run_incident_csv_workflow(
-        repository=repository,
-        inbox_dir=tmp_path / "empty-inbox",
-        archive_dir=tmp_path / "archive",
-        source_fetcher=FakeSourceFetcher(),
-        batch_client=batch_client,
-        escalation_client=batch_client,
-        translation_client=FakeTranslationClient(),
-        primary_model="gpt-5.4-mini",
-        escalation_model="gpt-5.2",
-        embedding_client=FakeEmbeddingClient(),
-        duplicate_judge_client=FakeDuplicateJudgeClient(),
-    )
-
     assert summary["approved"] == 0
     assert imported_incident["status"] == "duplicate_confirmed"
     assert repository.get_public_incident(imported_incident["id"]) is None

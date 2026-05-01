@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.core.incident_taxonomy import INCIDENT_CATEGORY_TAXONOMY
 from app.services.incident_deduplication import DuplicateJudgeDecision
 from app.services.incident_import import import_incidents_csv_text
 from app.services.incident_review import (
@@ -13,7 +14,6 @@ from app.services.incident_review import (
     reconcile_incident_review_batch,
     submit_incident_review_batch,
 )
-from app.core.incident_taxonomy import INCIDENT_CATEGORY_TAXONOMY
 from app.services.incident_translation import IncidentTranslation
 from tests.support.fakes import InMemoryIncidentRepository
 from tests.support.incident_csv_fixtures import VALID_IMPORT_CSV
@@ -140,7 +140,8 @@ def test_parse_review_result_accepts_qualitative_severity_confidence() -> None:
             '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
             '"categories":["Hallucinations"],'
             '"suggested_severity_score":2,"severity_confidence":"low",'
-            '"severity_reasoning":"Limited confidence.","severity_flags":[]}'
+            '"severity_reasoning":"Limited confidence.","severity_flags":[],'
+            '"needs_escalation":false}'
         ),
     )
 
@@ -156,10 +157,11 @@ def test_build_review_response_format_requires_taxonomy_categories() -> None:
     assert response_format["json_schema"]["strict"] is True
     schema = response_format["json_schema"]["schema"]
     assert "categories" in schema["required"]
+    assert "needs_escalation" in schema["required"]
     assert schema["properties"]["categories"]["minItems"] == 1
-    assert (
-        schema["properties"]["categories"]["items"]["enum"]
-        == list(INCIDENT_CATEGORY_TAXONOMY)
+    assert schema["properties"]["needs_escalation"]["type"] == "boolean"
+    assert schema["properties"]["categories"]["items"]["enum"] == list(
+        INCIDENT_CATEGORY_TAXONOMY
     )
     assert schema["additionalProperties"] is False
 
@@ -175,7 +177,8 @@ def test_parse_review_result_marks_unknown_categories_for_escalation() -> None:
             '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
             '"categories":["Made Up Category"],'
             '"suggested_severity_score":2,"severity_confidence":0.92,'
-            '"severity_reasoning":"High confidence.","severity_flags":[]}'
+            '"severity_reasoning":"High confidence.","severity_flags":[],'
+            '"needs_escalation":false}'
         ),
     )
 
@@ -183,8 +186,27 @@ def test_parse_review_result_marks_unknown_categories_for_escalation() -> None:
     assert result.needs_escalation is True
 
 
-def test_submit_incident_review_batch_fetches_source_evidence_and_marks_batch(
-) -> None:
+def test_parse_review_result_preserves_explicit_needs_escalation() -> None:
+    result = _parse_review_result(
+        incident_id="incident-1",
+        model="gpt-5.4-mini",
+        content=(
+            '{"verdict":"pending_review","score":0.51,'
+            '"reasoning":"Evidence remains weak.",'
+            '"source_quality_summary":"Sources conflict.",'
+            '"date_confirmed":false,"company_confirmed":true,'
+            '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+            '"categories":["Hallucinations"],'
+            '"suggested_severity_score":3,"severity_confidence":0.61,'
+            '"severity_reasoning":"Signals conflict.","severity_flags":[],'
+            '"needs_escalation":true}'
+        ),
+    )
+
+    assert result.needs_escalation is True
+
+
+def test_submit_incident_review_batch_fetches_source_evidence_and_marks_batch() -> None:
     repository = InMemoryIncidentRepository()
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
     batch_client = FakeBatchReviewClient()
@@ -221,8 +243,7 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
     )
 
     incidents_by_external_id = {
-        incident["external_id"]: incident
-        for incident in repository.incidents.values()
+        incident["external_id"]: incident for incident in repository.incidents.values()
     }
     batch_client.results_by_batch_id["batch-primary-1"] = [
         IncidentReviewResult(
@@ -240,7 +261,10 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
             categories=["Hallucinations"],
             suggested_severity_score=2,
             severity_confidence=0.92,
-            severity_reasoning="Legal filing incident with reputational impact but no evidence of broader downstream harm.",
+            severity_reasoning=(
+                "Legal filing incident with reputational impact but no evidence "
+                "of broader downstream harm."
+            ),
             severity_flags=[],
             needs_escalation=False,
             reviewed_model="gpt-5.4-mini",
@@ -255,12 +279,16 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
             company_confirmed=True,
             headline_en="School chatbot gave inaccurate enrollment guidance",
             reality_summary_en=(
-                "School staff had to intervene after students received inaccurate enrollment guidance."
+                "School staff had to intervene after students received "
+                "inaccurate enrollment guidance."
             ),
             categories=["Autonomous Systems", "Missed Timelines"],
             suggested_severity_score=3,
             severity_confidence=0.89,
-            severity_reasoning="The incident caused operational disruption that required staff intervention.",
+            severity_reasoning=(
+                "The incident caused operational disruption that required "
+                "staff intervention."
+            ),
             severity_flags=[],
             needs_escalation=False,
             reviewed_model="gpt-5.4-mini",
@@ -320,7 +348,8 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
     ]
 
 
-def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_editor_queue() -> None:
+def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_editor_queue(  # noqa: E501
+) -> None:
     repository = InMemoryIncidentRepository()
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
     batch_client = FakeBatchReviewClient()
@@ -332,8 +361,7 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
     )
 
     incidents_by_external_id = {
-        incident["external_id"]: incident
-        for incident in repository.incidents.values()
+        incident["external_id"]: incident for incident in repository.incidents.values()
     }
     target_incident = incidents_by_external_id["inc-school-002"]
     batch_client.results_by_batch_id["batch-primary-1"] = [
@@ -341,18 +369,28 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
             incident_id=target_incident["id"],
             verdict="approved",
             score=0.91,
-            reasoning="Primary review found decent support but could not resolve the downstream impact level.",
-            source_quality_summary="Reporting confirms the incident but the scope of harm remains fuzzy.",
+            reasoning=(
+                "Primary review found decent support but could not resolve the "
+                "downstream impact level."
+            ),
+            source_quality_summary=(
+                "Reporting confirms the incident but the scope of harm remains "
+                "fuzzy."
+            ),
             date_confirmed=True,
             company_confirmed=True,
             headline_en="School chatbot gave inaccurate enrollment guidance",
             reality_summary_en=(
-                "Students received inaccurate enrollment guidance and staff had to correct the information manually."
+                "Students received inaccurate enrollment guidance and staff had "
+                "to correct the information manually."
             ),
             categories=["Autonomous Systems", "Made Up Category"],
             suggested_severity_score=3,
             severity_confidence=0.61,
-            severity_reasoning="There was real operational impact, but source evidence does not clearly bound the scope.",
+            severity_reasoning=(
+                "There was real operational impact, but source evidence does "
+                "not clearly bound the scope."
+            ),
             severity_flags=["unclear_real_world_impact"],
             needs_escalation=False,
             reviewed_model="gpt-5.4-mini",
@@ -362,7 +400,10 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
         incident_id=target_incident["id"],
         verdict="approved",
         score=0.95,
-        reasoning="Escalation confirmed the incident and agreed that it requires editor review due to severity.",
+        reasoning=(
+            "Escalation confirmed the incident and agreed that it requires "
+            "editor review due to severity."
+        ),
         source_quality_summary=(
             "Escalation confirmed the incident and clarified the source chronology."
         ),
@@ -375,7 +416,11 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
         categories=["Autonomous Systems", "Missed Timelines"],
         suggested_severity_score=3,
         severity_confidence=0.84,
-        severity_reasoning="The incident caused meaningful operational harm requiring intervention, but not the kind of irreversible harm that merits Severity 4.",
+        severity_reasoning=(
+            "The incident caused meaningful operational harm requiring "
+            "intervention, but not the kind of irreversible harm that merits "
+            "Severity 4."
+        ),
         severity_flags=[],
         needs_escalation=False,
         reviewed_model="gpt-5.2",
@@ -406,6 +451,101 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
     assert target_incident["review_model"] == "gpt-5.2"
     assert target_incident["suggested_severity_score"] == 3
     assert target_incident["severity_decision_source"] is None
+
+
+def test_reconcile_incident_review_batch_routes_second_phase_escalation_to_pending_editor_review(  # noqa: E501
+) -> None:
+    repository = InMemoryIncidentRepository()
+    import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
+    batch_client = FakeBatchReviewClient()
+    submit_incident_review_batch(
+        repository,
+        source_fetcher=FakeSourceFetcher(),
+        batch_client=batch_client,
+        primary_model="gpt-5.4-mini",
+    )
+
+    incidents_by_external_id = {
+        incident["external_id"]: incident for incident in repository.incidents.values()
+    }
+    target_incident = incidents_by_external_id["inc-school-002"]
+    batch_client.results_by_batch_id["batch-primary-1"] = [
+        IncidentReviewResult(
+            incident_id=incidents_by_external_id["inc-openai-001"]["id"],
+            verdict="rejected",
+            score=0.1,
+            reasoning="Not substantiated.",
+            source_quality_summary="Weak evidence.",
+            date_confirmed=True,
+            company_confirmed=True,
+            headline_en="Rejected",
+            reality_summary_en="Rejected",
+            categories=["Hallucinations"],
+            suggested_severity_score=None,
+            severity_confidence=None,
+            severity_reasoning="Rejected",
+            severity_flags=[],
+            needs_escalation=False,
+            reviewed_model="gpt-5.4-mini",
+        ),
+        IncidentReviewResult(
+            incident_id=target_incident["id"],
+            verdict="pending_review",
+            score=0.58,
+            reasoning="Primary review remains uncertain.",
+            source_quality_summary="Conflicting source details.",
+            date_confirmed=False,
+            company_confirmed=True,
+            headline_en="School chatbot gave inaccurate enrollment guidance",
+            reality_summary_en="Primary review found unresolved ambiguity.",
+            categories=["Autonomous Systems"],
+            suggested_severity_score=3,
+            severity_confidence=0.61,
+            severity_reasoning="Evidence conflicts.",
+            severity_flags=[],
+            needs_escalation=True,
+            reviewed_model="gpt-5.4-mini",
+        ),
+    ]
+    batch_client.escalation_results[target_incident["id"]] = IncidentReviewResult(
+        incident_id=target_incident["id"],
+        verdict="pending_review",
+        score=0.69,
+        reasoning="Escalation still cannot resolve the ambiguity.",
+        source_quality_summary="Escalation found the event plausible but unresolved.",
+        date_confirmed=False,
+        company_confirmed=True,
+        headline_en="School chatbot gave inaccurate enrollment guidance",
+        reality_summary_en="Escalation still requires an editor to decide.",
+        categories=["Autonomous Systems"],
+        suggested_severity_score=3,
+        severity_confidence=0.73,
+        severity_reasoning="Human review still required.",
+        severity_flags=[],
+        needs_escalation=True,
+        reviewed_model="gpt-5.2",
+    )
+
+    summary = reconcile_incident_review_batch(
+        repository,
+        batch_id="batch-primary-1",
+        batch_client=batch_client,
+        escalation_client=batch_client,
+        translation_client=FakeTranslationClient(),
+        embedding_client=FakeEmbeddingClient(),
+        duplicate_judge_client=FakeDuplicateJudgeClient(),
+        embedding_model="text-embedding-3-small",
+        duplicate_judge_model="gpt-5.2",
+        escalation_model="gpt-5.2",
+    )
+
+    assert summary.approved == 0
+    assert summary.pending_review == 1
+    assert summary.rejected == 1
+    assert summary.escalated == 1
+    assert target_incident["status"] == "pending_editor_review"
+    assert target_incident["review_model"] == "gpt-5.2"
+    assert target_incident["translation_status"] == "not_requested"
 
 
 def test_reconcile_incident_review_batch_hides_confirmed_duplicates_and_skips_translation(  # noqa: E501

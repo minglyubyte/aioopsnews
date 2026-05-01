@@ -12,6 +12,22 @@ vi.mock("../lib/api", () => ({
 const mockedFetchAdminIncidentQueue = vi.mocked(fetchAdminIncidentQueue);
 const mockedUpdateAdminIncident = vi.mocked(updateAdminIncident);
 
+function mockMatchMedia(matches: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
+
 function buildAdminIncident(
   overrides: Partial<AdminIncident> = {},
 ): AdminIncident {
@@ -81,14 +97,33 @@ function buildAdminIncident(
 describe("InternalReviewPage", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    mockMatchMedia(false);
     mockedFetchAdminIncidentQueue.mockResolvedValue({
       items: [
         buildAdminIncident({
+          date_logged: "2026-06-01",
           canonical_incident_id: "incident-1-canonical",
           duplicate_of_incident_id: "incident-1-parent",
+          sources: [
+            {
+              id: "source-1",
+              source_url: "https://example.com/assistco-incident",
+              source_type: "primary",
+              publisher: "Example News",
+              title: "AssistCo incident coverage",
+            },
+            {
+              id: "source-2",
+              source_url: "https://example.com/assistco-follow-up",
+              source_type: "secondary",
+              publisher: "Follow Up Desk",
+              title: "AssistCo follow-up analysis",
+            },
+          ],
         }),
         buildAdminIncident({
           id: "incident-2",
+          date_logged: "2026-04-20",
           headline: "RoboFleet rollback followed navigation failures",
           headline_en: "RoboFleet rollback followed navigation failures",
           company_involved: "RoboFleet",
@@ -138,10 +173,29 @@ describe("InternalReviewPage", () => {
 
     const queue = screen.getByRole("region", { name: "Review queue" });
     expect(
+      within(queue).getByText(/Choose an incident waiting for editorial review/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Review and approve the selected incident/i),
+    ).toBeInTheDocument();
+
+    expect(
       within(queue).getByRole("button", {
         name: /Open review for AssistCo exposed private account notes/i,
       }),
     ).toBeInTheDocument();
+    const selectedQueueCard = within(queue).getByRole("button", {
+      name: /Open review for AssistCo exposed private account notes/i,
+    });
+    expect(
+      within(selectedQueueCard).getByText("AssistCo exposed private account notes"),
+    ).toBeInTheDocument();
+    expect(
+      within(selectedQueueCard).getByText("Status: pending_editor_review"),
+    ).toBeInTheDocument();
+    expect(within(selectedQueueCard).getByText("AssistCo")).toBeInTheDocument();
+    expect(within(selectedQueueCard).getByText("Severity 3")).toBeInTheDocument();
+    expect(within(selectedQueueCard).getByText("2026-06-01")).toBeInTheDocument();
 
     expect(screen.getByText("high_confidence")).toBeInTheDocument();
     expect(screen.getByText(/Suggested severity 3/i)).toBeInTheDocument();
@@ -155,6 +209,17 @@ describe("InternalReviewPage", () => {
     expect(
       screen.getByText("Three credible sources agree on the same event and date."),
     ).toBeInTheDocument();
+    expect(screen.getByText("Example News")).toBeInTheDocument();
+    expect(screen.getByText("Primary source")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "AssistCo incident coverage" }),
+    ).toHaveAttribute("href", "https://example.com/assistco-incident");
+    expect(screen.getByText("https://example.com/assistco-incident")).toBeInTheDocument();
+    expect(screen.getByText("Follow Up Desk")).toBeInTheDocument();
+    expect(screen.getByText("Secondary source")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "AssistCo follow-up analysis" }),
+    ).toHaveAttribute("href", "https://example.com/assistco-follow-up");
     expect(screen.getByText(/Canonical incident incident-1-parent/i)).toBeInTheDocument();
     expect(screen.getByText(/Canonical record incident-1-canonical/i)).toBeInTheDocument();
     expect(screen.getByText(/Potential duplicate: incident-9/i)).toBeInTheDocument();
@@ -164,6 +229,17 @@ describe("InternalReviewPage", () => {
         name: /Open review for RoboFleet rollback followed navigation failures/i,
       }),
     );
+
+    expect(
+      within(queue).getByRole("button", {
+        name: /Open review for RoboFleet rollback followed navigation failures/i,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getAllByRole("heading", {
+        name: "RoboFleet rollback followed navigation failures",
+      }).length,
+    ).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Approve incident" }));
 
@@ -250,5 +326,104 @@ describe("InternalReviewPage", () => {
     expect(
       await screen.findByText("Unable to save the review decision right now."),
     ).toBeInTheDocument();
+  });
+
+  it("supports rejecting an incident from the review form", async () => {
+    mockedUpdateAdminIncident.mockImplementationOnce(async (_token, incidentId) =>
+      buildAdminIncident({
+        id: incidentId,
+        status: "rejected",
+      }),
+    );
+
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "editor-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    await screen.findByRole("heading", { name: "Incident review" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject incident" }));
+
+    await waitFor(() => {
+      expect(mockedUpdateAdminIncident).toHaveBeenCalledWith(
+        "editor-token",
+        "incident-1",
+        expect.objectContaining({
+          status: "rejected",
+        }),
+      );
+    });
+  });
+
+  it("reveals the review panel after a mobile queue selection", async () => {
+    mockMatchMedia(true);
+
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "mobile-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    const queue = await screen.findByRole("region", { name: "Review queue" });
+
+    fireEvent.click(
+      within(queue).getByRole("button", {
+        name: /Open review for RoboFleet rollback followed navigation failures/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalled();
+    });
+  });
+
+  it("sorts queue items by newest date first", async () => {
+    mockedFetchAdminIncidentQueue.mockResolvedValueOnce({
+      items: [
+        buildAdminIncident({
+          id: "incident-older",
+          date_logged: "2026-04-20",
+          headline: "Older incident in queue",
+          headline_en: "Older incident in queue",
+          company_involved: "OlderCo",
+        }),
+        buildAdminIncident({
+          id: "incident-newer",
+          date_logged: "2026-06-01",
+          headline: "Newer incident in queue",
+          headline_en: "Newer incident in queue",
+          company_involved: "NewerCo",
+        }),
+      ],
+    });
+
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "sort-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    const queue = await screen.findByRole("region", { name: "Review queue" });
+    const queueButtons = within(queue).getAllByRole("button");
+
+    expect(
+      within(queueButtons[0]).getByText("Newer incident in queue"),
+    ).toBeInTheDocument();
+    expect(within(queueButtons[0]).getByText("2026-06-01")).toBeInTheDocument();
+    expect(
+      within(queueButtons[1]).getByText("Older incident in queue"),
+    ).toBeInTheDocument();
+    expect(within(queueButtons[1]).getByText("2026-04-20")).toBeInTheDocument();
   });
 });

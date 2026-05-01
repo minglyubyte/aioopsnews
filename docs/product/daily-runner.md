@@ -95,41 +95,9 @@ Default directories are:
 - inbox: `backend/app/imports/inbox`
 - archive: `backend/app/imports/archive`
 
-## Submit Only
-
-If you want to submit new review batches without reconciling:
-
-```bash
-cd /Users/leo/Desktop/AI_Oops/backend
-UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.run_incident_csv_workflow \
-  --submit-new-batches \
-  --no-reconcile-ready-batches
-```
-
-There is also a focused submit-only script:
-
-```bash
-cd /Users/leo/Desktop/AI_Oops/backend
-UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.submit_incident_review_batch
-```
-
-## Reconcile Only
-
-If a batch already exists and you want to reconcile it explicitly:
-
-```bash
-cd /Users/leo/Desktop/AI_Oops/backend
-UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.reconcile_incident_review_batch <batch_id>
-```
-
-To wait for the batch before reconciling:
-
-```bash
-cd /Users/leo/Desktop/AI_Oops/backend
-UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.reconcile_incident_review_batch <batch_id> \
-  --wait-for-completion \
-  --poll-interval-seconds 30
-```
+The legacy `submit_incident_review_batch` and
+`reconcile_incident_review_batch` commands are deprecated. Use
+`run_incident_csv_workflow` for the full one-pass import and review flow.
 
 ## What The Runner Actually Does
 
@@ -147,7 +115,8 @@ UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.reconcile_incident_review
 
 ### 3. Primary Review
 
-- submits incidents to the primary OpenAI review model
+- sends incidents directly to the primary OpenAI review model with bounded async
+  concurrency
 - uses a strict JSON Schema response contract
 - receives:
   - legitimacy verdict and score
@@ -155,18 +124,23 @@ UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.reconcile_incident_review
   - English headline and summary normalization
   - one or more taxonomy-bound categories
   - severity suggestion, confidence, reasoning, and flags
+  - required `needs_escalation` boolean
 
 Primary review output must satisfy all of the following:
 
 - `categories` must be a non-empty list from the fixed product taxonomy
 - `severity_confidence` must be numeric when present
 - `suggested_severity_score` may be `null` when the model rejects or cannot safely score the incident
+- `needs_escalation` must always be present as `true` or `false`
 
 ### 4. Approval Routing
 
 - auto-approves only low-risk, high-confidence incidents
+- runs a second LLM pass when phase 1 or server-side rules mark the result as
+  uncertain
 - routes serious incidents to `pending_editor_review`
-- routes low-confidence or ambiguous incidents to `pending_llm_escalation`
+- routes low-confidence or ambiguous incidents to human review when the second
+  pass still returns `needs_escalation=true`
 
 ### 5. Escalation
 
@@ -222,11 +196,14 @@ The runner prints a JSON summary containing fields such as:
 - `files_imported`
 - `files_failed`
 - `incidents_imported`
-- `batches_submitted`
-- `batches_reconciled`
+- `reviews_attempted`
+- `reviews_completed`
+- `reviews_failed`
+- `review_failures`
 - `approved`
 - `pending_review`
 - `rejected`
 - `translations_completed`
+- `translations_failed`
 
 Treat `pending_review` here as a summary bucket that may include `pending_editor_review` outcomes.
