@@ -53,7 +53,7 @@ It is not yet a full launch-ready MVP. The main remaining gaps are review audit 
    UV_CACHE_DIR=../.uv-cache uv sync --all-groups
    ```
 
-The backend now expects a PostgreSQL `DATABASE_URL`. Point it at a local PostgreSQL database before starting the API. On first connection, the repository bootstraps the core tables and a small reviewed seed dataset if the incident tables are empty.
+The backend now expects a PostgreSQL `DATABASE_URL`. Point it at a local PostgreSQL database before starting the API. On first connection, the repository bootstraps the core tables, but it does not auto-seed or re-seed incident data when tables are empty.
 
 ## Run Locally
 
@@ -120,6 +120,7 @@ cd backend
 - daily ingestion orchestration with retry and run metrics
 - CSV claim import with `python -m app.scripts.import_claims_csv /path/to/claims.csv --dry-run`
 - incident daily runner commands documented in `docs/product/daily-runner.md`
+- canonical operator research prompt for ChatGPT Deep Research / Gemini Deep Research in `backend/app/services/case_search_prompt.py`
 
 ### Admin Review
 

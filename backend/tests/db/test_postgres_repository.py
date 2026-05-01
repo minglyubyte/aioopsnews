@@ -204,6 +204,42 @@ def test_postgres_repository_bootstraps_with_connection_pool(monkeypatch) -> Non
     assert repository._pool.closed is True
 
 
+def test_postgres_repository_does_not_reseed_after_empty_tables(monkeypatch) -> None:
+    class EmptyDatabaseConnection(_StubConnection):
+        def execute(self, query: str, *args, **kwargs) -> _StubResult:
+            self.executed.append(query)
+            self.calls.append((query, args))
+            if "select count(*) as count from incident_logs" in query:
+                return _StubResult({"count": 0})
+            return _StubResult()
+
+    connection = EmptyDatabaseConnection()
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    assert not any(
+        "insert into claims" in query
+        or "insert into incident_logs" in query
+        or "insert into incident_sources" in query
+        for query in connection.executed
+    )
+
+
 def test_apply_incident_review_result_uses_python_decided_severity_score(
     monkeypatch,
 ) -> None:
