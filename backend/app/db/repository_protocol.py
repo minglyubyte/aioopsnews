@@ -191,6 +191,7 @@ class IncidentRepository(Protocol):
         self,
         *,
         incident_id: str,
+        company_involved_zh: str,
         headline_zh: str,
         reality_summary_zh: str,
         legitimacy_reasoning_zh: str,

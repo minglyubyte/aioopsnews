@@ -54,6 +54,7 @@ create table if not exists incident_logs (
     headline_zh text,
     date_logged text not null,
     company_involved text not null,
+    company_involved_zh text,
     incident_topic text,
     claimant_name text,
     categories text not null,
@@ -123,6 +124,9 @@ alter table incident_logs
 
 alter table incident_logs
     add column if not exists headline_zh text;
+
+alter table incident_logs
+    add column if not exists company_involved_zh text;
 
 alter table incident_logs
     add column if not exists incident_topic text;
@@ -403,6 +407,7 @@ class PostgresIncidentRepository:
                     incident_logs.headline_zh,
                     incident_logs.date_logged,
                     incident_logs.company_involved,
+                    incident_logs.company_involved_zh,
                     incident_logs.incident_topic,
                     incident_logs.claimant_name,
                     incident_logs.categories,
@@ -471,6 +476,7 @@ class PostgresIncidentRepository:
                 f"""
                 select
                     incident_logs.company_involved as company,
+                    max(incident_logs.company_involved_zh) as company_zh,
                     count(*) as count
                 from incident_logs
                 where {where_sql}
@@ -488,6 +494,7 @@ class PostgresIncidentRepository:
                     incident_logs.headline_zh,
                     incident_logs.date_logged,
                     incident_logs.company_involved,
+                    incident_logs.company_involved_zh,
                     incident_logs.incident_topic,
                     incident_logs.claimant_name,
                     incident_logs.categories,
@@ -530,7 +537,11 @@ class PostgresIncidentRepository:
                     for row in category_rows
                 ],
                 "top_companies": [
-                    {"company": row["company"], "count": row["count"]}
+                    {
+                        "company": row["company"],
+                        "company_zh": row.get("company_zh"),
+                        "count": row["count"],
+                    }
                     for row in company_rows
                 ],
             },
@@ -548,6 +559,7 @@ class PostgresIncidentRepository:
                     incident_logs.headline_zh,
                     incident_logs.date_logged,
                     incident_logs.company_involved,
+                    incident_logs.company_involved_zh,
                     incident_logs.incident_topic,
                     incident_logs.claimant_name,
                     incident_logs.categories,
@@ -1068,6 +1080,18 @@ class PostgresIncidentRepository:
             }
         )
         companies = sorted({incident["company_involved"] for incident in incidents})
+        company_labels_zh = {
+            company: next(
+                (
+                    incident.get("company_involved_zh")
+                    for incident in incidents
+                    if incident["company_involved"] == company
+                    and incident.get("company_involved_zh")
+                ),
+                None,
+            )
+            for company in companies
+        }
         archive_pairs = sorted(
             {
                 tuple(map(int, str(incident["date_logged"]).split("-")[:2]))
@@ -1088,6 +1112,7 @@ class PostgresIncidentRepository:
             "categories": categories,
             "claimants": claimants,
             "companies": companies,
+            "company_labels_zh": company_labels_zh,
             "years": years,
             "months_by_year": months_by_year,
         }
@@ -1368,6 +1393,7 @@ class PostgresIncidentRepository:
                     headline_zh,
                     date_logged,
                     company_involved,
+                    company_involved_zh,
                     incident_topic,
                     claimant_name,
                     categories,
@@ -1430,6 +1456,7 @@ class PostgresIncidentRepository:
             "headline_zh": row["headline_zh"],
             "date_logged": row["date_logged"],
             "company_involved": row["company_involved"],
+            "company_involved_zh": row["company_involved_zh"],
             "incident_topic": row["incident_topic"],
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
@@ -2197,6 +2224,7 @@ class PostgresIncidentRepository:
         self,
         *,
         incident_id: str,
+        company_involved_zh: str,
         headline_zh: str,
         reality_summary_zh: str,
         legitimacy_reasoning_zh: str,
@@ -2209,6 +2237,7 @@ class PostgresIncidentRepository:
                 """
                 update incident_logs
                 set
+                    company_involved_zh = %s,
                     headline_zh = %s,
                     reality_summary_zh = %s,
                     legitimacy_reasoning_zh = %s,
@@ -2219,6 +2248,7 @@ class PostgresIncidentRepository:
                 where id = %s
                 """,
                 (
+                    company_involved_zh,
                     headline_zh,
                     reality_summary_zh,
                     legitimacy_reasoning_zh,
@@ -2240,6 +2270,7 @@ class PostgresIncidentRepository:
                     headline_zh,
                     date_logged,
                     company_involved,
+                    company_involved_zh,
                     incident_topic,
                     claimant_name,
                     categories,
@@ -2302,6 +2333,7 @@ class PostgresIncidentRepository:
             "headline_zh": row["headline_zh"],
             "date_logged": row["date_logged"],
             "company_involved": row["company_involved"],
+            "company_involved_zh": row["company_involved_zh"],
             "incident_topic": row["incident_topic"],
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
@@ -2396,6 +2428,7 @@ class PostgresIncidentRepository:
             "headline_zh": row.get("headline_zh"),
             "date_logged": row["date_logged"],
             "company_involved": row["company_involved"],
+            "company_involved_zh": row.get("company_involved_zh"),
             "incident_topic": row.get("incident_topic"),
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
@@ -2420,6 +2453,7 @@ class PostgresIncidentRepository:
             "headline_zh": row.get("headline_zh"),
             "date_logged": row["date_logged"],
             "company_involved": row["company_involved"],
+            "company_involved_zh": row.get("company_involved_zh"),
             "incident_topic": row.get("incident_topic"),
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
@@ -2479,7 +2513,8 @@ class PostgresIncidentRepository:
 
         if filters.category:
             where_clauses.append("incident_logs.categories like %s")
-            params.append(f"%{json.dumps(filters.category).strip('\"')}%")
+            category_pattern = json.dumps(filters.category).strip('"')
+            params.append(f"%{category_pattern}%")
         if filters.company:
             where_clauses.append("incident_logs.company_involved = %s")
             params.append(filters.company)

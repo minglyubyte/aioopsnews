@@ -27,6 +27,7 @@ class IncidentRecord(BaseModel):
     headline_zh: str | None = None
     date_logged: date
     company_involved: str
+    company_involved_zh: str | None = None
     incident_topic: str | None = None
     claimant_name: str | None = None
     categories: list[str] = Field(default_factory=list)

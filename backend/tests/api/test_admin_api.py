@@ -20,12 +20,14 @@ class StaticTranslationClient:
         reality_summary_en: str,
         legitimacy_reasoning_en: str,
         source_validation_summary_en: str,
+        company_involved_en: str,
     ) -> IncidentTranslation:
         return IncidentTranslation(
             headline_zh=f"ZH:{headline_en}",
             reality_summary_zh=f"ZH:{reality_summary_en}",
             legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
             source_validation_summary_zh=f"ZH:{source_validation_summary_en}",
+            company_involved_zh=f"ZH:{company_involved_en}",
         )
 
 
@@ -138,7 +140,58 @@ def test_patch_admin_incident_applies_editor_overrides() -> None:
     assert payload["status"] == "approved"
     assert payload["matched_claim_id"] == "claim-1"
     assert payload["translation_status"] == "completed"
+    assert payload["company_involved_zh"] == "ZH:AssistCo"
     assert payload["headline_zh"] == "ZH:AssistCo assistant exposes billing notes"
     assert repository.incidents[incident_id]["review_notes"] == (
         "Approved after editor verification."
+    )
+
+
+def test_patch_admin_incident_retranslates_already_approved_incident() -> None:
+    client, repository = _build_review_queue_client(admin_api_token="secret-token")
+    incident_id = repository.list_review_queue()[0]["id"]
+
+    first_response = client.patch(
+        f"/admin/incidents/{incident_id}",
+        headers={"X-Admin-Token": "secret-token"},
+        json={
+            "status": "approved",
+            "company_involved": "AssistCo",
+            "claimant_name": "AssistCo",
+            "categories": ["Privacy/Security"],
+            "severity_score": 5,
+            "reality_summary": "Editors confirmed the leak and approved the item.",
+            "matched_claim_id": "claim-1",
+            "claim_match_confidence": 0.95,
+            "review_notes": "Approved after editor verification.",
+        },
+    )
+    assert first_response.status_code == 200
+
+    response = client.patch(
+        f"/admin/incidents/{incident_id}",
+        headers={"X-Admin-Token": "secret-token"},
+        json={
+            "status": "approved",
+            "company_involved": "AssistCo Labs",
+            "claimant_name": "AssistCo Labs",
+            "categories": ["Privacy/Security"],
+            "severity_score": 4,
+            "reality_summary": "Editors revised the summary after a follow-up check.",
+            "matched_claim_id": "claim-1",
+            "claim_match_confidence": 0.96,
+            "review_notes": "Approved after a second editor pass.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "approved"
+    assert payload["company_involved"] == "AssistCo Labs"
+    assert payload["company_involved_zh"] == "ZH:AssistCo Labs"
+    assert payload["reality_summary"] == (
+        "Editors revised the summary after a follow-up check."
+    )
+    assert payload["reality_summary_zh"] == (
+        "ZH:Editors revised the summary after a follow-up check."
     )

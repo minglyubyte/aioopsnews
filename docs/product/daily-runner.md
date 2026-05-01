@@ -34,7 +34,7 @@ The daily runner moves incidents through these states:
 4. ambiguous incidents may become `pending_llm_escalation`
 5. serious but otherwise clear incidents become `pending_editor_review`
 6. approved incidents run duplicate review
-7. still-approved incidents run translation
+7. still-approved incidents run translation, including company-name localization
 8. only `approved` incidents appear in the public feed
 
 ## All-In-One Command
@@ -156,6 +156,9 @@ Primary review output must satisfy all of the following:
 ### 7. Translation
 
 - runs only for incidents still approved after duplicate review
+- sends the English company name, headline, reality summary, legitimacy reasoning, and source-validation summary into the translation step
+- stores the returned Chinese fields on the incident row, including `company_involved_zh`, `headline_zh`, and `reality_summary_zh`
+- marks `translation_status` so operators can distinguish incidents that are still `not_requested` from incidents with completed translated copy
 
 ## Operational Notes
 
@@ -207,3 +210,5 @@ The runner prints a JSON summary containing fields such as:
 - `translations_failed`
 
 Treat `pending_review` here as a summary bucket that may include `pending_editor_review` outcomes.
+
+For translated incidents, the completed summary corresponds to rows whose translation step has already written `company_involved_zh` and the rest of the Chinese-language display fields.

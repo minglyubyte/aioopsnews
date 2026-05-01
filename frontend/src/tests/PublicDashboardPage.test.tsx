@@ -44,6 +44,10 @@ function buildArchiveIncident(
     headline_zh: overrides.headline_zh ?? "客服机器人泄露了私密账户备注",
     date_logged: overrides.date_logged ?? "2026-04-29",
     company_involved: overrides.company_involved ?? "AssistCo",
+    company_involved_zh:
+      "company_involved_zh" in overrides
+        ? overrides.company_involved_zh ?? null
+        : "助理公司",
     claimant_name: overrides.claimant_name ?? "AssistCo",
     incident_topic: overrides.incident_topic ?? "privacy",
     categories: overrides.categories ?? ["Privacy/Security"],
@@ -149,6 +153,10 @@ describe("PublicDashboardPage", () => {
       categories: ["Privacy/Security", "Autonomous Systems"],
       claimants: ["AssistCo", "RoboFleet"],
       companies: ["AssistCo", "RoboFleet"],
+      company_labels_zh: {
+        AssistCo: "助理公司",
+        RoboFleet: "机器人舰队",
+      },
       years: [2026, 2025],
       months_by_year: {
         "2026": [4, 3],
@@ -169,6 +177,7 @@ describe("PublicDashboardPage", () => {
       headline_zh: "AssistCo 助手泄露了私密账单备注",
       date_logged: "2026-12-29",
       company_involved: "AssistCo",
+      company_involved_zh: "助理公司",
       categories: ["Privacy/Security"],
       severity_score: 4,
       archive_summary:
@@ -223,6 +232,7 @@ describe("PublicDashboardPage", () => {
       headline_en: "RoboFleet robot pilot rollback follows navigation failures",
       headline_zh: "RoboFleet 机器人试点因导航失误而回滚",
       company_involved: "RoboFleet",
+      company_involved_zh: null,
       claimant_name: "RoboFleet",
       incident_topic: "autonomy",
       categories: ["Autonomous Systems"],
@@ -291,8 +301,8 @@ describe("PublicDashboardPage", () => {
             { category: "Autonomous Systems", count: 3 },
           ],
           top_companies: [
-            { company: "AssistCo", count: 5 },
-            { company: "RoboFleet", count: 3 },
+            { company: "AssistCo", company_zh: "助理公司", count: 5 },
+            { company: "RoboFleet", company_zh: "机器人舰队", count: 3 },
           ],
         },
       }),
@@ -396,19 +406,11 @@ describe("PublicDashboardPage", () => {
     expect(within(archive).queryByText("Claim vs. reality")).not.toBeInTheDocument();
     expect(within(archive).getByText("Page 1 of 2")).toBeInTheDocument();
     expect(within(archive).getByText("Showing 2 of 8 incidents")).toBeInTheDocument();
+    expect(within(archive).getByText("AssistCo")).toBeInTheDocument();
+    expect(latestIncident.company_involved_zh).toBe("助理公司");
 
     await waitFor(() => {
       expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-1");
-    });
-
-    fireEvent.click(
-      within(archive).getByRole("button", {
-        name: /Open full context for RoboFleet robot pilot rollback follows navigation failures/i,
-      }),
-    );
-
-    await waitFor(() => {
-      expect(mockedFetchIncidentDetail).toHaveBeenLastCalledWith("incident-2");
     });
 
     const detail = screen
@@ -417,17 +419,17 @@ describe("PublicDashboardPage", () => {
     expect(detail).not.toBeNull();
     expect(
       within(detail as HTMLElement).getByRole("heading", {
-        name: "RoboFleet robot pilot rollback follows navigation failures",
+        name: "AssistCo assistant exposes private billing notes",
       }),
     ).toBeInTheDocument();
     expect(
       within(detail as HTMLElement).getByText("What happened"),
     ).toBeInTheDocument();
     expect(
-      within(detail as HTMLElement).getByText(
-        "Repeated navigation failures forced operators to pause the urban robot pilot.",
+      within(detail as HTMLElement).getAllByText(
+        "A support automation rollout leaked internal notes into user-facing replies.",
       ),
-    ).toBeInTheDocument();
+    ).toHaveLength(2);
     expect(
       within(detail as HTMLElement).getByText("Why it matters"),
     ).toBeInTheDocument();
@@ -439,9 +441,9 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
     expect(
       within(detail as HTMLElement).getByRole("link", {
-        name: "Robot pilot paused after navigation failures",
+        name: "AssistCo assistant exposes private billing notes",
       }),
-    ).toHaveAttribute("href", "https://example.com/robot-pilot");
+    ).toHaveAttribute("href", "https://example.com/assistco");
 
     fireEvent.click(screen.getByRole("button", { name: "中文" }));
 
@@ -455,8 +457,11 @@ describe("PublicDashboardPage", () => {
       within(spotlight as HTMLElement).getByText("隐私 / 安全 (5)、自主系统 (3)"),
     ).toBeInTheDocument();
     expect(
-      within(detail as HTMLElement).getByRole("heading", {
-        name: "RoboFleet 机器人试点因导航失误而回滚",
+      within(spotlight as HTMLElement).getByText("助理公司 (5)、机器人舰队 (3)"),
+    ).toBeInTheDocument();
+    expect(
+      await within(detail as HTMLElement).findByRole("heading", {
+        name: "AssistCo 助手泄露了私密账单备注",
       }),
     ).toBeInTheDocument();
     expect(within(archive).getByText("隐私 / 安全")).toBeInTheDocument();
@@ -477,18 +482,78 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
 
     expect(
+      within(detail as HTMLElement).getByRole("heading", {
+        name: "AssistCo 助手泄露了私密账单备注",
+      }),
+    ).toBeInTheDocument();
+    expect(
       within(detail as HTMLElement).getByText("声明 vs. 现实"),
     ).toBeInTheDocument();
     expect(
       within(detail as HTMLElement).getByText(
-        "The pilot can already handle dense downtown routing.",
+        "Our assistant never exposes internal account notes.",
       ),
     ).toBeInTheDocument();
     expect(
-      within(detail as HTMLElement).getByText(
-        "反复的导航失误迫使运营人员暂停了城市机器人试点。",
+      within(detail as HTMLElement).getAllByText(
+        "一次支持自动化发布将内部备注泄露给了用户。",
       ),
-    ).toBeInTheDocument();
+    ).toHaveLength(2);
+    expect(within(archive).getByText("助理公司")).toBeInTheDocument();
+    expect(within(detail as HTMLElement).getByText("助理公司")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(archive).getByRole("button", {
+        name: /打开 RoboFleet 机器人试点因导航失误而回滚 的完整背景/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockedFetchIncidentDetail).toHaveBeenLastCalledWith("incident-2");
+    });
+    await waitFor(() => {
+      expect(
+        within(detail as HTMLElement).getByRole("heading", {
+          name: "RoboFleet 机器人试点因导航失误而回滚",
+        }),
+      ).toBeInTheDocument();
+    });
+    expect(within(archive).getByText("RoboFleet")).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getAllByText("RoboFleet"),
+    ).toHaveLength(2);
+  });
+
+  it("uses Chinese company labels for filter options while keeping canonical company values", async () => {
+    mockedFetchIncidentFeed.mockResolvedValue(
+      buildFeedResponse([buildArchiveIncident()]),
+    );
+    mockedFetchIncidentDetail.mockResolvedValue(buildIncidentDetail());
+
+    render(<PublicDashboardPage />);
+
+    await screen.findByRole("heading", { name: "Quick takeaway" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "中文" }));
+    });
+
+    const companyFilter = screen.getByLabelText("按公司筛选") as HTMLSelectElement;
+    const option = within(companyFilter).getByRole("option", {
+      name: "助理公司",
+    }) as HTMLOptionElement;
+
+    expect(option.value).toBe("AssistCo");
+
+    await act(async () => {
+      fireEvent.change(companyFilter, { target: { value: "AssistCo" } });
+    });
+
+    expect(companyFilter.value).toBe("AssistCo");
+    await waitFor(() => {
+      expect(mockedFetchIncidentFeed).toHaveBeenLastCalledWith(
+        expect.objectContaining({ company: "AssistCo" }),
+      );
+    });
   });
 
   it("shows filter bootstrap failure and empty-state detail copy when no incidents are available", async () => {
