@@ -13,6 +13,8 @@ type ReviewDraft = {
   reviewNotes: string;
 };
 
+type QueueSortMode = "date" | "severity";
+
 export default function InternalReviewPage() {
   const [adminTokenInput, setAdminTokenInput] = useState(
     () => readStoredAdminToken() ?? "",
@@ -26,9 +28,11 @@ export default function InternalReviewPage() {
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isQueueCollapsed, setIsQueueCollapsed] = useState(true);
+  const [queueSortMode, setQueueSortMode] = useState<QueueSortMode>("date");
   const [shouldRevealReviewPanel, setShouldRevealReviewPanel] = useState(false);
   const reviewPanelRef = useRef<HTMLElement | null>(null);
-  const sortedAdminIncidents = sortAdminIncidents(adminIncidents);
+  const sortedAdminIncidents = sortAdminIncidents(adminIncidents, queueSortMode);
 
   const activeIncident =
     sortedAdminIncidents.find((incident) => incident.id === activeReviewId) ??
@@ -87,26 +91,7 @@ export default function InternalReviewPage() {
           return;
         }
 
-        setAdminIncidents(response.items);
-        setDrafts(
-          Object.fromEntries(
-            response.items.map((incident) => [
-              incident.id,
-              createReviewDraft(incident),
-            ]),
-          ),
-        );
-        const sortedResponseItems = sortAdminIncidents(response.items);
-        setActiveReviewId((currentActiveReviewId) => {
-          if (
-            currentActiveReviewId &&
-            response.items.some((incident) => incident.id === currentActiveReviewId)
-          ) {
-            return currentActiveReviewId;
-          }
-
-          return sortedResponseItems[0]?.id ?? null;
-        });
+        applyAdminQueue(response.items);
       } catch (loadError) {
         if (isCancelled) {
           return;
@@ -170,6 +155,35 @@ export default function InternalReviewPage() {
     setShouldRevealReviewPanel(true);
   }
 
+  function applyAdminQueue(
+    incidents: AdminIncident[],
+    preferredActiveReviewId?: string | null,
+  ) {
+    setAdminIncidents(incidents);
+    setDrafts(
+      Object.fromEntries(
+        incidents.map((incident) => [incident.id, createReviewDraft(incident)]),
+      ),
+    );
+
+    const sortedResponseItems = sortAdminIncidents(incidents, queueSortMode);
+    setActiveReviewId((currentActiveReviewId) => {
+      const resolvedActiveReviewId =
+        preferredActiveReviewId === undefined
+          ? currentActiveReviewId
+          : preferredActiveReviewId;
+
+      if (
+        resolvedActiveReviewId &&
+        incidents.some((incident) => incident.id === resolvedActiveReviewId)
+      ) {
+        return resolvedActiveReviewId;
+      }
+
+      return sortedResponseItems[0]?.id ?? null;
+    });
+  }
+
   async function handleSubmitReview(status: AdminIncidentUpdateRequest["status"]) {
     if (!activeIncident || !activeDraft || !adminToken) {
       return;
@@ -177,9 +191,10 @@ export default function InternalReviewPage() {
 
     setIsSaving(true);
     setAdminError(null);
+    let reviewSaved = false;
 
     try {
-      const updatedIncident = await updateAdminIncident(adminToken, activeIncident.id, {
+      await updateAdminIncident(adminToken, activeIncident.id, {
         status,
         company_involved: activeDraft.company,
         claimant_name: activeIncident.claimant_name ?? null,
@@ -190,19 +205,19 @@ export default function InternalReviewPage() {
         claim_match_confidence: activeIncident.claim_match_confidence ?? null,
         review_notes: activeDraft.reviewNotes,
       });
+      reviewSaved = true;
+      setIsAdminLoading(true);
 
-      setAdminIncidents((currentIncidents) =>
-        currentIncidents.map((incident) =>
-          incident.id === updatedIncident.id ? updatedIncident : incident,
-        ),
-      );
-      setDrafts((currentDrafts) => ({
-        ...currentDrafts,
-        [updatedIncident.id]: createReviewDraft(updatedIncident),
-      }));
+      const refreshedQueue = await fetchAdminIncidentQueue(adminToken);
+      applyAdminQueue(refreshedQueue.items, activeIncident.id);
     } catch {
-      setAdminError("Unable to save the review decision right now.");
+      setAdminError(
+        reviewSaved
+          ? "Review saved, but the queue could not be refreshed."
+          : "Unable to save the review decision right now.",
+      );
     } finally {
+      setIsAdminLoading(false);
       setIsSaving(false);
     }
   }
@@ -257,12 +272,38 @@ export default function InternalReviewPage() {
               Choose an incident waiting for editorial review.
             </p>
           </div>
+          <div className="internal-review-queue-toolbar">
+            <label className="field internal-review-sort-field">
+              <span>Sort queue</span>
+              <select
+                aria-label="Sort queue"
+                value={queueSortMode}
+                onChange={(event) =>
+                  setQueueSortMode(event.target.value as QueueSortMode)
+                }
+              >
+                <option value="date">Date (newest first)</option>
+                <option value="severity">Severity (highest first)</option>
+              </select>
+            </label>
+            <button
+              className="secondary-action internal-review-queue-toggle"
+              type="button"
+              onClick={() => setIsQueueCollapsed((current) => !current)}
+            >
+              {isQueueCollapsed ? "Expand queue" : "Collapse queue"}
+            </button>
+          </div>
           {isAdminLoading ? <p>Loading review queue...</p> : null}
           {!isAdminLoading && !adminError && adminIncidents.length === 0 ? (
             <p className="body-copy">No incidents are waiting for review right now.</p>
           ) : null}
-          {!isAdminLoading && !adminError && adminIncidents.length > 0 ? (
-            <div className="public-archive-list internal-review-queue-list">
+          {!isAdminLoading &&
+          !adminError &&
+          adminIncidents.length > 0 ? (
+            <div
+              className={`public-archive-list internal-review-queue-list${isQueueCollapsed ? " is-collapsed" : ""}`}
+            >
               {sortedAdminIncidents.map((incident) => {
                 const isSelected = incident.id === activeIncident?.id;
 
@@ -548,8 +589,20 @@ function formatSourceTypeLabel(sourceType: string): string {
   return `${sourceType.split("_").join(" ")} source`;
 }
 
-function sortAdminIncidents(incidents: AdminIncident[]): AdminIncident[] {
-  return [...incidents].sort((left, right) =>
-    right.date_logged.localeCompare(left.date_logged),
-  );
+function sortAdminIncidents(
+  incidents: AdminIncident[],
+  sortMode: QueueSortMode = "date",
+): AdminIncident[] {
+  return [...incidents].sort((left, right) => {
+    if (sortMode === "severity") {
+      const leftSeverity = left.suggested_severity_score ?? left.severity_score;
+      const rightSeverity = right.suggested_severity_score ?? right.severity_score;
+
+      if (rightSeverity !== leftSeverity) {
+        return rightSeverity - leftSeverity;
+      }
+    }
+
+    return right.date_logged.localeCompare(left.date_logged);
+  });
 }

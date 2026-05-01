@@ -358,6 +358,214 @@ describe("InternalReviewPage", () => {
     });
   });
 
+  it("refreshes the queue after approving an incident", async () => {
+    mockedFetchAdminIncidentQueue.mockReset();
+    mockedFetchAdminIncidentQueue
+      .mockResolvedValueOnce({
+        items: [
+          buildAdminIncident({
+            id: "incident-1",
+            date_logged: "2026-06-01",
+            headline: "AssistCo exposed private account notes",
+            headline_en: "AssistCo exposed private account notes",
+          }),
+          buildAdminIncident({
+            id: "incident-2",
+            date_logged: "2026-04-20",
+            headline: "RoboFleet rollback followed navigation failures",
+            headline_en: "RoboFleet rollback followed navigation failures",
+            company_involved: "RoboFleet",
+            claimant_name: "RoboFleet",
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        items: [
+          buildAdminIncident({
+            id: "incident-2",
+            date_logged: "2026-04-20",
+            headline: "RoboFleet rollback followed navigation failures",
+            headline_en: "RoboFleet rollback followed navigation failures",
+            company_involved: "RoboFleet",
+            claimant_name: "RoboFleet",
+          }),
+        ],
+      });
+
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "editor-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    await screen.findByRole("button", {
+      name: /Open review for AssistCo exposed private account notes/i,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve incident" }));
+
+    await waitFor(() => {
+      expect(mockedFetchAdminIncidentQueue).toHaveBeenCalledTimes(2);
+    });
+
+    expect(
+      screen.queryByRole("button", {
+        name: /Open review for AssistCo exposed private account notes/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /Open review for RoboFleet rollback followed navigation failures/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("refreshes the queue after rejecting an incident", async () => {
+    mockedFetchAdminIncidentQueue.mockReset();
+    mockedFetchAdminIncidentQueue
+      .mockResolvedValueOnce({
+        items: [
+          buildAdminIncident({
+            id: "incident-1",
+            date_logged: "2026-06-01",
+            headline: "AssistCo exposed private account notes",
+            headline_en: "AssistCo exposed private account notes",
+          }),
+          buildAdminIncident({
+            id: "incident-2",
+            date_logged: "2026-04-20",
+            headline: "RoboFleet rollback followed navigation failures",
+            headline_en: "RoboFleet rollback followed navigation failures",
+            company_involved: "RoboFleet",
+            claimant_name: "RoboFleet",
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        items: [
+          buildAdminIncident({
+            id: "incident-2",
+            date_logged: "2026-04-20",
+            headline: "RoboFleet rollback followed navigation failures",
+            headline_en: "RoboFleet rollback followed navigation failures",
+            company_involved: "RoboFleet",
+            claimant_name: "RoboFleet",
+          }),
+        ],
+      });
+    mockedUpdateAdminIncident.mockImplementationOnce(async (_token, incidentId) =>
+      buildAdminIncident({
+        id: incidentId,
+        status: "rejected",
+      }),
+    );
+
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "editor-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    await screen.findByRole("button", {
+      name: /Open review for AssistCo exposed private account notes/i,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reject incident" }));
+
+    await waitFor(() => {
+      expect(mockedFetchAdminIncidentQueue).toHaveBeenCalledTimes(2);
+    });
+
+    expect(
+      screen.queryByRole("button", {
+        name: /Open review for AssistCo exposed private account notes/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /Open review for RoboFleet rollback followed navigation failures/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("collapses and expands the review queue", async () => {
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "editor-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    const queue = await screen.findByRole("region", { name: "Review queue" });
+    const queueList = queue.querySelector(".internal-review-queue-list");
+
+    expect(queueList).not.toBeNull();
+    expect(
+      within(queue).getByRole("button", {
+        name: /Open review for AssistCo exposed private account notes/i,
+      }),
+    ).toBeInTheDocument();
+    expect(queueList).toHaveClass("is-collapsed");
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand queue" }));
+
+    expect(
+      within(queue).getByRole("button", {
+        name: /Open review for AssistCo exposed private account notes/i,
+      }),
+    ).toBeInTheDocument();
+    expect(queueList).not.toHaveClass("is-collapsed");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse queue" }));
+
+    expect(queueList).toHaveClass("is-collapsed");
+  });
+
+  it("sorts queue items by highest severity first when requested", async () => {
+    mockedFetchAdminIncidentQueue.mockResolvedValueOnce({
+      items: [
+        buildAdminIncident({
+          id: "incident-low",
+          headline: "Lower severity incident",
+          headline_en: "Lower severity incident",
+          suggested_severity_score: 2,
+          severity_score: 2,
+          date_logged: "2026-06-02",
+        }),
+        buildAdminIncident({
+          id: "incident-high",
+          headline: "Higher severity incident",
+          headline_en: "Higher severity incident",
+          suggested_severity_score: 5,
+          severity_score: 5,
+          date_logged: "2026-05-01",
+        }),
+      ],
+    });
+
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "sort-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    const queue = await screen.findByRole("region", { name: "Review queue" });
+
+    fireEvent.change(screen.getByLabelText("Sort queue"), {
+      target: { value: "severity" },
+    });
+
+    const queueButtons = within(queue).getAllByRole("button", {
+      name: /Open review for/i,
+    });
+
+    expect(within(queueButtons[0]).getByText("Higher severity incident")).toBeInTheDocument();
+    expect(within(queueButtons[1]).getByText("Lower severity incident")).toBeInTheDocument();
+  });
+
   it("reveals the review panel after a mobile queue selection", async () => {
     mockMatchMedia(true);
 
@@ -415,7 +623,9 @@ describe("InternalReviewPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
 
     const queue = await screen.findByRole("region", { name: "Review queue" });
-    const queueButtons = within(queue).getAllByRole("button");
+    const queueButtons = within(queue).getAllByRole("button", {
+      name: /Open review for/i,
+    });
 
     expect(
       within(queueButtons[0]).getByText("Newer incident in queue"),

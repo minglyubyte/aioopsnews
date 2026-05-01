@@ -78,8 +78,38 @@ body {
   max-width: 36rem;
 }
 
+.internal-review-queue-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: end;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.internal-review-sort-field {
+  min-width: min(18rem, 100%);
+}
+
+.internal-review-sort-field span {
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.internal-review-queue-toggle {
+  margin-top: 0;
+}
+
 .internal-review-queue-list {
   gap: 0.85rem;
+}
+
+.internal-review-queue-list.is-collapsed {
+  max-height: 24rem;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+  scrollbar-gutter: stable;
 }
 
 .internal-review-queue-item {
