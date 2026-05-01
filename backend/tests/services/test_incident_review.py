@@ -70,11 +70,12 @@ class FakeBatchReviewClient:
 
 class FakeTranslationClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str, str]] = []
+        self.calls: list[tuple[str, str, str, str, str]] = []
 
     def translate(
         self,
         *,
+        company_involved_en: str,
         headline_en: str,
         reality_summary_en: str,
         legitimacy_reasoning_en: str,
@@ -82,6 +83,7 @@ class FakeTranslationClient:
     ) -> IncidentTranslation:
         self.calls.append(
             (
+                company_involved_en,
                 headline_en,
                 reality_summary_en,
                 legitimacy_reasoning_en,
@@ -89,6 +91,7 @@ class FakeTranslationClient:
             )
         )
         return IncidentTranslation(
+            company_involved_zh=f"ZH:{company_involved_en}",
             headline_zh=f"ZH:{headline_en}",
             reality_summary_zh=f"ZH:{reality_summary_en}",
             legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
@@ -330,6 +333,7 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
 
     assert approved_incident["status"] == "approved"
     assert approved_incident["translation_status"] == "completed"
+    assert approved_incident["company_involved_zh"] == "ZH:OpenAI"
     assert approved_incident["headline_zh"] == (
         "ZH:OpenAI filing included fake legal citations"
     )
@@ -359,6 +363,7 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
     assert queued_incident["severity_decision_source"] is None
     assert translation_client.calls == [
         (
+            "OpenAI",
             "OpenAI filing included fake legal citations",
             "Court records and reporting confirm the filing incident.",
             "Primary review found strong source support.",

@@ -23,6 +23,7 @@ export type PublicIncidentBase = {
   headline_zh?: string | null;
   date_logged: string;
   company_involved: string;
+  company_involved_zh?: string | null;
   incident_topic?: string | null;
   claimant_name?: string;
   categories: string[];
@@ -59,6 +60,7 @@ export type FeedCategorySummary = FeedSummaryCount & {
 
 export type FeedCompanySummary = FeedSummaryCount & {
   company: string;
+  company_zh?: string | null;
 };
 
 export type IncidentSliceSummary = {
@@ -106,6 +108,7 @@ export type IncidentFilters = {
   categories: string[];
   claimants: string[];
   companies: string[];
+  company_labels_zh: Record<string, string | null>;
   years: number[];
   months_by_year: Record<string, number[]>;
 };

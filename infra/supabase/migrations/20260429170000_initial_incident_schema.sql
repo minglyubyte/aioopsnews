@@ -31,6 +31,7 @@ create table if not exists incident_logs (
     headline_zh text,
     date_logged date not null,
     company_involved text not null,
+    company_involved_zh text,
     incident_topic text,
     claimant_name text,
     categories text[] not null default '{}',

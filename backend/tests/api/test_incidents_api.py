@@ -59,6 +59,7 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "headline_zh": "数据库支持的隐私事件已完成审核",
                 "date_logged": "2026-04-30",
                 "company_involved": "FutureStack",
+                "company_involved_zh": "未来栈",
                 "incident_topic": "privacy",
                 "claimant_name": "FutureStack",
                 "categories": ["Privacy/Security"],
@@ -209,6 +210,7 @@ def test_get_incidents_reads_from_repository_records() -> None:
         "Database-backed feed shows a reviewed privacy incident"
     )
     assert payload["items"][1]["headline_zh"] == "数据库支持的隐私事件已完成审核"
+    assert payload["items"][1]["company_involved_zh"] == "未来栈"
     assert payload["items"][1]["archive_summary"] == (
         "A reviewed database record leaked internal notes into replies."
     )
@@ -230,10 +232,10 @@ def test_get_incidents_reads_from_repository_records() -> None:
             {"category": "Privacy/Security", "count": 1},
         ],
         "top_companies": [
-            {"company": "ArchiveAI", "count": 1},
-            {"company": "FutureStack", "count": 1},
-            {"company": "MayOps", "count": 1},
-            {"company": "RoboOps", "count": 1},
+            {"company": "ArchiveAI", "company_zh": None, "count": 1},
+            {"company": "FutureStack", "company_zh": "未来栈", "count": 1},
+            {"company": "MayOps", "company_zh": None, "count": 1},
+            {"company": "RoboOps", "company_zh": None, "count": 1},
         ],
     }
     assert "matched_claim" not in payload["items"][1]
@@ -322,6 +324,7 @@ def test_get_incident_detail_returns_public_record_with_analysis_and_sources() -
         "Database-backed feed shows a reviewed privacy incident"
     )
     assert detail_response.json()["headline_zh"] == "数据库支持的隐私事件已完成审核"
+    assert detail_response.json()["company_involved_zh"] == "未来栈"
     assert detail_response.json()["analysis"] == {
         "what_happened_en": (
             "A reviewed database record leaked internal notes into replies."
@@ -375,6 +378,12 @@ def test_get_filters_reads_distinct_values_from_repository() -> None:
         ],
         "claimants": ["ArchiveAI", "FutureStack", "MayOps", "RoboOps"],
         "companies": ["ArchiveAI", "FutureStack", "MayOps", "RoboOps"],
+        "company_labels_zh": {
+            "ArchiveAI": None,
+            "FutureStack": "未来栈",
+            "MayOps": None,
+            "RoboOps": None,
+        },
         "years": [2026, 2025],
         "months_by_year": {
             "2026": [5, 4],

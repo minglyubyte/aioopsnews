@@ -1134,6 +1134,7 @@ def _apply_review_decision(
         )
 
     translation = translate_incident_copy(
+        company_involved_en=incident["company_involved"],
         headline_en=final_result.headline_en,
         reality_summary_en=final_result.reality_summary_en,
         legitimacy_reasoning_en=final_result.reasoning,
@@ -1142,6 +1143,7 @@ def _apply_review_decision(
     )
     repository.update_incident_translation(
         incident_id=incident["id"],
+        company_involved_zh=translation.company_involved_zh,
         headline_zh=translation.headline_zh,
         reality_summary_zh=translation.reality_summary_zh,
         legitimacy_reasoning_zh=translation.legitimacy_reasoning_zh,
@@ -1150,6 +1152,7 @@ def _apply_review_decision(
         translated_at=_now_isoformat(),
     )
     incident["translation_status"] = translation.status
+    incident["company_involved_zh"] = translation.company_involved_zh
     incident["headline_zh"] = translation.headline_zh
     incident["reality_summary_zh"] = translation.reality_summary_zh
     incident["legitimacy_reasoning_zh"] = translation.legitimacy_reasoning_zh

@@ -29,6 +29,7 @@ class AdminIncidentResponse(BaseModel):
     headline_zh: str | None = None
     date_logged: str
     company_involved: str
+    company_involved_zh: str | None = None
     incident_topic: str | None = None
     claimant_name: str | None = None
     categories: list[str]
@@ -130,15 +131,11 @@ def patch_admin_incident(
     if updated_incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    if (
-        updated_incident["status"] == "approved"
-        and updated_incident.get("translation_status") != "completed"
-    ):
+    if updated_incident["status"] == "approved":
         translation = translate_incident_copy(
-            headline_en=updated_incident.get("headline_en")
-            or updated_incident["headline"],
-            reality_summary_en=updated_incident.get("reality_summary_en")
-            or updated_incident["reality_summary"],
+            company_involved_en=updated_incident["company_involved"],
+            headline_en=updated_incident["headline"],
+            reality_summary_en=updated_incident["reality_summary"],
             legitimacy_reasoning_en=updated_incident.get("legitimacy_reasoning")
             or "",
             source_validation_summary_en=updated_incident.get(
@@ -149,6 +146,7 @@ def patch_admin_incident(
         )
         translated_incident = repository.update_incident_translation(
             incident_id=incident_id,
+            company_involved_zh=translation.company_involved_zh,
             headline_zh=translation.headline_zh,
             reality_summary_zh=translation.reality_summary_zh,
             legitimacy_reasoning_zh=translation.legitimacy_reasoning_zh,

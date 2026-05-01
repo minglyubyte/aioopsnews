@@ -83,6 +83,7 @@ Stores the main incident record. This is the most important table in the system.
 | `headline_zh` | Chinese headline |
 | `date_logged` | Incident date |
 | `company_involved` | Company tied to the incident |
+| `company_involved_zh` | Chinese translation of the company name for public display when available |
 | `incident_topic` | Topic text from import/editorial input |
 | `claimant_name` | Claimant associated with the incident when relevant |
 | `categories` | Category list from the fixed taxonomy |
@@ -139,7 +140,7 @@ Practical rule:
 | Field | Meaning |
 | --- | --- |
 | `status` | Workflow state |
-| `translation_status` | Translation workflow state |
+| `translation_status` | Translation workflow state such as `not_requested` before approval or `completed` after translated copy is stored |
 | `review_batch_id` | Batch review identifier |
 | `review_model` | Review model used for the incident |
 | `duplicate_status` | Duplicate-review result |
@@ -152,6 +153,16 @@ Practical rule:
 | `translated_at` | Translation timestamp |
 | `created_at` | Row creation timestamp |
 | `updated_at` | Row update timestamp |
+
+### Translation Payload
+
+When translation completes for an approved incident, `incident_logs` stores a Chinese-language payload that includes:
+
+- `company_involved_zh`
+- `headline_zh`
+- `reality_summary_zh`
+
+The translated company field is optional at the schema level, but the product uses it when present so Chinese readers can see a localized company name instead of always falling back to the English value.
 
 ## `incident_sources`
 

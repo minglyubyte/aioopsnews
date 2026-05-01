@@ -38,6 +38,7 @@ class PublicIncidentBaseResponse(BaseModel):
     headline_zh: str | None = None
     date_logged: str
     company_involved: str
+    company_involved_zh: str | None = None
     incident_topic: str | None = None
     claimant_name: str | None = None
     categories: list[str]
@@ -85,6 +86,7 @@ class IncidentFilterResponse(BaseModel):
     categories: list[str]
     claimants: list[str]
     companies: list[str]
+    company_labels_zh: dict[str, str | None]
     years: list[int]
     months_by_year: dict[str, list[int]]
 

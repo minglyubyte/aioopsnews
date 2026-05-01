@@ -98,7 +98,19 @@ class InMemoryIncidentRepository:
                     )
                 ],
                 "top_companies": [
-                    {"company": company, "count": count}
+                    {
+                        "company": company,
+                        "company_zh": next(
+                            (
+                                incident.get("company_involved_zh")
+                                for incident in incidents
+                                if incident["company_involved"] == company
+                                and incident.get("company_involved_zh")
+                            ),
+                            None,
+                        ),
+                        "count": count,
+                    }
                     for company, count in sorted(
                         company_counts.items(),
                         key=lambda item: (-item[1], item[0]),
@@ -133,6 +145,18 @@ class InMemoryIncidentRepository:
             }
         )
         companies = sorted({incident["company_involved"] for incident in incidents})
+        company_labels_zh = {
+            company: next(
+                (
+                    incident.get("company_involved_zh")
+                    for incident in incidents
+                    if incident["company_involved"] == company
+                    and incident.get("company_involved_zh")
+                ),
+                None,
+            )
+            for company in companies
+        }
         archive_pairs = sorted(
             {
                 tuple(map(int, incident["date_logged"].split("-")[:2]))
@@ -152,6 +176,7 @@ class InMemoryIncidentRepository:
             "categories": categories,
             "claimants": claimants,
             "companies": companies,
+            "company_labels_zh": company_labels_zh,
             "years": years,
             "months_by_year": months_by_year,
         }
@@ -710,6 +735,7 @@ class InMemoryIncidentRepository:
         self,
         *,
         incident_id: str,
+        company_involved_zh: str,
         headline_zh: str,
         reality_summary_zh: str,
         legitimacy_reasoning_zh: str,
@@ -722,6 +748,7 @@ class InMemoryIncidentRepository:
             return None
         incident.update(
             {
+                "company_involved_zh": company_involved_zh,
                 "headline_zh": headline_zh,
                 "reality_summary_zh": reality_summary_zh,
                 "legitimacy_reasoning_zh": legitimacy_reasoning_zh,
@@ -743,6 +770,7 @@ class InMemoryIncidentRepository:
             "headline_zh": incident.get("headline_zh"),
             "date_logged": incident["date_logged"],
             "company_involved": incident["company_involved"],
+            "company_involved_zh": incident.get("company_involved_zh"),
             "incident_topic": incident.get("incident_topic"),
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),
@@ -768,6 +796,7 @@ class InMemoryIncidentRepository:
             "headline_zh": incident.get("headline_zh"),
             "date_logged": incident["date_logged"],
             "company_involved": incident["company_involved"],
+            "company_involved_zh": incident.get("company_involved_zh"),
             "incident_topic": incident.get("incident_topic"),
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),
@@ -835,6 +864,7 @@ class InMemoryIncidentRepository:
             "headline_zh": incident.get("headline_zh"),
             "date_logged": incident["date_logged"],
             "company_involved": incident["company_involved"],
+            "company_involved_zh": incident.get("company_involved_zh"),
             "incident_topic": incident.get("incident_topic"),
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),

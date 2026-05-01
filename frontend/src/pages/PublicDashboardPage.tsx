@@ -834,7 +834,11 @@ export default function PublicDashboardPage() {
                   <option value="">{copy.allCompanies}</option>
                   {(filters?.companies ?? []).map((company) => (
                     <option key={company} value={company}>
-                      {company}
+                      {localizedCompanyFilterLabel(
+                        company,
+                        filters?.company_labels_zh,
+                        readerLocale,
+                      )}
                     </option>
                   ))}
                 </select>
@@ -905,7 +909,7 @@ export default function PublicDashboardPage() {
                         key={incident.id}
                       >
                         <div className="incident-meta">
-                          <span>{incident.company_involved}</span>
+                          <span>{localizedCompanyName(incident, readerLocale)}</span>
                           <span>{severityLabel(incident.severity_score, readerLocale)}</span>
                           <span>{formatDate(incident.date_logged, readerLocale)}</span>
                         </div>
@@ -1030,7 +1034,7 @@ export default function PublicDashboardPage() {
             <div className="public-detail-grid">
               <article className="public-incident-card public-detail-card">
                 <div className="incident-meta">
-                  <span>{incidentDetail.company_involved}</span>
+                  <span>{localizedCompanyName(incidentDetail, readerLocale)}</span>
                   <span>{severityLabel(incidentDetail.severity_score, readerLocale)}</span>
                   <span>{formatDate(incidentDetail.date_logged, readerLocale)}</span>
                 </div>
@@ -1158,6 +1162,29 @@ function localizedHeadline(incident: PublicIncidentBase, locale: ReaderLocale) {
   }
 
   return incident.headline_en ?? incident.headline;
+}
+
+function localizedCompanyName(
+  incident: PublicIncidentBase,
+  locale: ReaderLocale,
+) {
+  if (locale === "zh") {
+    return incident.company_involved_zh ?? incident.company_involved;
+  }
+
+  return incident.company_involved;
+}
+
+function localizedCompanyFilterLabel(
+  company: string,
+  companyLabelsZh: Record<string, string | null> | undefined,
+  locale: ReaderLocale,
+) {
+  if (locale === "zh") {
+    return companyLabelsZh?.[company] ?? company;
+  }
+
+  return company;
 }
 
 function localizedArchiveSummary(
@@ -1411,7 +1438,10 @@ function buildHighlightInsights(
           ? copy.highlights.topListValue(
               sliceSummary.top_companies
                 .slice(0, 3)
-                .map((entry) => `${entry.company} (${entry.count})`),
+                .map(
+                  (entry) =>
+                    `${locale === "zh" ? entry.company_zh ?? entry.company : entry.company} (${entry.count})`,
+                ),
             )
           : copy.highlights.noTopCompanies,
       note:

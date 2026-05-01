@@ -68,11 +68,12 @@ class FakeEscalationReviewClient:
 
 class FakeTranslationClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str, str]] = []
+        self.calls: list[tuple[str, str, str, str, str]] = []
 
     def translate(
         self,
         *,
+        company_involved_en: str,
         headline_en: str,
         reality_summary_en: str,
         legitimacy_reasoning_en: str,
@@ -80,6 +81,7 @@ class FakeTranslationClient:
     ):
         self.calls.append(
             (
+                company_involved_en,
                 headline_en,
                 reality_summary_en,
                 legitimacy_reasoning_en,
@@ -89,6 +91,7 @@ class FakeTranslationClient:
         from app.services.incident_translation import IncidentTranslation
 
         return IncidentTranslation(
+            company_involved_zh=f"ZH:{company_involved_en}",
             headline_zh=f"ZH:{headline_en}",
             reality_summary_zh=f"ZH:{reality_summary_en}",
             legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
@@ -176,6 +179,7 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
             ],
         }
     )
+    translation_client = FakeTranslationClient()
 
     summary = asyncio.run(
         run_incident_csv_workflow(
@@ -185,7 +189,7 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
             source_fetcher=FakeSourceFetcher(),
             review_client=review_client,
             escalation_client=FakeEscalationReviewClient(),
-            translation_client=FakeTranslationClient(),
+            translation_client=translation_client,
             primary_model="gpt-5.4-mini",
             escalation_model="gpt-5.2",
             embedding_client=FakeEmbeddingClient(),
@@ -206,6 +210,21 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
     assert summary["rejected"] == 0
     assert summary["translations_completed"] == 1
     assert summary["translations_failed"] == 0
+    approved_incident = next(
+        incident
+        for incident in repository.incidents.values()
+        if incident["external_id"] == "inc-openai-001"
+    )
+    assert approved_incident["company_involved_zh"] == "ZH:OpenAI"
+    assert translation_client.calls == [
+        (
+            "OpenAI",
+            "OpenAI filing included fake legal citations",
+            "Court records confirm the filing incident.",
+            "Strong source support.",
+            "3 fetched sources agree on the event.",
+        )
+    ]
     assert "batches_submitted" not in summary
     assert not (inbox_dir / "2023-a.csv").exists()
     assert len(list(archive_dir.glob("2023-a*.csv"))) == 1
