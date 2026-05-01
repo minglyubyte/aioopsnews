@@ -11,6 +11,8 @@ import httpx
 class IncidentTranslation:
     headline_zh: str
     reality_summary_zh: str
+    legitimacy_reasoning_zh: str
+    source_validation_summary_zh: str
     status: str = "completed"
 
 
@@ -20,6 +22,8 @@ class IncidentTranslationClient(Protocol):
         *,
         headline_en: str,
         reality_summary_en: str,
+        legitimacy_reasoning_en: str,
+        source_validation_summary_en: str,
     ) -> IncidentTranslation: ...
 
 
@@ -45,6 +49,8 @@ class DeepSeekIncidentTranslationClient:
         *,
         headline_en: str,
         reality_summary_en: str,
+        legitimacy_reasoning_en: str,
+        source_validation_summary_en: str,
     ) -> IncidentTranslation:
         response = httpx.post(
             f"{self._base_url}/chat/completions",
@@ -57,9 +63,11 @@ class DeepSeekIncidentTranslationClient:
                     {
                         "role": "system",
                         "content": (
-                            "Translate the incident headline and summary into "
-                            "simplified Chinese. Return JSON only with keys "
-                            "headline_zh and reality_summary_zh."
+                            "Translate the incident headline and reader-facing "
+                            "analysis into simplified Chinese. Return JSON only "
+                            "with keys headline_zh, reality_summary_zh, "
+                            "legitimacy_reasoning_zh, and "
+                            "source_validation_summary_zh."
                         ),
                     },
                     {
@@ -68,6 +76,10 @@ class DeepSeekIncidentTranslationClient:
                             {
                                 "headline_en": headline_en,
                                 "reality_summary_en": reality_summary_en,
+                                "legitimacy_reasoning_en": legitimacy_reasoning_en,
+                                "source_validation_summary_en": (
+                                    source_validation_summary_en
+                                ),
                             }
                         ),
                     },
@@ -82,6 +94,8 @@ class DeepSeekIncidentTranslationClient:
         return IncidentTranslation(
             headline_zh=parsed["headline_zh"],
             reality_summary_zh=parsed["reality_summary_zh"],
+            legitimacy_reasoning_zh=parsed["legitimacy_reasoning_zh"],
+            source_validation_summary_zh=parsed["source_validation_summary_zh"],
             status="completed",
         )
 
@@ -92,6 +106,8 @@ class DisabledIncidentTranslationClient:
         *,
         headline_en: str,
         reality_summary_en: str,
+        legitimacy_reasoning_en: str,
+        source_validation_summary_en: str,
     ) -> IncidentTranslation:
         raise RuntimeError(
             "DeepSeek translation is not configured. Set DEEPSEEK_API_KEY "
@@ -103,9 +119,13 @@ def translate_incident_copy(
     *,
     headline_en: str,
     reality_summary_en: str,
+    legitimacy_reasoning_en: str,
+    source_validation_summary_en: str,
     client: IncidentTranslationClient,
 ) -> IncidentTranslation:
     return client.translate(
         headline_en=headline_en,
         reality_summary_en=reality_summary_en,
+        legitimacy_reasoning_en=legitimacy_reasoning_en,
+        source_validation_summary_en=source_validation_summary_en,
     )

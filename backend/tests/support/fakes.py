@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections import Counter
 from copy import deepcopy
 from datetime import date
 from typing import Any
@@ -47,60 +48,64 @@ class InMemoryIncidentRepository:
         filters: IncidentQueryFilters,
     ) -> list[dict[str, Any]]:
         self.public_filter_calls.append(filters)
-        incidents = [
-            incident
-            for incident in self.incidents.values()
-            if incident["status"] == "approved"
-        ]
-
-        if filters.category:
-            incidents = [
-                incident
-                for incident in incidents
-                if filters.category in incident["categories"]
-            ]
-        if filters.company:
-            incidents = [
-                incident
-                for incident in incidents
-                if incident["company_involved"] == filters.company
-            ]
-        if filters.claimant:
-            incidents = [
-                incident
-                for incident in incidents
-                if incident.get("claimant_name") == filters.claimant
-            ]
-        if filters.severity_min is not None:
-            incidents = [
-                incident
-                for incident in incidents
-                if incident["severity_score"] >= filters.severity_min
-            ]
-        if filters.severity_max is not None:
-            incidents = [
-                incident
-                for incident in incidents
-                if incident["severity_score"] <= filters.severity_max
-            ]
-        if filters.year is not None:
-            incidents = [
-                incident
-                for incident in incidents
-                if date.fromisoformat(incident["date_logged"]).year == filters.year
-            ]
-        if filters.month is not None:
-            incidents = [
-                incident
-                for incident in incidents
-                if date.fromisoformat(incident["date_logged"]).month == filters.month
-            ]
-
-        incidents.sort(key=lambda incident: incident["date_logged"], reverse=True)
-
+        incidents = self._filter_public_incidents(filters)
         offset = (filters.page - 1) * filters.page_size
         window = incidents[offset : offset + filters.page_size]
-        return [self._serialize_public_incident(incident) for incident in window]
+        return [self._serialize_public_archive_incident(incident) for incident in window]
+
+    def list_public_incident_feed(
+        self,
+        filters: IncidentQueryFilters,
+    ) -> dict[str, Any]:
+        incidents = self._filter_public_incidents(filters)
+        total_count = len(incidents)
+        total_pages = max((total_count + filters.page_size - 1) // filters.page_size, 1)
+        offset = (filters.page - 1) * filters.page_size
+        window = incidents[offset : offset + filters.page_size]
+        category_counts = Counter(
+            category
+            for incident in incidents
+            for category in incident.get("categories", [])
+        )
+        company_counts = Counter(
+            incident["company_involved"] for incident in incidents
+        )
+
+        return {
+            "items": [
+                self._serialize_public_archive_incident(incident)
+                for incident in window
+            ],
+            "page": filters.page,
+            "page_size": filters.page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next_page": filters.page < total_pages,
+            "has_previous_page": filters.page > 1,
+            "slice_summary": {
+                "total_matches": total_count,
+                "newest_logged": incidents[0]["date_logged"] if incidents else None,
+                "oldest_logged": incidents[-1]["date_logged"] if incidents else None,
+                "highest_severity": max(
+                    (incident["severity_score"] for incident in incidents),
+                    default=None,
+                ),
+                "top_categories": [
+                    {"category": category, "count": count}
+                    for category, count in sorted(
+                        category_counts.items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )
+                ],
+                "top_companies": [
+                    {"company": company, "count": count}
+                    for company, count in sorted(
+                        company_counts.items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )
+                ],
+            },
+        }
 
     def close(self) -> None:
         return None
@@ -109,10 +114,13 @@ class InMemoryIncidentRepository:
         incident = self.incidents.get(incident_id)
         if incident is None or incident["status"] != "approved":
             return None
-        return self._serialize_public_incident(incident)
+        return self._serialize_public_detail_incident(incident)
 
     def get_filter_values(self) -> dict[str, object]:
-        incidents = self.list_public_incidents(IncidentQueryFilters(page_size=500))
+        incidents = [
+            self._serialize_public_archive_incident(incident)
+            for incident in self._filter_public_incidents(IncidentQueryFilters())
+        ]
 
         categories = sorted(
             {category for incident in incidents for category in incident["categories"]}
@@ -213,7 +221,9 @@ class InMemoryIncidentRepository:
             "legitimacy_score": None,
             "legitimacy_label": None,
             "legitimacy_reasoning": None,
+            "legitimacy_reasoning_zh": None,
             "source_validation_summary": None,
+            "source_validation_summary_zh": None,
             "legitimacy_flag": None,
             "confidence_level": None,
             "import_notes": None,
@@ -702,6 +712,8 @@ class InMemoryIncidentRepository:
         incident_id: str,
         headline_zh: str,
         reality_summary_zh: str,
+        legitimacy_reasoning_zh: str,
+        source_validation_summary_zh: str,
         translation_status: str,
         translated_at: str,
     ) -> dict[str, Any] | None:
@@ -712,13 +724,43 @@ class InMemoryIncidentRepository:
             {
                 "headline_zh": headline_zh,
                 "reality_summary_zh": reality_summary_zh,
+                "legitimacy_reasoning_zh": legitimacy_reasoning_zh,
+                "source_validation_summary_zh": source_validation_summary_zh,
                 "translation_status": translation_status,
                 "translated_at": translated_at,
             }
         )
         return self._serialize_admin_incident(incident)
 
-    def _serialize_public_incident(self, incident: dict[str, Any]) -> dict[str, Any]:
+    def _serialize_public_archive_incident(
+        self,
+        incident: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "id": incident["id"],
+            "headline": incident["headline"],
+            "headline_en": incident.get("headline_en", incident["headline"]),
+            "headline_zh": incident.get("headline_zh"),
+            "date_logged": incident["date_logged"],
+            "company_involved": incident["company_involved"],
+            "incident_topic": incident.get("incident_topic"),
+            "claimant_name": incident.get("claimant_name"),
+            "categories": list(incident["categories"]),
+            "severity_score": incident["severity_score"],
+            "archive_summary": incident["reality_summary"],
+            "archive_summary_en": incident.get(
+                "reality_summary_en",
+                incident["reality_summary"],
+            ),
+            "archive_summary_zh": incident.get("reality_summary_zh"),
+            "status": incident["status"],
+            "translation_status": incident.get("translation_status"),
+        }
+
+    def _serialize_public_detail_incident(
+        self,
+        incident: dict[str, Any],
+    ) -> dict[str, Any]:
         payload = {
             "id": incident["id"],
             "headline": incident["headline"],
@@ -730,7 +772,6 @@ class InMemoryIncidentRepository:
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),
             "severity_score": incident["severity_score"],
-            "suggested_severity_score": incident.get("suggested_severity_score"),
             "reality_summary": incident["reality_summary"],
             "reality_summary_en": incident.get(
                 "reality_summary_en",
@@ -739,11 +780,27 @@ class InMemoryIncidentRepository:
             "reality_summary_zh": incident.get("reality_summary_zh"),
             "status": incident["status"],
             "translation_status": incident.get("translation_status"),
-            "review_batch_id": incident.get("review_batch_id"),
-            "review_model": incident.get("review_model"),
-            "duplicate_status": incident.get("duplicate_status"),
-            "duplicate_of_incident_id": incident.get("duplicate_of_incident_id"),
-            "canonical_incident_id": incident.get("canonical_incident_id"),
+            "analysis": {
+                "what_happened_en": incident.get(
+                    "reality_summary_en",
+                    incident["reality_summary"],
+                ),
+                "what_happened_zh": _sanitize_reader_text(
+                    incident.get("reality_summary_zh")
+                ),
+                "why_it_matters_en": _sanitize_reader_text(
+                    incident.get("legitimacy_reasoning"),
+                ),
+                "why_it_matters_zh": _sanitize_reader_text(
+                    incident.get("legitimacy_reasoning_zh")
+                ),
+                "evidence_summary_en": _sanitize_reader_text(
+                    incident.get("source_validation_summary"),
+                ),
+                "evidence_summary_zh": _sanitize_reader_text(
+                    incident.get("source_validation_summary_zh")
+                ),
+            },
             "matched_claim": None,
             "sources": deepcopy(incident.get("sources", [])),
         }
@@ -805,6 +862,10 @@ class InMemoryIncidentRepository:
             "severity_decision_source": incident.get("severity_decision_source"),
             "legitimacy_reasoning": incident.get("legitimacy_reasoning"),
             "source_validation_summary": incident.get("source_validation_summary"),
+            "legitimacy_reasoning_zh": incident.get("legitimacy_reasoning_zh"),
+            "source_validation_summary_zh": incident.get(
+                "source_validation_summary_zh"
+            ),
             "translation_status": incident.get("translation_status"),
             "review_batch_id": incident.get("review_batch_id"),
             "review_model": incident.get("review_model"),
@@ -816,3 +877,67 @@ class InMemoryIncidentRepository:
             ),
             "sources": deepcopy(incident.get("sources", [])),
         }
+
+    def _filter_public_incidents(
+        self,
+        filters: IncidentQueryFilters,
+    ) -> list[dict[str, Any]]:
+        incidents = [
+            incident
+            for incident in self.incidents.values()
+            if incident["status"] == "approved"
+        ]
+
+        if filters.category:
+            incidents = [
+                incident
+                for incident in incidents
+                if filters.category in incident["categories"]
+            ]
+        if filters.company:
+            incidents = [
+                incident
+                for incident in incidents
+                if incident["company_involved"] == filters.company
+            ]
+        if filters.claimant:
+            incidents = [
+                incident
+                for incident in incidents
+                if incident.get("claimant_name") == filters.claimant
+            ]
+        if filters.severity_min is not None:
+            incidents = [
+                incident
+                for incident in incidents
+                if incident["severity_score"] >= filters.severity_min
+            ]
+        if filters.severity_max is not None:
+            incidents = [
+                incident
+                for incident in incidents
+                if incident["severity_score"] <= filters.severity_max
+            ]
+        if filters.year is not None:
+            incidents = [
+                incident
+                for incident in incidents
+                if date.fromisoformat(incident["date_logged"]).year == filters.year
+            ]
+        if filters.month is not None:
+            incidents = [
+                incident
+                for incident in incidents
+                if date.fromisoformat(incident["date_logged"]).month == filters.month
+            ]
+
+        incidents.sort(key=lambda incident: incident["date_logged"], reverse=True)
+        return incidents
+
+
+def _sanitize_reader_text(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    return text or None

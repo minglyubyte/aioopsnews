@@ -60,7 +60,9 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "legitimacy_score double precision" in normalized
     assert "legitimacy_label text" in normalized
     assert "legitimacy_reasoning text" in normalized
+    assert "legitimacy_reasoning_zh text" in normalized
     assert "source_validation_summary text" in normalized
+    assert "source_validation_summary_zh text" in normalized
     assert "headline_en text" in normalized
     assert "headline_zh text" in normalized
     assert "reality_summary_en text" in normalized
@@ -109,6 +111,8 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     assert "severity_model text" in migration_sql
     assert "severity_decision_source text" in migration_sql
     assert "headline_zh text" in migration_sql
+    assert "legitimacy_reasoning_zh text" in migration_sql
+    assert "source_validation_summary_zh text" in migration_sql
     assert "translation_status text" in migration_sql
     assert "review_batch_id text" in migration_sql
     assert "review_model text" in migration_sql
@@ -157,7 +161,9 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         legitimacy_score=0.91,
         legitimacy_label="auto_publish",
         legitimacy_reasoning="Three strong sources support the incident.",
+        legitimacy_reasoning_zh="三条强有力的来源支持这起事件。",
         source_validation_summary="Validated 3 distinct sources.",
+        source_validation_summary_zh="已核实 3 个不同来源。",
         headline_en="Agent rollout causes bad customer escalations",
         headline_zh="智能体发布导致错误客户升级",
         translation_status="completed",
@@ -201,5 +207,7 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     assert incident.canonical_incident_id == "incident-0"
     assert incident.embedding_model == "text-embedding-3-small"
     assert incident.headline_zh == "智能体发布导致错误客户升级"
+    assert incident.legitimacy_reasoning_zh == "三条强有力的来源支持这起事件。"
+    assert incident.source_validation_summary_zh == "已核实 3 个不同来源。"
     assert incident.categories == ["Job Automation Fails", "Missed Timelines"]
     assert source.incident_id == incident.id

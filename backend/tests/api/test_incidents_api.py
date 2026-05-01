@@ -75,6 +75,15 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "matched_claim_id": "claim-1",
                 "claim_match_confidence": 0.88,
                 "review_notes": "editor reviewed",
+                "legitimacy_reasoning": (
+                    "The failure matters because internal account data appeared in "
+                    "customer-facing replies."
+                ),
+                "legitimacy_reasoning_zh": "问题之所以重要，是因为内部账户数据出现在面向客户的回复中。",
+                "source_validation_summary": (
+                    "Validated with a primary report and supporting publication."
+                ),
+                "source_validation_summary_zh": "已通过一手报告和补充报道完成核实。",
                 "sources": [
                     {
                         "id": "source-1",
@@ -110,6 +119,12 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
+                "legitimacy_reasoning": (
+                    "The rollback highlights the operational limits of the pilot."
+                ),
+                "source_validation_summary": (
+                    "Validated with city coverage of the paused deployment."
+                ),
                 "sources": [
                     {
                         "id": "source-2",
@@ -190,20 +205,41 @@ def test_get_incidents_reads_from_repository_records() -> None:
         "Warehouse robot rollback follows navigation failures",
         "Prior-year incident proves year archives can narrow results",
     ]
-    assert payload["items"][1]["matched_claim"] == {
-        "id": "claim-1",
-        "claimant_name": "FutureStack",
-        "company_involved": "FutureStack",
-        "original_claim": "Our copilots will eliminate tier-one support queues.",
-        "claim_date": "2026-01-10",
-        "claim_topic": "job automation",
-        "match_confidence": 0.88,
-    }
     assert payload["items"][1]["headline_en"] == (
         "Database-backed feed shows a reviewed privacy incident"
     )
     assert payload["items"][1]["headline_zh"] == "数据库支持的隐私事件已完成审核"
+    assert payload["items"][1]["archive_summary"] == (
+        "A reviewed database record leaked internal notes into replies."
+    )
     assert payload["items"][1]["translation_status"] == "completed"
+    assert payload["page"] == 1
+    assert payload["page_size"] == 20
+    assert payload["total_count"] == 4
+    assert payload["total_pages"] == 1
+    assert payload["has_next_page"] is False
+    assert payload["has_previous_page"] is False
+    assert payload["slice_summary"] == {
+        "total_matches": 4,
+        "newest_logged": "2026-05-03",
+        "oldest_logged": "2025-12-18",
+        "highest_severity": 4,
+        "top_categories": [
+            {"category": "Model Governance", "count": 2},
+            {"category": "Autonomous Systems", "count": 1},
+            {"category": "Privacy/Security", "count": 1},
+        ],
+        "top_companies": [
+            {"company": "ArchiveAI", "count": 1},
+            {"company": "FutureStack", "count": 1},
+            {"company": "MayOps", "count": 1},
+            {"company": "RoboOps", "count": 1},
+        ],
+    }
+    assert "matched_claim" not in payload["items"][1]
+    assert "sources" not in payload["items"][1]
+    assert "reality_summary" not in payload["items"][1]
+    assert "analysis" not in payload["items"][1]
 
 
 def test_get_incidents_supports_filters_and_pagination() -> None:
@@ -227,9 +263,16 @@ def test_get_incidents_supports_filters_and_pagination() -> None:
         "Database-backed feed shows a reviewed privacy incident",
     ]
     assert paged_response.status_code == 200
-    assert [item["headline"] for item in paged_response.json()["items"]] == [
+    paged_payload = paged_response.json()
+    assert [item["headline"] for item in paged_payload["items"]] == [
         "Database-backed feed shows a reviewed privacy incident",
     ]
+    assert paged_payload["page"] == 2
+    assert paged_payload["page_size"] == 1
+    assert paged_payload["total_count"] == 4
+    assert paged_payload["total_pages"] == 4
+    assert paged_payload["has_next_page"] is True
+    assert paged_payload["has_previous_page"] is True
 
 
 def test_get_incidents_supports_year_and_month_archives() -> None:
@@ -267,7 +310,7 @@ def test_get_incidents_rejects_month_without_year_or_invalid_month() -> None:
     )
 
 
-def test_get_incident_detail_returns_public_record_with_sources() -> None:
+def test_get_incident_detail_returns_public_record_with_analysis_and_sources() -> None:
     repository = _build_repository()
     client = TestClient(create_app(incident_repository=repository))
 
@@ -279,6 +322,32 @@ def test_get_incident_detail_returns_public_record_with_sources() -> None:
         "Database-backed feed shows a reviewed privacy incident"
     )
     assert detail_response.json()["headline_zh"] == "数据库支持的隐私事件已完成审核"
+    assert detail_response.json()["analysis"] == {
+        "what_happened_en": (
+            "A reviewed database record leaked internal notes into replies."
+        ),
+        "what_happened_zh": "经审核的数据库记录将内部备注泄露到回复中。",
+        "why_it_matters_en": (
+            "The failure matters because internal account data appeared in "
+            "customer-facing replies."
+        ),
+        "why_it_matters_zh": (
+            "问题之所以重要，是因为内部账户数据出现在面向客户的回复中。"
+        ),
+        "evidence_summary_en": (
+            "Validated with a primary report and supporting publication."
+        ),
+        "evidence_summary_zh": "已通过一手报告和补充报道完成核实。",
+    }
+    assert detail_response.json()["matched_claim"] == {
+        "id": "claim-1",
+        "claimant_name": "FutureStack",
+        "company_involved": "FutureStack",
+        "original_claim": FUTURESTACK_CLAIM,
+        "claim_date": "2026-01-10",
+        "claim_topic": "job automation",
+        "match_confidence": 0.88,
+    }
     assert detail_response.json()["sources"] == [
         {
             "id": "source-1",

@@ -15,6 +15,11 @@ class IncidentRepository(Protocol):
         filters: IncidentQueryFilters,
     ) -> list[dict[str, Any]]: ...
 
+    def list_public_incident_feed(
+        self,
+        filters: IncidentQueryFilters,
+    ) -> dict[str, Any]: ...
+
     def get_public_incident(self, incident_id: str) -> dict[str, Any] | None: ...
 
     def get_filter_values(self) -> dict[str, object]: ...
@@ -188,6 +193,8 @@ class IncidentRepository(Protocol):
         incident_id: str,
         headline_zh: str,
         reality_summary_zh: str,
+        legitimacy_reasoning_zh: str,
+        source_validation_summary_zh: str,
         translation_status: str,
         translated_at: str,
     ) -> dict[str, Any] | None: ...

@@ -7,7 +7,7 @@ from app.services.incident_query import (
     IncidentQueryFilters,
     get_filter_values,
     get_public_incident,
-    list_public_incidents,
+    list_public_incident_feed,
 )
 
 router = APIRouter()
@@ -31,7 +31,7 @@ class MatchedClaimResponse(BaseModel):
     match_confidence: float
 
 
-class IncidentFeedItemResponse(BaseModel):
+class PublicIncidentBaseResponse(BaseModel):
     id: str
     headline: str
     headline_en: str | None = None
@@ -42,17 +42,43 @@ class IncidentFeedItemResponse(BaseModel):
     claimant_name: str | None = None
     categories: list[str]
     severity_score: int
+    status: str
+    translation_status: str | None = None
+
+
+class IncidentArchiveItemResponse(PublicIncidentBaseResponse):
+    archive_summary: str
+    archive_summary_en: str | None = None
+    archive_summary_zh: str | None = None
+
+
+class IncidentAnalysisResponse(BaseModel):
+    what_happened_en: str | None = None
+    what_happened_zh: str | None = None
+    why_it_matters_en: str | None = None
+    why_it_matters_zh: str | None = None
+    evidence_summary_en: str | None = None
+    evidence_summary_zh: str | None = None
+
+
+class IncidentDetailResponse(PublicIncidentBaseResponse):
     reality_summary: str
     reality_summary_en: str | None = None
     reality_summary_zh: str | None = None
-    status: str
-    translation_status: str | None = None
+    analysis: IncidentAnalysisResponse
     matched_claim: MatchedClaimResponse | None = None
     sources: list[IncidentSourceResponse]
 
 
 class IncidentFeedResponse(BaseModel):
-    items: list[IncidentFeedItemResponse]
+    items: list[IncidentArchiveItemResponse]
+    page: int
+    page_size: int
+    total_count: int
+    total_pages: int
+    has_next_page: bool
+    has_previous_page: bool
+    slice_summary: dict[str, object]
 
 
 class IncidentFilterResponse(BaseModel):
@@ -84,7 +110,7 @@ def get_incidents(
         raise HTTPException(status_code=422, detail="month requires year")
 
     return IncidentFeedResponse(
-        items=list_public_incidents(
+        **list_public_incident_feed(
             repository,
             IncidentQueryFilters(
                 category=category,
@@ -101,15 +127,15 @@ def get_incidents(
     )
 
 
-@router.get("/incidents/{incident_id}", response_model=IncidentFeedItemResponse)
+@router.get("/incidents/{incident_id}", response_model=IncidentDetailResponse)
 def get_incident_detail(
     incident_id: str,
     repository=Depends(get_incident_repository),
-) -> IncidentFeedItemResponse:
+) -> IncidentDetailResponse:
     incident = get_public_incident(repository, incident_id)
     if incident is None:
         raise HTTPException(status_code=404, detail="Incident not found")
-    return IncidentFeedItemResponse(**incident)
+    return IncidentDetailResponse(**incident)
 
 
 @router.get("/filters", response_model=IncidentFilterResponse)

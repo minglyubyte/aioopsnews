@@ -18,10 +18,14 @@ class StaticTranslationClient:
         *,
         headline_en: str,
         reality_summary_en: str,
+        legitimacy_reasoning_en: str,
+        source_validation_summary_en: str,
     ) -> IncidentTranslation:
         return IncidentTranslation(
             headline_zh=f"ZH:{headline_en}",
             reality_summary_zh=f"ZH:{reality_summary_en}",
+            legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
+            source_validation_summary_zh=f"ZH:{source_validation_summary_en}",
         )
 
 

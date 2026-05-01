@@ -11,6 +11,7 @@ import {
 import type {
   AdminIncident,
   Incident,
+  IncidentDetail,
   IncidentFeedFilters,
   IncidentFilters,
 } from "./types/incident";
@@ -97,7 +98,7 @@ export default function App() {
   const [readerLocale, setReaderLocale] = useState<ReaderLocale>(() =>
     readStoredReaderLocale(),
   );
-  const [incidentDetail, setIncidentDetail] = useState<Incident | null>(null);
+  const [incidentDetail, setIncidentDetail] = useState<IncidentDetail | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -919,11 +920,21 @@ function localizedHeadline(incident: Incident, locale: ReaderLocale): string {
 }
 
 function localizedSummary(incident: Incident, locale: ReaderLocale): string {
-  if (locale === "zh" && incident.reality_summary_zh) {
-    return incident.reality_summary_zh;
+  const zhSummary =
+    incident.reality_summary_zh ?? incident.archive_summary_zh ?? null;
+  const enSummary =
+    incident.reality_summary_en ??
+    incident.archive_summary_en ??
+    incident.reality_summary ??
+    incident.archive_summary ??
+    incident.headline_en ??
+    incident.headline;
+
+  if (locale === "zh" && zhSummary) {
+    return zhSummary;
   }
 
-  return incident.reality_summary_en ?? incident.reality_summary;
+  return enSummary;
 }
 
 function buildMonthlyIncidentPoints(

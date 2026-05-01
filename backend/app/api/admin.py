@@ -139,12 +139,20 @@ def patch_admin_incident(
             or updated_incident["headline"],
             reality_summary_en=updated_incident.get("reality_summary_en")
             or updated_incident["reality_summary"],
+            legitimacy_reasoning_en=updated_incident.get("legitimacy_reasoning")
+            or "",
+            source_validation_summary_en=updated_incident.get(
+                "source_validation_summary"
+            )
+            or "",
             client=translation_client,
         )
         translated_incident = repository.update_incident_translation(
             incident_id=incident_id,
             headline_zh=translation.headline_zh,
             reality_summary_zh=translation.reality_summary_zh,
+            legitimacy_reasoning_zh=translation.legitimacy_reasoning_zh,
+            source_validation_summary_zh=translation.source_validation_summary_zh,
             translation_status=translation.status,
             translated_at="2026-04-30T12:00:00",
         )

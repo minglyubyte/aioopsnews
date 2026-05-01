@@ -68,20 +68,31 @@ class FakeEscalationReviewClient:
 
 class FakeTranslationClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, str, str]] = []
 
     def translate(
         self,
         *,
         headline_en: str,
         reality_summary_en: str,
+        legitimacy_reasoning_en: str,
+        source_validation_summary_en: str,
     ):
-        self.calls.append((headline_en, reality_summary_en))
+        self.calls.append(
+            (
+                headline_en,
+                reality_summary_en,
+                legitimacy_reasoning_en,
+                source_validation_summary_en,
+            )
+        )
         from app.services.incident_translation import IncidentTranslation
 
         return IncidentTranslation(
             headline_zh=f"ZH:{headline_en}",
             reality_summary_zh=f"ZH:{reality_summary_en}",
+            legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
+            source_validation_summary_zh=f"ZH:{source_validation_summary_en}",
             status="completed",
         )
 

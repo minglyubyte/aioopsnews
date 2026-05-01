@@ -16,7 +16,7 @@ export type MatchedClaim = {
   match_confidence: number;
 };
 
-export type Incident = {
+export type PublicIncidentBase = {
   id: string;
   headline: string;
   headline_en?: string | null;
@@ -27,17 +27,79 @@ export type Incident = {
   claimant_name?: string;
   categories: string[];
   severity_score: number;
+  status: string;
+  translation_status?: string | null;
+};
+
+export type IncidentArchiveItem = PublicIncidentBase & {
+  archive_summary: string;
+  archive_summary_en?: string | null;
+  archive_summary_zh?: string | null;
+};
+
+export type IncidentAnalysis = {
+  what_happened_en?: string | null;
+  what_happened_zh?: string | null;
+  why_it_matters_en?: string | null;
+  why_it_matters_zh?: string | null;
+  evidence_summary_en?: string | null;
+  evidence_summary_zh?: string | null;
+  what_happened?: string | null;
+  why_it_matters?: string | null;
+  evidence_summary?: string | null;
+};
+
+export type FeedSummaryCount = {
+  count: number;
+};
+
+export type FeedCategorySummary = FeedSummaryCount & {
+  category: string;
+};
+
+export type FeedCompanySummary = FeedSummaryCount & {
+  company: string;
+};
+
+export type IncidentSliceSummary = {
+  total_matches: number;
+  newest_logged?: string | null;
+  oldest_logged?: string | null;
+  highest_severity?: number | null;
+  top_categories: FeedCategorySummary[];
+  top_companies: FeedCompanySummary[];
+};
+
+export type IncidentDetail = PublicIncidentBase & {
   reality_summary: string;
   reality_summary_en?: string | null;
   reality_summary_zh?: string | null;
-  status: string;
-  translation_status?: string | null;
+  analysis: IncidentAnalysis;
   matched_claim?: MatchedClaim | null;
   sources: IncidentSource[];
 };
 
+export type Incident = PublicIncidentBase & {
+  archive_summary?: string | null;
+  archive_summary_en?: string | null;
+  archive_summary_zh?: string | null;
+  reality_summary?: string | null;
+  reality_summary_en?: string | null;
+  reality_summary_zh?: string | null;
+  analysis?: IncidentAnalysis | null;
+  matched_claim?: MatchedClaim | null;
+  sources?: IncidentSource[];
+};
+
 export type IncidentFeedResponse = {
-  items: Incident[];
+  items: IncidentArchiveItem[];
+  page: number;
+  page_size: number;
+  total_count: number;
+  total_pages: number;
+  has_next_page: boolean;
+  has_previous_page: boolean;
+  slice_summary: IncidentSliceSummary;
 };
 
 export type IncidentFilters = {
@@ -69,7 +131,13 @@ export type DuplicateCandidate = {
   status: string | null;
 };
 
-export type AdminIncident = Incident & {
+export type AdminIncident = PublicIncidentBase & {
+  reality_summary: string;
+  reality_summary_en?: string | null;
+  reality_summary_zh?: string | null;
+  analysis?: IncidentAnalysis | null;
+  matched_claim?: MatchedClaim | null;
+  sources: IncidentSource[];
   claimant_name?: string | null;
   matched_claim_id?: string | null;
   claim_match_confidence?: number | null;

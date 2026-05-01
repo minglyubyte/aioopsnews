@@ -76,7 +76,9 @@ create table if not exists incident_logs (
     legitimacy_score double precision,
     legitimacy_label text,
     legitimacy_reasoning text,
+    legitimacy_reasoning_zh text,
     source_validation_summary text,
+    source_validation_summary_zh text,
     legitimacy_flag text,
     confidence_level text,
     import_notes text,
@@ -141,7 +143,13 @@ alter table incident_logs
     add column if not exists legitimacy_reasoning text;
 
 alter table incident_logs
+    add column if not exists legitimacy_reasoning_zh text;
+
+alter table incident_logs
     add column if not exists source_validation_summary text;
+
+alter table incident_logs
+    add column if not exists source_validation_summary_zh text;
 
 alter table incident_logs
     add column if not exists legitimacy_flag text;
@@ -382,35 +390,7 @@ class PostgresIncidentRepository:
         self,
         filters: IncidentQueryFilters,
     ) -> list[dict[str, Any]]:
-        where_clauses = ["incident_logs.status = %s"]
-        params: list[Any] = ["approved"]
-
-        if filters.category:
-            where_clauses.append("incident_logs.categories like %s")
-            params.append(f"%{json.dumps(filters.category).strip('"')}%")
-        if filters.company:
-            where_clauses.append("incident_logs.company_involved = %s")
-            params.append(filters.company)
-        if filters.claimant:
-            where_clauses.append("incident_logs.claimant_name = %s")
-            params.append(filters.claimant)
-        if filters.severity_min is not None:
-            where_clauses.append("incident_logs.severity_score >= %s")
-            params.append(filters.severity_min)
-        if filters.severity_max is not None:
-            where_clauses.append("incident_logs.severity_score <= %s")
-            params.append(filters.severity_max)
-        if filters.year is not None:
-            where_clauses.append(
-                "extract(year from incident_logs.date_logged::date) = %s"
-            )
-            params.append(filters.year)
-        if filters.month is not None:
-            where_clauses.append(
-                "extract(month from incident_logs.date_logged::date) = %s"
-            )
-            params.append(filters.month)
-
+        where_sql, params = self._build_public_incident_where(filters)
         offset = (filters.page - 1) * filters.page_size
 
         with self._connect() as connection:
@@ -418,7 +398,6 @@ class PostgresIncidentRepository:
                 f"""
                 select
                     incident_logs.id,
-                    incident_logs.external_id,
                     incident_logs.headline,
                     incident_logs.headline_en,
                     incident_logs.headline_zh,
@@ -432,45 +411,130 @@ class PostgresIncidentRepository:
                     incident_logs.reality_summary_en,
                     incident_logs.reality_summary_zh,
                     incident_logs.status,
-                    incident_logs.translation_status,
-                    incident_logs.claim_match_confidence,
-                    claims.id as claim_id,
-                    claims.claimant_name as claim_claimant_name,
-                    claims.company_involved as claim_company_involved,
-                    claims.original_claim,
-                    claims.claim_date,
-                    claims.claim_topic,
-                    claims.status as claim_status
+                    incident_logs.translation_status
                 from incident_logs
-                left join claims
-                    on claims.id = incident_logs.matched_claim_id
-                where {" and ".join(where_clauses)}
+                where {where_sql}
                 order by incident_logs.date_logged desc
                 limit %s offset %s
                 """,
                 (*params, filters.page_size, offset),
             ).fetchall()
 
-            source_rows = connection.execute(
-                """
-                select
-                    id,
-                    incident_id,
-                    source_url,
-                    source_type,
-                    publisher,
-                    title
-                from incident_sources
-                order by published_at desc, id asc
-                """
-            ).fetchall()
-
-        sources_by_incident = self._group_sources_by_incident(source_rows)
-
         return [
-            self._serialize_public_incident_row(row, sources_by_incident[row["id"]])
+            self._serialize_public_archive_row(row)
             for row in incident_rows
         ]
+
+    def list_public_incident_feed(
+        self,
+        filters: IncidentQueryFilters,
+    ) -> dict[str, Any]:
+        where_sql, params = self._build_public_incident_where(filters)
+        offset = (filters.page - 1) * filters.page_size
+
+        with self._connect() as connection:
+            count_row = connection.execute(
+                f"""
+                select count(*) as total_count
+                from incident_logs
+                where {where_sql}
+                """,
+                params,
+            ).fetchone()
+            summary_row = connection.execute(
+                f"""
+                select
+                    max(incident_logs.date_logged) as newest_logged,
+                    min(incident_logs.date_logged) as oldest_logged,
+                    max(incident_logs.severity_score) as highest_severity
+                from incident_logs
+                where {where_sql}
+                """,
+                params,
+            ).fetchone()
+            category_rows = connection.execute(
+                f"""
+                select
+                    category.value as category,
+                    count(*) as count
+                from incident_logs
+                cross join lateral jsonb_array_elements_text(
+                    incident_logs.categories::jsonb
+                ) as category(value)
+                where {where_sql}
+                group by category.value
+                order by count(*) desc, category.value asc
+                """,
+                params,
+            ).fetchall()
+            company_rows = connection.execute(
+                f"""
+                select
+                    incident_logs.company_involved as company,
+                    count(*) as count
+                from incident_logs
+                where {where_sql}
+                group by incident_logs.company_involved
+                order by count(*) desc, incident_logs.company_involved asc
+                """,
+                params,
+            ).fetchall()
+            incident_rows = connection.execute(
+                f"""
+                select
+                    incident_logs.id,
+                    incident_logs.headline,
+                    incident_logs.headline_en,
+                    incident_logs.headline_zh,
+                    incident_logs.date_logged,
+                    incident_logs.company_involved,
+                    incident_logs.incident_topic,
+                    incident_logs.claimant_name,
+                    incident_logs.categories,
+                    incident_logs.severity_score,
+                    incident_logs.reality_summary,
+                    incident_logs.reality_summary_en,
+                    incident_logs.reality_summary_zh,
+                    incident_logs.status,
+                    incident_logs.translation_status
+                from incident_logs
+                where {where_sql}
+                order by incident_logs.date_logged desc
+                limit %s offset %s
+                """,
+                (*params, filters.page_size, offset),
+            ).fetchall()
+
+        total_count = int(count_row["total_count"])
+        total_pages = max((total_count + filters.page_size - 1) // filters.page_size, 1)
+        return {
+            "items": [
+                self._serialize_public_archive_row(row)
+                for row in incident_rows
+            ],
+            "page": filters.page,
+            "page_size": filters.page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_next_page": filters.page < total_pages,
+            "has_previous_page": filters.page > 1,
+            "slice_summary": {
+                "total_matches": total_count,
+                "newest_logged": summary_row["newest_logged"] if summary_row else None,
+                "oldest_logged": summary_row["oldest_logged"] if summary_row else None,
+                "highest_severity": (
+                    summary_row["highest_severity"] if summary_row else None
+                ),
+                "top_categories": [
+                    {"category": row["category"], "count": row["count"]}
+                    for row in category_rows
+                ],
+                "top_companies": [
+                    {"company": row["company"], "count": row["count"]}
+                    for row in company_rows
+                ],
+            },
+        }
 
     def get_public_incident(self, incident_id: str) -> dict[str, Any] | None:
         with self._connect() as connection:
@@ -493,6 +557,10 @@ class PostgresIncidentRepository:
                     incident_logs.reality_summary_zh,
                     incident_logs.status,
                     incident_logs.translation_status,
+                    incident_logs.legitimacy_reasoning,
+                    incident_logs.legitimacy_reasoning_zh,
+                    incident_logs.source_validation_summary,
+                    incident_logs.source_validation_summary_zh,
                     incident_logs.claim_match_confidence,
                     claims.id as claim_id,
                     claims.claimant_name as claim_claimant_name,
@@ -530,7 +598,7 @@ class PostgresIncidentRepository:
             ).fetchall()
 
         sources_by_incident = self._group_sources_by_incident(source_rows)
-        return self._serialize_public_incident_row(
+        return self._serialize_public_detail_row(
             incident_row,
             sources_by_incident[incident_id],
         )
@@ -567,7 +635,9 @@ class PostgresIncidentRepository:
                     severity_model,
                     severity_decision_source,
                     legitimacy_reasoning,
+                    legitimacy_reasoning_zh,
                     source_validation_summary,
+                    source_validation_summary_zh,
                     translation_status,
                     review_batch_id,
                     review_model,
@@ -1318,7 +1388,9 @@ class PostgresIncidentRepository:
                     severity_model,
                     severity_decision_source,
                     legitimacy_reasoning,
+                    legitimacy_reasoning_zh,
                     source_validation_summary,
+                    source_validation_summary_zh,
                     translation_status,
                     review_batch_id,
                     review_model,
@@ -1378,7 +1450,9 @@ class PostgresIncidentRepository:
             "severity_model": row["severity_model"],
             "severity_decision_source": row["severity_decision_source"],
             "legitimacy_reasoning": row["legitimacy_reasoning"],
+            "legitimacy_reasoning_zh": row["legitimacy_reasoning_zh"],
             "source_validation_summary": row["source_validation_summary"],
+            "source_validation_summary_zh": row["source_validation_summary_zh"],
             "translation_status": row["translation_status"],
             "review_batch_id": row["review_batch_id"],
             "review_model": row["review_model"],
@@ -2125,6 +2199,8 @@ class PostgresIncidentRepository:
         incident_id: str,
         headline_zh: str,
         reality_summary_zh: str,
+        legitimacy_reasoning_zh: str,
+        source_validation_summary_zh: str,
         translation_status: str,
         translated_at: str,
     ) -> dict[str, Any] | None:
@@ -2135,6 +2211,8 @@ class PostgresIncidentRepository:
                 set
                     headline_zh = %s,
                     reality_summary_zh = %s,
+                    legitimacy_reasoning_zh = %s,
+                    source_validation_summary_zh = %s,
                     translation_status = %s,
                     translated_at = %s,
                     updated_at = current_timestamp
@@ -2143,6 +2221,8 @@ class PostgresIncidentRepository:
                 (
                     headline_zh,
                     reality_summary_zh,
+                    legitimacy_reasoning_zh,
+                    source_validation_summary_zh,
                     translation_status,
                     translated_at,
                     incident_id,
@@ -2180,7 +2260,9 @@ class PostgresIncidentRepository:
                     severity_model,
                     severity_decision_source,
                     legitimacy_reasoning,
+                    legitimacy_reasoning_zh,
                     source_validation_summary,
+                    source_validation_summary_zh,
                     translation_status,
                     review_batch_id,
                     review_model,
@@ -2303,7 +2385,30 @@ class PostgresIncidentRepository:
             for row in rows
         ]
 
-    def _serialize_public_incident_row(
+    def _serialize_public_archive_row(
+        self,
+        row: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "headline": row["headline"],
+            "headline_en": row.get("headline_en") or row["headline"],
+            "headline_zh": row.get("headline_zh"),
+            "date_logged": row["date_logged"],
+            "company_involved": row["company_involved"],
+            "incident_topic": row.get("incident_topic"),
+            "claimant_name": row["claimant_name"],
+            "categories": json.loads(row["categories"]),
+            "severity_score": row["severity_score"],
+            "archive_summary": row["reality_summary"],
+            "archive_summary_en": row.get("reality_summary_en")
+            or row["reality_summary"],
+            "archive_summary_zh": row.get("reality_summary_zh"),
+            "status": row["status"],
+            "translation_status": row.get("translation_status"),
+        }
+
+    def _serialize_public_detail_row(
         self,
         row: dict[str, Any],
         sources: list[dict[str, Any]],
@@ -2325,11 +2430,27 @@ class PostgresIncidentRepository:
             "reality_summary_zh": row.get("reality_summary_zh"),
             "status": row["status"],
             "translation_status": row.get("translation_status"),
-            "review_batch_id": row.get("review_batch_id"),
-            "review_model": row.get("review_model"),
-            "duplicate_status": row.get("duplicate_status"),
-            "duplicate_of_incident_id": row.get("duplicate_of_incident_id"),
-            "canonical_incident_id": row.get("canonical_incident_id"),
+            "analysis": {
+                "what_happened_en": row.get("reality_summary_en")
+                or row["reality_summary"],
+                "what_happened_zh": _sanitize_reader_text(
+                    row.get("reality_summary_zh"),
+                ),
+                "why_it_matters_en": _sanitize_reader_text(
+                    row.get("legitimacy_reasoning"),
+                ),
+                "why_it_matters_zh": _sanitize_reader_text(
+                    row.get("legitimacy_reasoning_zh"),
+                ),
+                "evidence_summary_en": _sanitize_reader_text(
+                    row.get("source_validation_summary"),
+                )
+                or _fallback_public_evidence_summary(sources, locale="en"),
+                "evidence_summary_zh": _sanitize_reader_text(
+                    row.get("source_validation_summary_zh"),
+                )
+                or _fallback_public_evidence_summary(sources, locale="zh"),
+            },
             "matched_claim": _build_public_claim_payload(row),
             "sources": sources,
         }
@@ -2348,6 +2469,41 @@ class PostgresIncidentRepository:
             self._database_url,
             kwargs={"row_factory": dict_row},
         )
+
+    def _build_public_incident_where(
+        self,
+        filters: IncidentQueryFilters,
+    ) -> tuple[str, list[Any]]:
+        where_clauses = ["incident_logs.status = %s"]
+        params: list[Any] = ["approved"]
+
+        if filters.category:
+            where_clauses.append("incident_logs.categories like %s")
+            params.append(f"%{json.dumps(filters.category).strip('\"')}%")
+        if filters.company:
+            where_clauses.append("incident_logs.company_involved = %s")
+            params.append(filters.company)
+        if filters.claimant:
+            where_clauses.append("incident_logs.claimant_name = %s")
+            params.append(filters.claimant)
+        if filters.severity_min is not None:
+            where_clauses.append("incident_logs.severity_score >= %s")
+            params.append(filters.severity_min)
+        if filters.severity_max is not None:
+            where_clauses.append("incident_logs.severity_score <= %s")
+            params.append(filters.severity_max)
+        if filters.year is not None:
+            where_clauses.append(
+                "extract(year from incident_logs.date_logged::date) = %s"
+            )
+            params.append(filters.year)
+        if filters.month is not None:
+            where_clauses.append(
+                "extract(month from incident_logs.date_logged::date) = %s"
+            )
+            params.append(filters.month)
+
+        return " and ".join(where_clauses), params
 
     def _initialize_database(self) -> None:
         with self._connect() as connection:
@@ -2456,3 +2612,32 @@ def _parse_text_array(value: str | None) -> list[str]:
     if not isinstance(parsed, list):
         return []
     return [str(item) for item in parsed if str(item)]
+
+
+def _sanitize_reader_text(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    return text or None
+
+
+def _fallback_public_evidence_summary(
+    sources: list[dict[str, Any]],
+    *,
+    locale: str,
+) -> str | None:
+    source_count = len(sources)
+    if source_count == 0:
+        return None
+
+    if locale == "zh":
+        if source_count == 1:
+            return "已通过 1 个已链接来源核实。"
+
+        return f"已通过 {source_count} 个已链接来源核实。"
+
+    if source_count == 1:
+        return "Supported by 1 linked source."
+
+    return f"Supported by {source_count} linked sources."

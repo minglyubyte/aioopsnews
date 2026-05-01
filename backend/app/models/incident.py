@@ -49,7 +49,9 @@ class IncidentRecord(BaseModel):
     legitimacy_score: float | None = Field(default=None, ge=0.0, le=1.0)
     legitimacy_label: str | None = None
     legitimacy_reasoning: str | None = None
+    legitimacy_reasoning_zh: str | None = None
     source_validation_summary: str | None = None
+    source_validation_summary_zh: str | None = None
     legitimacy_flag: str | None = None
     confidence_level: str | None = None
     import_notes: str | None = None

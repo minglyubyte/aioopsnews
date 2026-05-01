@@ -1136,18 +1136,26 @@ def _apply_review_decision(
     translation = translate_incident_copy(
         headline_en=final_result.headline_en,
         reality_summary_en=final_result.reality_summary_en,
+        legitimacy_reasoning_en=final_result.reasoning,
+        source_validation_summary_en=final_result.source_quality_summary,
         client=translation_client,
     )
     repository.update_incident_translation(
         incident_id=incident["id"],
         headline_zh=translation.headline_zh,
         reality_summary_zh=translation.reality_summary_zh,
+        legitimacy_reasoning_zh=translation.legitimacy_reasoning_zh,
+        source_validation_summary_zh=translation.source_validation_summary_zh,
         translation_status=translation.status,
         translated_at=_now_isoformat(),
     )
     incident["translation_status"] = translation.status
     incident["headline_zh"] = translation.headline_zh
     incident["reality_summary_zh"] = translation.reality_summary_zh
+    incident["legitimacy_reasoning_zh"] = translation.legitimacy_reasoning_zh
+    incident["source_validation_summary_zh"] = (
+        translation.source_validation_summary_zh
+    )
     return IncidentReviewApplicationResult(
         approved=1,
         pending_review=0,

@@ -1,14 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   fetchIncidentDetail,
   fetchIncidentFeed,
   fetchIncidentFilters,
 } from "../lib/api";
+import { localizePublicCategory } from "../lib/publicDashboardLocalization";
 import type {
-  Incident,
+  IncidentAnalysis,
+  IncidentArchiveItem,
+  IncidentDetail,
   IncidentFeedFilters,
+  IncidentFeedResponse,
   IncidentFilters,
+  IncidentSliceSummary,
+  PublicIncidentBase,
 } from "../types/incident";
 import "./public-dashboard.css";
 
@@ -22,6 +28,15 @@ const SIGNAL_COLORS = [
   "#6f4b7e",
   "#405061",
 ];
+const ARCHIVE_PAGE_SIZE = 6;
+const EMPTY_SLICE_SUMMARY: IncidentSliceSummary = {
+  total_matches: 0,
+  newest_logged: null,
+  oldest_logged: null,
+  highest_severity: null,
+  top_categories: [],
+  top_companies: [],
+};
 
 type ReaderLocale = "en" | "zh";
 type ReaderTheme = "light" | "dark";
@@ -39,6 +54,12 @@ type CategorySignal = {
 };
 
 type HeroMetric = {
+  label: string;
+  value: string;
+  note: string;
+};
+
+type HighlightInsight = {
   label: string;
   value: string;
   note: string;
@@ -96,29 +117,42 @@ const PUBLIC_COPY = {
     allYears: "All years",
     filterByMonth: "Filter by month",
     allMonths: "All months",
-    archiveRegion: "Incident archive",
-    archiveKicker: "Archive",
-    archiveTitle: "Incident archive",
+    archiveRegion: "Browse incidents",
+    archiveKicker: "Browse",
+    archiveTitle: "Browse incidents",
     archiveLoading: "Loading incident archive...",
-    spotlightKicker: "Spotlight",
-    spotlightTitle: "Incident spotlight",
+    spotlightKicker: "Highlights",
+    spotlightTitle: "Quick takeaway",
     spotlightLoading: "Loading incident feed...",
+    highlightsEmpty: "Highlights will appear once this slice has enough signal.",
+    highlightInsightsTitle: "Slice-level view",
+    highlightInsightsBody:
+      "This panel summarizes the filtered archive so readers can scan the shape of the slice before opening any incident.",
     noIncidentsForSlice: "No incidents match this slice yet.",
-    detailActionLabel: (headline: string) => `Open incident detail for ${headline}`,
+    detailActionLabel: (headline: string) => `Open full context for ${headline}`,
     sourceBackedDetailActionLabel: (headline: string) =>
-      `Open source-backed detail for ${headline}`,
-    detailKicker: "Source-backed detail",
-    detailTitle: "Incident detail",
+      `Open full context for ${headline}`,
+    detailKicker: "Evidence",
+    detailTitle: "Full context",
     detailLoading: "Loading incident details...",
+    whatHappenedTitle: "What happened",
+    whyItMattersTitle: "Why it matters",
+    evidenceSummaryTitle: "Evidence summary",
     claimVsReality: "Claim vs. reality",
     confidenceLabel: "Confidence",
     reportingTrailKicker: "Reporting trail",
     sourcesTitle: "Sources",
     noSources: "Source links are not available for this incident yet.",
     selectIncident:
-      "Select an incident from the archive to inspect its sources.",
+      "Select an incident from the archive to inspect the full context and sources.",
     feedError: "Unable to load the incident feed right now.",
     detailError: "Unable to load incident details right now.",
+    paginationPrevious: "Previous",
+    paginationNext: "Next",
+    paginationStatus: (page: number, totalPages: number) =>
+      `Page ${page} of ${totalPages}`,
+    paginationSummary: (visibleCount: number, totalCount: number) =>
+      `Showing ${visibleCount} of ${totalCount} incidents`,
     metrics: {
       currentFeed: "Current feed",
       currentFeedNote: (count: number) =>
@@ -132,6 +166,20 @@ const PUBLIC_COPY = {
       categorySpreadNote: (count: number) =>
         count === 1 ? "category in the slice" : "categories in the slice",
       awaitingData: "Awaiting data",
+    },
+    highlights: {
+      totalMatches: "Matches",
+      timeWindow: "Time window",
+      highestSeverity: "Highest severity",
+      topCategories: "Top categories",
+      topCompanies: "Top companies",
+      noTimeWindow: "No dates in this slice yet",
+      noTopCategories: "No categories yet",
+      noTopCompanies: "No companies yet",
+      severityValue: (severity: number) => `Severity ${severity}`,
+      timeWindowValue: (newest: string, oldest: string) =>
+        newest === oldest ? newest : `${newest} to ${oldest}`,
+      topListValue: (items: string[]) => items.join(", "),
     },
     dateLocale: "en-US",
   },
@@ -180,28 +228,41 @@ const PUBLIC_COPY = {
     allYears: "全部年份",
     filterByMonth: "按月份筛选",
     allMonths: "全部月份",
-    archiveRegion: "事件档案",
-    archiveKicker: "档案",
-    archiveTitle: "事件档案",
+    archiveRegion: "浏览事件",
+    archiveKicker: "浏览",
+    archiveTitle: "浏览事件",
     archiveLoading: "正在加载事件档案...",
-    spotlightKicker: "聚焦",
-    spotlightTitle: "事件聚焦",
+    spotlightKicker: "亮点",
+    spotlightTitle: "快速了解",
     spotlightLoading: "正在加载事件流...",
+    highlightsEmpty: "当这个筛选范围积累到足够信号后，这里会显示摘要。",
+    highlightInsightsTitle: "筛选摘要",
+    highlightInsightsBody:
+      "这个面板总结当前筛选后的公开档案，让读者先看清整体轮廓，再决定打开哪一条事件。",
     noIncidentsForSlice: "当前筛选结果下还没有匹配事件。",
-    detailActionLabel: (headline: string) => `打开 ${headline} 的事件详情`,
+    detailActionLabel: (headline: string) => `打开 ${headline} 的完整背景`,
     sourceBackedDetailActionLabel: (headline: string) =>
-      `打开${headline}的来源详情`,
-    detailKicker: "来源支撑详情",
-    detailTitle: "事件详情",
+      `打开${headline}的完整背景`,
+    detailKicker: "证据",
+    detailTitle: "完整背景",
     detailLoading: "正在加载事件详情...",
+    whatHappenedTitle: "发生了什么",
+    whyItMattersTitle: "为什么重要",
+    evidenceSummaryTitle: "证据摘要",
     claimVsReality: "声明 vs. 现实",
     confidenceLabel: "置信度",
     reportingTrailKicker: "报道轨迹",
     sourcesTitle: "来源",
     noSources: "这起事件暂时还没有可用的来源链接。",
-    selectIncident: "从档案中选择一条事件以查看其来源。",
+    selectIncident: "从档案中选择一条事件以查看完整背景和来源。",
     feedError: "当前无法加载事件流。",
     detailError: "当前无法加载事件详情。",
+    paginationPrevious: "上一页",
+    paginationNext: "下一页",
+    paginationStatus: (page: number, totalPages: number) =>
+      `第 ${page} 页，共 ${totalPages} 页`,
+    paginationSummary: (visibleCount: number, totalCount: number) =>
+      `当前显示 ${visibleCount} / ${totalCount} 起事件`,
     metrics: {
       currentFeed: "当前结果",
       currentFeedNote: (count: number) =>
@@ -215,6 +276,20 @@ const PUBLIC_COPY = {
       categorySpreadNote: (count: number) =>
         count === 1 ? "个类别出现在当前结果中" : "个类别出现在当前结果中",
       awaitingData: "等待数据",
+    },
+    highlights: {
+      totalMatches: "匹配数量",
+      timeWindow: "时间范围",
+      highestSeverity: "最高严重级别",
+      topCategories: "主要类别",
+      topCompanies: "主要公司",
+      noTimeWindow: "当前筛选范围还没有日期",
+      noTopCategories: "当前还没有类别",
+      noTopCompanies: "当前还没有公司",
+      severityValue: (severity: number) => `严重级别 ${severity}`,
+      timeWindowValue: (newest: string, oldest: string) =>
+        newest === oldest ? newest : `${newest} 至 ${oldest}`,
+      topListValue: (items: string[]) => items.join("、"),
     },
     dateLocale: "zh-CN",
   },
@@ -264,12 +339,18 @@ const PUBLIC_COPY = {
     spotlightKicker: string;
     spotlightTitle: string;
     spotlightLoading: string;
+    highlightsEmpty: string;
+    highlightInsightsTitle: string;
+    highlightInsightsBody: string;
     noIncidentsForSlice: string;
     detailActionLabel: (headline: string) => string;
     sourceBackedDetailActionLabel: (headline: string) => string;
     detailKicker: string;
     detailTitle: string;
     detailLoading: string;
+    whatHappenedTitle: string;
+    whyItMattersTitle: string;
+    evidenceSummaryTitle: string;
     claimVsReality: string;
     confidenceLabel: string;
     reportingTrailKicker: string;
@@ -278,6 +359,10 @@ const PUBLIC_COPY = {
     selectIncident: string;
     feedError: string;
     detailError: string;
+    paginationPrevious: string;
+    paginationNext: string;
+    paginationStatus: (page: number, totalPages: number) => string;
+    paginationSummary: (visibleCount: number, totalCount: number) => string;
     metrics: {
       currentFeed: string;
       currentFeedNote: (count: number) => string;
@@ -289,6 +374,19 @@ const PUBLIC_COPY = {
       categorySpreadNote: (count: number) => string;
       awaitingData: string;
     };
+    highlights: {
+      totalMatches: string;
+      timeWindow: string;
+      highestSeverity: string;
+      topCategories: string;
+      topCompanies: string;
+      noTimeWindow: string;
+      noTopCategories: string;
+      noTopCompanies: string;
+      severityValue: (severity: number) => string;
+      timeWindowValue: (newest: string, oldest: string) => string;
+      topListValue: (items: string[]) => string;
+    };
     dateLocale: string;
   }
 >;
@@ -296,40 +394,47 @@ const PUBLIC_COPY = {
 export default function PublicDashboardPage() {
   const [filters, setFilters] = useState<IncidentFilters | null>(null);
   const [filtersError, setFiltersError] = useState<string | null>(null);
-  const [readerFilters, setReaderFilters] = useState<IncidentFeedFilters>({});
+  const [readerFilters, setReaderFilters] = useState<IncidentFeedFilters>({
+    page: 1,
+    pageSize: ARCHIVE_PAGE_SIZE,
+  });
   const [readerLocale, setReaderLocale] = useState<ReaderLocale>(() =>
     readStoredReaderLocale(),
   );
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(() =>
     readStoredReaderTheme(),
   );
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [feed, setFeed] = useState<IncidentFeedResponse>(() =>
+    buildEmptyIncidentFeed(),
+  );
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
     null,
   );
   const [detailRequestNonce, setDetailRequestNonce] = useState(0);
-  const [incidentDetail, setIncidentDetail] = useState<Incident | null>(null);
+  const [incidentDetail, setIncidentDetail] = useState<IncidentDetail | null>(null);
   const [isFiltersLoading, setIsFiltersLoading] = useState(true);
   const [isFeedLoading, setIsFeedLoading] = useState(true);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const lastSliceFilterKeyRef = useRef(buildSliceFilterKey(readerFilters));
 
-  const featuredIncident = incidents[0] ?? null;
+  const incidents = feed.items;
   const selectedIncident =
     incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
+  const sliceSummary = feed.slice_summary;
   const availableMonths = readerFilters.year
     ? (filters?.months_by_year[String(readerFilters.year)] ?? [])
     : [];
   const copy = PUBLIC_COPY[readerLocale];
   const monthlySignals = buildMonthlySignals(incidents, readerLocale);
-  const categorySignals = buildCategorySignals(incidents);
+  const categorySignals = buildCategorySignals(incidents, readerLocale);
   const heroMetrics = buildHeroMetrics(
-    incidents,
+    feed,
     categorySignals,
-    featuredIncident,
     readerLocale,
   );
+  const highlightInsights = buildHighlightInsights(sliceSummary, readerLocale);
   const maxMonthlyCount = Math.max(
     ...monthlySignals.map((signal) => signal.count),
     1,
@@ -377,34 +482,44 @@ export default function PublicDashboardPage() {
 
   useEffect(() => {
     let isCancelled = false;
+    const nextSliceFilterKey = buildSliceFilterKey(readerFilters);
+    const sliceFiltersChanged = lastSliceFilterKeyRef.current !== nextSliceFilterKey;
 
     async function loadFeed() {
       setIsFeedLoading(true);
       setFeedError(null);
 
       try {
-        const response = await fetchIncidentFeed(readerFilters);
+        const response = normalizeIncidentFeed(
+          await fetchIncidentFeed(readerFilters),
+        );
 
         if (isCancelled) {
           return;
         }
 
-        setIncidents(response.items);
+        setFeed(response);
         setSelectedIncidentId((currentSelectedIncidentId) => {
-          if (
-            currentSelectedIncidentId &&
-            response.items.some(
-              (incident) => incident.id === currentSelectedIncidentId,
-            )
-          ) {
+          const incidentIsVisible = currentSelectedIncidentId
+            ? response.items.some(
+                (incident) => incident.id === currentSelectedIncidentId,
+              )
+            : false;
+
+          if (currentSelectedIncidentId && incidentIsVisible) {
+            return currentSelectedIncidentId;
+          }
+
+          if (currentSelectedIncidentId && !sliceFiltersChanged) {
             return currentSelectedIncidentId;
           }
 
           return response.items[0]?.id ?? null;
         });
+        lastSliceFilterKeyRef.current = nextSliceFilterKey;
       } catch {
         if (!isCancelled) {
-          setIncidents([]);
+          setFeed(buildEmptyIncidentFeed());
           setSelectedIncidentId(null);
           setFeedError("Unable to load the incident feed right now.");
         }
@@ -700,7 +815,7 @@ export default function PublicDashboardPage() {
                   <option value="">{copy.allCategories}</option>
                   {(filters?.categories ?? []).map((category) => (
                     <option key={category} value={category}>
-                      {category}
+                      {localizePublicCategory(category, readerLocale)}
                     </option>
                   ))}
                 </select>
@@ -796,23 +911,14 @@ export default function PublicDashboardPage() {
                         </div>
                         <h3>{localizedHeadline(incident, readerLocale)}</h3>
                         <p className="body-copy public-archive-summary">
-                          {buildSnippet(localizedSummary(incident, readerLocale))}
+                          {buildSnippet(
+                            localizedArchiveSummary(incident, readerLocale),
+                          )}
                         </p>
-                        {incident.matched_claim ? (
-                          <section
-                            className="public-claim-block"
-                            aria-label={copy.claimVsReality}
-                          >
-                            <p className="public-claim-kicker">{copy.claimVsReality}</p>
-                            <p className="public-claim-quote">
-                              {incident.matched_claim.original_claim}
-                            </p>
-                          </section>
-                        ) : null}
                         <div className="tag-row">
                           {incident.categories.map((category) => (
                             <span className="tag" key={category}>
-                              {category}
+                              {localizePublicCategory(category, readerLocale)}
                             </span>
                           ))}
                         </div>
@@ -831,6 +937,49 @@ export default function PublicDashboardPage() {
                   })}
                 </div>
               ) : null}
+              {!isFeedLoading && !feedError && incidents.length === 0 ? (
+                <p className="body-copy">{copy.noIncidentsForSlice}</p>
+              ) : null}
+              {!isFeedLoading && !feedError && incidents.length > 0 ? (
+                <div className="public-archive-pagination">
+                  <span className="body-copy public-pagination-summary">
+                    {copy.paginationSummary(incidents.length, feed.total_count)}
+                  </span>
+                  <div className="public-pagination-controls">
+                    <button
+                      className="secondary-action"
+                      disabled={!feed.has_previous_page}
+                      type="button"
+                      onClick={() =>
+                        setReaderFilters((currentFilters) => ({
+                          ...currentFilters,
+                          page: Math.max((currentFilters.page ?? 1) - 1, 1),
+                          pageSize: ARCHIVE_PAGE_SIZE,
+                        }))
+                      }
+                    >
+                      {copy.paginationPrevious}
+                    </button>
+                    <span className="public-pagination-status">
+                      {copy.paginationStatus(feed.page, feed.total_pages)}
+                    </span>
+                    <button
+                      className="secondary-action"
+                      disabled={!feed.has_next_page}
+                      type="button"
+                      onClick={() =>
+                        setReaderFilters((currentFilters) => ({
+                          ...currentFilters,
+                          page: (currentFilters.page ?? 1) + 1,
+                          pageSize: ARCHIVE_PAGE_SIZE,
+                        }))
+                      }
+                    >
+                      {copy.paginationNext}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </section>
           </section>
 
@@ -842,37 +991,29 @@ export default function PublicDashboardPage() {
               </div>
               {isFeedLoading ? <p>{copy.spotlightLoading}</p> : null}
               {feedError ? <p>{copy.feedError}</p> : null}
-              {!isFeedLoading && !feedError && featuredIncident ? (
-                <article className="public-incident-card public-spotlight-card">
-                  <div className="incident-meta">
-                    <span>{featuredIncident.company_involved}</span>
-                    <span>{severityLabel(featuredIncident.severity_score, readerLocale)}</span>
-                    <span>{formatDate(featuredIncident.date_logged, readerLocale)}</span>
-                  </div>
-                  <h3>{localizedHeadline(featuredIncident, readerLocale)}</h3>
-                  <p className="body-copy">
-                    {localizedSummary(featuredIncident, readerLocale)}
+              {!isFeedLoading && !feedError && sliceSummary.total_matches > 0 ? (
+                <article className="public-panel-compact public-spotlight-insights">
+                  <p className="public-claim-kicker">{copy.highlightInsightsTitle}</p>
+                  <p className="body-copy public-spotlight-copy">
+                    {copy.highlightInsightsBody}
                   </p>
-                  <div className="tag-row">
-                    {featuredIncident.categories.map((category) => (
-                      <span className="tag" key={category}>
-                        {category}
-                      </span>
+                  <div className="public-highlight-list">
+                    {highlightInsights.map((insight) => (
+                      <section className="public-highlight-item" key={insight.label}>
+                        <span className="public-highlight-label">{insight.label}</span>
+                        <strong className="public-highlight-value">
+                          {insight.value}
+                        </strong>
+                        <span className="body-copy public-highlight-note">
+                          {insight.note}
+                        </span>
+                      </section>
                     ))}
                   </div>
-                  <button
-                    className="secondary-action public-detail-button"
-                    type="button"
-                    onClick={() => showIncidentDetail(featuredIncident.id)}
-                  >
-                    {copy.sourceBackedDetailActionLabel(
-                      localizedHeadline(featuredIncident, readerLocale),
-                    )}
-                  </button>
                 </article>
               ) : null}
-              {!isFeedLoading && !feedError && !featuredIncident ? (
-                <p className="body-copy">{copy.noIncidentsForSlice}</p>
+              {!isFeedLoading && !feedError && sliceSummary.total_matches === 0 ? (
+                <p className="body-copy">{copy.highlightsEmpty}</p>
               ) : null}
             </section>
           </aside>
@@ -895,14 +1036,66 @@ export default function PublicDashboardPage() {
                 </div>
                 <h3>{localizedHeadline(incidentDetail, readerLocale)}</h3>
                 <p className="body-copy">
-                  {localizedSummary(incidentDetail, readerLocale)}
+                  {localizedDetailSummary(incidentDetail, readerLocale)}
                 </p>
                 <div className="tag-row">
                   {incidentDetail.categories.map((category) => (
                     <span className="tag" key={category}>
-                      {category}
+                      {localizePublicCategory(category, readerLocale)}
                     </span>
                   ))}
+                </div>
+                <div className="public-detail-analysis">
+                  {localizedAnalysisText(
+                    incidentDetail.analysis,
+                    "what_happened",
+                    readerLocale,
+                  ) ? (
+                    <section className="public-detail-block">
+                      <p className="public-claim-kicker">{copy.whatHappenedTitle}</p>
+                      <p className="body-copy">
+                        {localizedAnalysisText(
+                          incidentDetail.analysis,
+                          "what_happened",
+                          readerLocale,
+                        )}
+                      </p>
+                    </section>
+                  ) : null}
+                  {localizedAnalysisText(
+                    incidentDetail.analysis,
+                    "why_it_matters",
+                    readerLocale,
+                  ) ? (
+                    <section className="public-detail-block">
+                      <p className="public-claim-kicker">{copy.whyItMattersTitle}</p>
+                      <p className="body-copy">
+                        {localizedAnalysisText(
+                          incidentDetail.analysis,
+                          "why_it_matters",
+                          readerLocale,
+                        )}
+                      </p>
+                    </section>
+                  ) : null}
+                  {localizedAnalysisText(
+                    incidentDetail.analysis,
+                    "evidence_summary",
+                    readerLocale,
+                  ) ? (
+                    <section className="public-detail-block">
+                      <p className="public-claim-kicker">
+                        {copy.evidenceSummaryTitle}
+                      </p>
+                      <p className="body-copy">
+                        {localizedAnalysisText(
+                          incidentDetail.analysis,
+                          "evidence_summary",
+                          readerLocale,
+                        )}
+                      </p>
+                    </section>
+                  ) : null}
                 </div>
                 {incidentDetail.matched_claim ? (
                   <section
@@ -959,7 +1152,7 @@ export default function PublicDashboardPage() {
   );
 }
 
-function localizedHeadline(incident: Incident, locale: ReaderLocale) {
+function localizedHeadline(incident: PublicIncidentBase, locale: ReaderLocale) {
   if (locale === "zh") {
     return incident.headline_zh ?? incident.headline_en ?? incident.headline;
   }
@@ -967,7 +1160,37 @@ function localizedHeadline(incident: Incident, locale: ReaderLocale) {
   return incident.headline_en ?? incident.headline;
 }
 
-function localizedSummary(incident: Incident, locale: ReaderLocale) {
+function localizedArchiveSummary(
+  incident: PublicIncidentBase & {
+    archive_summary?: string | null;
+    archive_summary_en?: string | null;
+    archive_summary_zh?: string | null;
+    reality_summary?: string | null;
+    reality_summary_en?: string | null;
+    reality_summary_zh?: string | null;
+  },
+  locale: ReaderLocale,
+) {
+  const archiveSummary =
+    incident.archive_summary ??
+    incident.reality_summary ??
+    incident.headline_en ??
+    incident.headline;
+  const archiveSummaryEn =
+    incident.archive_summary_en ??
+    incident.reality_summary_en ??
+    archiveSummary;
+  const archiveSummaryZh =
+    incident.archive_summary_zh ?? incident.reality_summary_zh;
+
+  if (locale === "zh") {
+    return archiveSummaryZh ?? archiveSummaryEn ?? archiveSummary;
+  }
+
+  return archiveSummaryEn ?? archiveSummary;
+}
+
+function localizedDetailSummary(incident: IncidentDetail, locale: ReaderLocale) {
   if (locale === "zh") {
     return (
       incident.reality_summary_zh ??
@@ -979,16 +1202,39 @@ function localizedSummary(incident: Incident, locale: ReaderLocale) {
   return incident.reality_summary_en ?? incident.reality_summary;
 }
 
-function buildSnippet(summary: string) {
-  if (summary.length <= 140) {
-    return summary;
+function localizedAnalysisText(
+  analysis: IncidentAnalysis,
+  key: "what_happened" | "why_it_matters" | "evidence_summary",
+  locale: ReaderLocale,
+) {
+  const englishKey = `${key}_en` as keyof IncidentAnalysis;
+  const chineseKey = `${key}_zh` as keyof IncidentAnalysis;
+  const baseKey = key as keyof IncidentAnalysis;
+
+  if (locale === "zh") {
+    return (
+      analysis[chineseKey] ??
+      analysis[baseKey] ??
+      analysis[englishKey] ??
+      null
+    );
   }
 
-  return `${summary.slice(0, 137).trimEnd()}...`;
+  return analysis[englishKey] ?? analysis[baseKey] ?? null;
+}
+
+function buildSnippet(summary: string | null | undefined) {
+  const safeSummary = summary ?? "";
+
+  if (safeSummary.length <= 140) {
+    return safeSummary;
+  }
+
+  return `${safeSummary.slice(0, 137).trimEnd()}...`;
 }
 
 function buildMonthlySignals(
-  incidents: Incident[],
+  incidents: PublicIncidentBase[],
   locale: ReaderLocale,
 ): MonthlySignal[] {
   const counts = new Map<string, number>();
@@ -1011,12 +1257,16 @@ function buildMonthlySignals(
     });
 }
 
-function buildCategorySignals(incidents: Incident[]): CategorySignal[] {
+function buildCategorySignals(
+  incidents: PublicIncidentBase[],
+  locale: ReaderLocale,
+): CategorySignal[] {
   const counts = new Map<string, number>();
 
   for (const incident of incidents) {
     for (const category of incident.categories) {
-      counts.set(category, (counts.get(category) ?? 0) + 1);
+      const localizedCategory = localizePublicCategory(category, locale);
+      counts.set(localizedCategory, (counts.get(localizedCategory) ?? 0) + 1);
     }
   }
 
@@ -1062,21 +1312,20 @@ function buildCategoryDonut(signals: CategorySignal[]) {
 }
 
 function buildHeroMetrics(
-  incidents: Incident[],
+  feed: IncidentFeedResponse,
   categorySignals: CategorySignal[],
-  featuredIncident: Incident | null,
   locale: ReaderLocale,
 ): HeroMetric[] {
   const copy = PUBLIC_COPY[locale];
   const companies = new Set(
-    incidents.map((incident) => incident.company_involved),
+    feed.slice_summary.top_companies.map((company) => company.company),
   );
 
   return [
     {
       label: copy.metrics.currentFeed,
-      value: `${incidents.length}`,
-      note: copy.metrics.currentFeedNote(incidents.length),
+      value: `${feed.slice_summary.total_matches}`,
+      note: copy.metrics.currentFeedNote(feed.slice_summary.total_matches),
     },
     {
       label: copy.metrics.companiesInView,
@@ -1085,8 +1334,8 @@ function buildHeroMetrics(
     },
     {
       label: copy.metrics.latestLogged,
-      value: featuredIncident
-        ? formatDate(featuredIncident.date_logged, locale)
+      value: feed.slice_summary.newest_logged
+        ? formatDate(feed.slice_summary.newest_logged, locale)
         : copy.metrics.awaitingData,
       note: copy.metrics.latestLoggedNote,
     },
@@ -1094,6 +1343,81 @@ function buildHeroMetrics(
       label: copy.metrics.categorySpread,
       value: `${categorySignals.length}`,
       note: copy.metrics.categorySpreadNote(categorySignals.length),
+    },
+  ];
+}
+
+function buildHighlightInsights(
+  sliceSummary: IncidentSliceSummary,
+  locale: ReaderLocale,
+): HighlightInsight[] {
+  const copy = PUBLIC_COPY[locale];
+
+  return [
+    {
+      label: copy.highlights.totalMatches,
+      value: `${sliceSummary.total_matches}`,
+      note:
+        locale === "zh" ? "当前筛选结果中的已审阅事件数" : "Reviewed incidents in this slice",
+    },
+    {
+      label: copy.highlights.timeWindow,
+      value:
+        sliceSummary.newest_logged && sliceSummary.oldest_logged
+          ? copy.highlights.timeWindowValue(
+              formatDate(sliceSummary.newest_logged, locale),
+              formatDate(sliceSummary.oldest_logged, locale),
+            )
+          : copy.highlights.noTimeWindow,
+      note:
+        locale === "zh"
+          ? "这个筛选范围覆盖的公开记录时间段"
+          : "Range covered by the current filtered archive",
+    },
+    {
+      label: copy.highlights.highestSeverity,
+      value:
+        sliceSummary.highest_severity !== null &&
+        sliceSummary.highest_severity !== undefined
+          ? copy.highlights.severityValue(sliceSummary.highest_severity)
+          : copy.metrics.awaitingData,
+      note:
+        locale === "zh"
+          ? "当前筛选结果中的最高严重级别"
+          : "Highest severity present in the current slice",
+    },
+    {
+      label: copy.highlights.topCategories,
+      value:
+        sliceSummary.top_categories.length > 0
+          ? copy.highlights.topListValue(
+              sliceSummary.top_categories
+                .slice(0, 3)
+                .map(
+                  (entry) =>
+                    `${localizePublicCategory(entry.category, locale)} (${entry.count})`,
+                ),
+            )
+          : copy.highlights.noTopCategories,
+      note:
+        locale === "zh"
+          ? "按出现频次排列的主要类别"
+          : "Most frequent categories in the filtered archive",
+    },
+    {
+      label: copy.highlights.topCompanies,
+      value:
+        sliceSummary.top_companies.length > 0
+          ? copy.highlights.topListValue(
+              sliceSummary.top_companies
+                .slice(0, 3)
+                .map((entry) => `${entry.company} (${entry.count})`),
+            )
+          : copy.highlights.noTopCompanies,
+      note:
+        locale === "zh"
+          ? "当前筛选结果中最常出现的公司"
+          : "Companies appearing most often in this slice",
     },
   ];
 }
@@ -1128,6 +1452,53 @@ function severityLabel(severityScore: number, locale: ReaderLocale) {
   }
 
   return `Severity ${severityScore}`;
+}
+
+function buildEmptyIncidentFeed(): IncidentFeedResponse {
+  return {
+    items: [],
+    page: 1,
+    page_size: ARCHIVE_PAGE_SIZE,
+    total_count: 0,
+    total_pages: 1,
+    has_next_page: false,
+    has_previous_page: false,
+    slice_summary: EMPTY_SLICE_SUMMARY,
+  };
+}
+
+function normalizeIncidentFeed(
+  response: Partial<IncidentFeedResponse> & {
+    items?: IncidentArchiveItem[];
+  },
+): IncidentFeedResponse {
+  const items = response.items ?? [];
+
+  return {
+    items,
+    page: response.page ?? 1,
+    page_size: response.page_size ?? ARCHIVE_PAGE_SIZE,
+    total_count: response.total_count ?? items.length,
+    total_pages: response.total_pages ?? 1,
+    has_next_page: response.has_next_page ?? false,
+    has_previous_page: response.has_previous_page ?? false,
+    slice_summary: response.slice_summary ?? {
+      total_matches: items.length,
+      newest_logged: items[0]?.date_logged ?? null,
+      oldest_logged: items[items.length - 1]?.date_logged ?? null,
+      highest_severity:
+        items.length > 0
+          ? Math.max(...items.map((item) => item.severity_score))
+          : null,
+      top_categories: [],
+      top_companies: [],
+    },
+  };
+}
+
+function buildSliceFilterKey(filters: IncidentFeedFilters) {
+  const { page: _page, pageSize: _pageSize, ...sliceFilters } = filters;
+  return JSON.stringify(sliceFilters);
 }
 
 function readStoredReaderLocale(): ReaderLocale {

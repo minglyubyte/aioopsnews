@@ -18,6 +18,11 @@ class IncidentQueryFilters:
 
 
 class IncidentReadRepository(Protocol):
+    def list_public_incident_feed(
+        self,
+        filters: IncidentQueryFilters,
+    ) -> dict[str, object]: ...
+
     def list_public_incidents(
         self,
         filters: IncidentQueryFilters,
@@ -26,6 +31,13 @@ class IncidentReadRepository(Protocol):
     def get_public_incident(self, incident_id: str) -> dict[str, object] | None: ...
 
     def get_filter_values(self) -> dict[str, object]: ...
+
+
+def list_public_incident_feed(
+    repository: IncidentReadRepository,
+    filters: IncidentQueryFilters,
+) -> dict[str, object]:
+    return repository.list_public_incident_feed(filters)
 
 
 def list_public_incidents(

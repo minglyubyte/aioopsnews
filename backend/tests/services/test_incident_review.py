@@ -70,18 +70,29 @@ class FakeBatchReviewClient:
 
 class FakeTranslationClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, str, str]] = []
 
     def translate(
         self,
         *,
         headline_en: str,
         reality_summary_en: str,
+        legitimacy_reasoning_en: str,
+        source_validation_summary_en: str,
     ) -> IncidentTranslation:
-        self.calls.append((headline_en, reality_summary_en))
+        self.calls.append(
+            (
+                headline_en,
+                reality_summary_en,
+                legitimacy_reasoning_en,
+                source_validation_summary_en,
+            )
+        )
         return IncidentTranslation(
             headline_zh=f"ZH:{headline_en}",
             reality_summary_zh=f"ZH:{reality_summary_en}",
+            legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
+            source_validation_summary_zh=f"ZH:{source_validation_summary_en}",
             status="completed",
         )
 
@@ -322,6 +333,12 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
     assert approved_incident["headline_zh"] == (
         "ZH:OpenAI filing included fake legal citations"
     )
+    assert approved_incident["legitimacy_reasoning_zh"] == (
+        "ZH:Primary review found strong source support."
+    )
+    assert approved_incident["source_validation_summary_zh"] == (
+        "ZH:3 fetched sources agree on the event."
+    )
     assert approved_incident["legitimacy_score"] == 0.96
     assert approved_incident["review_model"] == "gpt-5.4-mini"
     assert approved_incident["categories"] == ["Hallucinations"]
@@ -344,6 +361,8 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
         (
             "OpenAI filing included fake legal citations",
             "Court records and reporting confirm the filing incident.",
+            "Primary review found strong source support.",
+            "3 fetched sources agree on the event.",
         )
     ]
 
