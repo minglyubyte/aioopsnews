@@ -45,7 +45,6 @@ def enrich_pending_incidents(
             company_involved=classification.company_involved,
             claimant_name=classification.company_involved,
             categories=classification.categories,
-            severity_score=classification.severity_score,
             reality_summary=summary,
             confidence_score=classification.confidence_score,
             review_notes=(

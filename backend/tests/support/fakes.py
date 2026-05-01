@@ -152,7 +152,13 @@ class InMemoryIncidentRepository:
         incidents = [
             incident
             for incident in self.incidents.values()
-            if incident["status"] in {"pending_review", "pending_duplicate_review"}
+            if incident["status"]
+            in {
+                "pending_review",
+                "pending_editor_review",
+                "pending_llm_escalation",
+                "pending_duplicate_review",
+            }
         ]
         incidents.sort(
             key=lambda incident: (incident["date_logged"], incident["id"]),
@@ -186,12 +192,18 @@ class InMemoryIncidentRepository:
             "claimant_name": None,
             "categories": [],
             "severity_score": 1,
+            "suggested_severity_score": None,
             "reality_summary": article.summary,
             "reality_summary_en": article.summary,
             "reality_summary_zh": None,
             "status": "pending_review",
             "ingestion_run_id": ingestion_run_id,
             "confidence_score": None,
+            "severity_confidence": None,
+            "severity_reasoning": None,
+            "severity_flags": [],
+            "severity_model": None,
+            "severity_decision_source": None,
             "review_notes": (
                 f"Ingested from {article.publisher} RSS feed; "
                 "awaiting enrichment and editorial review."
@@ -322,7 +334,6 @@ class InMemoryIncidentRepository:
         company_involved: str,
         claimant_name: str | None,
         categories: list[str],
-        severity_score: int,
         reality_summary: str,
         confidence_score: float,
         review_notes: str,
@@ -335,7 +346,6 @@ class InMemoryIncidentRepository:
                 "company_involved": company_involved,
                 "claimant_name": claimant_name,
                 "categories": categories,
-                "severity_score": severity_score,
                 "reality_summary": reality_summary,
                 "confidence_score": confidence_score,
                 "review_notes": review_notes,
@@ -369,6 +379,11 @@ class InMemoryIncidentRepository:
                 "claimant_name": claimant_name,
                 "categories": categories,
                 "severity_score": severity_score,
+                "severity_decision_source": (
+                    "editor"
+                    if severity_score != incident.get("suggested_severity_score")
+                    else incident.get("severity_decision_source")
+                ),
                 "reality_summary": reality_summary,
                 "matched_claim_id": matched_claim_id,
                 "claim_match_confidence": claim_match_confidence,
@@ -489,12 +504,18 @@ class InMemoryIncidentRepository:
             "claimant_name": None,
             "categories": [],
             "severity_score": 3,
+            "suggested_severity_score": None,
             "reality_summary": reality_summary,
             "reality_summary_en": reality_summary,
             "reality_summary_zh": reality_summary_zh,
             "status": status,
             "ingestion_run_id": None,
             "confidence_score": legitimacy_score,
+            "severity_confidence": None,
+            "severity_reasoning": None,
+            "severity_flags": [],
+            "severity_model": None,
+            "severity_decision_source": None,
             "review_notes": legitimacy_reasoning,
             "matched_claim_id": matched_claim_id,
             "claim_match_confidence": None,
@@ -632,6 +653,15 @@ class InMemoryIncidentRepository:
         source_validation_summary: str,
         headline_en: str,
         reality_summary_en: str,
+        categories: list[str],
+        severity_score: int,
+        suggested_severity_score: int | None,
+        severity_confidence: float | None,
+        severity_reasoning: str | None,
+        severity_flags: list[str],
+        severity_model: str,
+        severity_decision_source: str | None,
+        severity_suggested_at: str,
         review_model: str,
         review_batch_id: str,
         reviewed_at: str,
@@ -646,6 +676,15 @@ class InMemoryIncidentRepository:
                 "headline_en": headline_en,
                 "reality_summary": reality_summary_en,
                 "reality_summary_en": reality_summary_en,
+                "categories": list(categories),
+                "severity_score": severity_score,
+                "suggested_severity_score": suggested_severity_score,
+                "severity_confidence": severity_confidence,
+                "severity_reasoning": severity_reasoning,
+                "severity_flags": list(severity_flags),
+                "severity_model": severity_model,
+                "severity_decision_source": severity_decision_source,
+                "severity_suggested_at": severity_suggested_at,
                 "legitimacy_score": legitimacy_score,
                 "legitimacy_label": legitimacy_label,
                 "legitimacy_reasoning": legitimacy_reasoning,
@@ -691,6 +730,7 @@ class InMemoryIncidentRepository:
             "claimant_name": incident.get("claimant_name"),
             "categories": list(incident["categories"]),
             "severity_score": incident["severity_score"],
+            "suggested_severity_score": incident.get("suggested_severity_score"),
             "reality_summary": incident["reality_summary"],
             "reality_summary_en": incident.get(
                 "reality_summary_en",
@@ -753,6 +793,11 @@ class InMemoryIncidentRepository:
             "review_notes": incident.get("review_notes"),
             "legitimacy_score": incident.get("legitimacy_score"),
             "legitimacy_label": incident.get("legitimacy_label"),
+            "severity_confidence": incident.get("severity_confidence"),
+            "severity_reasoning": incident.get("severity_reasoning"),
+            "severity_flags": list(incident.get("severity_flags", [])),
+            "severity_model": incident.get("severity_model"),
+            "severity_decision_source": incident.get("severity_decision_source"),
             "legitimacy_reasoning": incident.get("legitimacy_reasoning"),
             "source_validation_summary": incident.get("source_validation_summary"),
             "translation_status": incident.get("translation_status"),

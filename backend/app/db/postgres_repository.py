@@ -58,12 +58,18 @@ create table if not exists incident_logs (
     claimant_name text,
     categories text not null,
     severity_score integer not null,
+    suggested_severity_score integer,
     reality_summary text not null,
     reality_summary_en text,
     reality_summary_zh text,
     status text not null,
     ingestion_run_id text,
     confidence_score double precision,
+    severity_confidence double precision,
+    severity_reasoning text,
+    severity_flags text,
+    severity_model text,
+    severity_decision_source text,
     review_notes text,
     matched_claim_id text references claims(id),
     claim_match_confidence double precision,
@@ -83,6 +89,7 @@ create table if not exists incident_logs (
     embedding_model text,
     embedding_vector text,
     reviewed_at timestamptz,
+    severity_suggested_at timestamptz,
     translated_at timestamptz,
     created_at timestamptz default current_timestamp,
     updated_at timestamptz default current_timestamp
@@ -90,6 +97,24 @@ create table if not exists incident_logs (
 
 alter table incident_logs
     add column if not exists external_id text;
+
+alter table incident_logs
+    add column if not exists suggested_severity_score integer;
+
+alter table incident_logs
+    add column if not exists severity_confidence double precision;
+
+alter table incident_logs
+    add column if not exists severity_reasoning text;
+
+alter table incident_logs
+    add column if not exists severity_flags text;
+
+alter table incident_logs
+    add column if not exists severity_model text;
+
+alter table incident_logs
+    add column if not exists severity_decision_source text;
 
 alter table incident_logs
     add column if not exists headline_en text;
@@ -153,6 +178,9 @@ alter table incident_logs
 
 alter table incident_logs
     add column if not exists reviewed_at timestamptz;
+
+alter table incident_logs
+    add column if not exists severity_suggested_at timestamptz;
 
 alter table incident_logs
     add column if not exists translated_at timestamptz;
@@ -523,6 +551,7 @@ class PostgresIncidentRepository:
                     claimant_name,
                     categories,
                     severity_score,
+                    suggested_severity_score,
                     reality_summary,
                     reality_summary_en,
                     reality_summary_zh,
@@ -532,6 +561,11 @@ class PostgresIncidentRepository:
                     review_notes,
                     legitimacy_score,
                     legitimacy_label,
+                    severity_confidence,
+                    severity_reasoning,
+                    severity_flags,
+                    severity_model,
+                    severity_decision_source,
                     legitimacy_reasoning,
                     source_validation_summary,
                     translation_status,
@@ -541,10 +575,15 @@ class PostgresIncidentRepository:
                     duplicate_of_incident_id,
                     canonical_incident_id
                 from incident_logs
-                where status in (%s, %s)
+                where status in (%s, %s, %s, %s)
                 order by date_logged desc, id asc
                 """,
-                ("pending_review", "pending_duplicate_review"),
+                (
+                    "pending_review",
+                    "pending_editor_review",
+                    "pending_llm_escalation",
+                    "pending_duplicate_review",
+                ),
             ).fetchall()
 
             source_rows = connection.execute(
@@ -576,6 +615,7 @@ class PostgresIncidentRepository:
                 "claimant_name": row["claimant_name"],
                 "categories": json.loads(row["categories"]),
                 "severity_score": row["severity_score"],
+                "suggested_severity_score": row["suggested_severity_score"],
                 "reality_summary": row["reality_summary"],
                 "reality_summary_en": row["reality_summary_en"],
                 "reality_summary_zh": row["reality_summary_zh"],
@@ -585,6 +625,11 @@ class PostgresIncidentRepository:
                 "review_notes": row["review_notes"],
                 "legitimacy_score": row["legitimacy_score"],
                 "legitimacy_label": row["legitimacy_label"],
+                "severity_confidence": row["severity_confidence"],
+                "severity_reasoning": row["severity_reasoning"],
+                "severity_flags": _parse_text_array(row["severity_flags"]),
+                "severity_model": row["severity_model"],
+                "severity_decision_source": row["severity_decision_source"],
                 "legitimacy_reasoning": row["legitimacy_reasoning"],
                 "source_validation_summary": row["source_validation_summary"],
                 "translation_status": row["translation_status"],
@@ -615,11 +660,17 @@ class PostgresIncidentRepository:
                     claimant_name,
                     categories,
                     severity_score,
+                    suggested_severity_score,
                     reality_summary,
                     reality_summary_en,
                     reality_summary_zh,
                     status,
                     review_notes,
+                    severity_confidence,
+                    severity_reasoning,
+                    severity_flags,
+                    severity_model,
+                    severity_decision_source,
                     legitimacy_flag,
                     confidence_level,
                     import_notes,
@@ -670,11 +721,17 @@ class PostgresIncidentRepository:
                 "claimant_name": row["claimant_name"],
                 "categories": json.loads(row["categories"]),
                 "severity_score": row["severity_score"],
+                "suggested_severity_score": row["suggested_severity_score"],
                 "reality_summary": row["reality_summary"],
                 "reality_summary_en": row["reality_summary_en"],
                 "reality_summary_zh": row["reality_summary_zh"],
                 "status": row["status"],
                 "review_notes": row["review_notes"],
+                "severity_confidence": row["severity_confidence"],
+                "severity_reasoning": row["severity_reasoning"],
+                "severity_flags": _parse_text_array(row["severity_flags"]),
+                "severity_model": row["severity_model"],
+                "severity_decision_source": row["severity_decision_source"],
                 "legitimacy_flag": row["legitimacy_flag"],
                 "confidence_level": row["confidence_level"],
                 "import_notes": row["import_notes"],
@@ -709,6 +766,7 @@ class PostgresIncidentRepository:
                     claimant_name,
                     categories,
                     severity_score,
+                    suggested_severity_score,
                     reality_summary,
                     reality_summary_en,
                     reality_summary_zh,
@@ -716,6 +774,11 @@ class PostgresIncidentRepository:
                     review_notes,
                     legitimacy_score,
                     legitimacy_label,
+                    severity_confidence,
+                    severity_reasoning,
+                    severity_flags,
+                    severity_model,
+                    severity_decision_source,
                     legitimacy_reasoning,
                     source_validation_summary,
                     legitimacy_flag,
@@ -771,6 +834,7 @@ class PostgresIncidentRepository:
             "claimant_name": incident_row["claimant_name"],
             "categories": json.loads(incident_row["categories"]),
             "severity_score": incident_row["severity_score"],
+            "suggested_severity_score": incident_row["suggested_severity_score"],
             "reality_summary": incident_row["reality_summary"],
             "reality_summary_en": incident_row["reality_summary_en"],
             "reality_summary_zh": incident_row["reality_summary_zh"],
@@ -778,6 +842,11 @@ class PostgresIncidentRepository:
             "review_notes": incident_row["review_notes"],
             "legitimacy_score": incident_row["legitimacy_score"],
             "legitimacy_label": incident_row["legitimacy_label"],
+            "severity_confidence": incident_row["severity_confidence"],
+            "severity_reasoning": incident_row["severity_reasoning"],
+            "severity_flags": _parse_text_array(incident_row["severity_flags"]),
+            "severity_model": incident_row["severity_model"],
+            "severity_decision_source": incident_row["severity_decision_source"],
             "legitimacy_reasoning": incident_row["legitimacy_reasoning"],
             "source_validation_summary": incident_row["source_validation_summary"],
             "legitimacy_flag": incident_row["legitimacy_flag"],
@@ -1129,7 +1198,6 @@ class PostgresIncidentRepository:
         company_involved: str,
         claimant_name: str | None,
         categories: list[str],
-        severity_score: int,
         reality_summary: str,
         confidence_score: float,
         review_notes: str,
@@ -1144,7 +1212,6 @@ class PostgresIncidentRepository:
                     company_involved = %s,
                     claimant_name = %s,
                     categories = %s,
-                    severity_score = %s,
                     reality_summary = %s,
                     confidence_score = %s,
                     review_notes = %s,
@@ -1157,7 +1224,6 @@ class PostgresIncidentRepository:
                     company_involved,
                     claimant_name,
                     json.dumps(categories),
-                    severity_score,
                     reality_summary,
                     confidence_score,
                     review_notes,
@@ -1192,6 +1258,12 @@ class PostgresIncidentRepository:
                     claimant_name = %s,
                     categories = %s,
                     severity_score = %s,
+                    severity_decision_source = case
+                        when suggested_severity_score is not null
+                         and suggested_severity_score <> %s
+                        then 'editor'
+                        else severity_decision_source
+                    end,
                     reality_summary = %s,
                     matched_claim_id = %s,
                     claim_match_confidence = %s,
@@ -1204,6 +1276,7 @@ class PostgresIncidentRepository:
                     company_involved,
                     claimant_name,
                     json.dumps(categories),
+                    severity_score,
                     severity_score,
                     reality_summary,
                     matched_claim_id,
@@ -1229,6 +1302,7 @@ class PostgresIncidentRepository:
                     claimant_name,
                     categories,
                     severity_score,
+                    suggested_severity_score,
                     reality_summary,
                     reality_summary_en,
                     reality_summary_zh,
@@ -1238,6 +1312,11 @@ class PostgresIncidentRepository:
                     review_notes,
                     legitimacy_score,
                     legitimacy_label,
+                    severity_confidence,
+                    severity_reasoning,
+                    severity_flags,
+                    severity_model,
+                    severity_decision_source,
                     legitimacy_reasoning,
                     source_validation_summary,
                     translation_status,
@@ -1283,6 +1362,7 @@ class PostgresIncidentRepository:
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
             "severity_score": row["severity_score"],
+            "suggested_severity_score": row["suggested_severity_score"],
             "reality_summary": row["reality_summary"],
             "reality_summary_en": row["reality_summary_en"],
             "reality_summary_zh": row["reality_summary_zh"],
@@ -1292,6 +1372,11 @@ class PostgresIncidentRepository:
             "review_notes": row["review_notes"],
             "legitimacy_score": row["legitimacy_score"],
             "legitimacy_label": row["legitimacy_label"],
+            "severity_confidence": row["severity_confidence"],
+            "severity_reasoning": row["severity_reasoning"],
+            "severity_flags": _parse_text_array(row["severity_flags"]),
+            "severity_model": row["severity_model"],
+            "severity_decision_source": row["severity_decision_source"],
             "legitimacy_reasoning": row["legitimacy_reasoning"],
             "source_validation_summary": row["source_validation_summary"],
             "translation_status": row["translation_status"],
@@ -1860,6 +1945,15 @@ class PostgresIncidentRepository:
         source_validation_summary: str,
         headline_en: str,
         reality_summary_en: str,
+        categories: list[str],
+        severity_score: int,
+        suggested_severity_score: int | None,
+        severity_confidence: float | None,
+        severity_reasoning: str | None,
+        severity_flags: list[str],
+        severity_model: str,
+        severity_decision_source: str | None,
+        severity_suggested_at: str,
         review_model: str,
         review_batch_id: str,
         reviewed_at: str,
@@ -1874,6 +1968,14 @@ class PostgresIncidentRepository:
                     headline_en = %s,
                     reality_summary = %s,
                     reality_summary_en = %s,
+                    categories = %s,
+                    severity_score = %s,
+                    suggested_severity_score = %s,
+                    severity_confidence = %s,
+                    severity_reasoning = %s,
+                    severity_flags = %s,
+                    severity_model = %s,
+                    severity_decision_source = %s,
                     legitimacy_score = %s,
                     legitimacy_label = %s,
                     legitimacy_reasoning = %s,
@@ -1881,6 +1983,7 @@ class PostgresIncidentRepository:
                     review_model = %s,
                     review_batch_id = %s,
                     reviewed_at = %s,
+                    severity_suggested_at = %s,
                     updated_at = current_timestamp
                 where id = %s
                 """,
@@ -1890,6 +1993,14 @@ class PostgresIncidentRepository:
                     headline_en,
                     reality_summary_en,
                     reality_summary_en,
+                    json.dumps(categories),
+                    severity_score,
+                    suggested_severity_score,
+                    severity_confidence,
+                    severity_reasoning,
+                    json.dumps(severity_flags),
+                    severity_model,
+                    severity_decision_source,
                     legitimacy_score,
                     legitimacy_label,
                     legitimacy_reasoning,
@@ -1897,6 +2008,7 @@ class PostgresIncidentRepository:
                     review_model,
                     review_batch_id,
                     reviewed_at,
+                    severity_suggested_at,
                     incident_id,
                 ),
             )
@@ -1916,6 +2028,7 @@ class PostgresIncidentRepository:
                     claimant_name,
                     categories,
                     severity_score,
+                    suggested_severity_score,
                     reality_summary,
                     reality_summary_en,
                     reality_summary_zh,
@@ -1925,11 +2038,19 @@ class PostgresIncidentRepository:
                     review_notes,
                     legitimacy_score,
                     legitimacy_label,
+                    severity_confidence,
+                    severity_reasoning,
+                    severity_flags,
+                    severity_model,
+                    severity_decision_source,
                     legitimacy_reasoning,
                     source_validation_summary,
                     translation_status,
                     review_batch_id,
-                    review_model
+                    review_model,
+                    duplicate_status,
+                    duplicate_of_incident_id,
+                    canonical_incident_id
                 from incident_logs
                 where id = %s
                 """,
@@ -1971,6 +2092,7 @@ class PostgresIncidentRepository:
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
             "severity_score": row["severity_score"],
+            "suggested_severity_score": row["suggested_severity_score"],
             "reality_summary": row["reality_summary"],
             "reality_summary_en": row["reality_summary_en"],
             "reality_summary_zh": row["reality_summary_zh"],
@@ -1980,11 +2102,20 @@ class PostgresIncidentRepository:
             "review_notes": row["review_notes"],
             "legitimacy_score": row["legitimacy_score"],
             "legitimacy_label": row["legitimacy_label"],
+            "severity_confidence": row["severity_confidence"],
+            "severity_reasoning": row["severity_reasoning"],
+            "severity_flags": _parse_text_array(row["severity_flags"]),
+            "severity_model": row["severity_model"],
+            "severity_decision_source": row["severity_decision_source"],
             "legitimacy_reasoning": row["legitimacy_reasoning"],
             "source_validation_summary": row["source_validation_summary"],
             "translation_status": row["translation_status"],
             "review_batch_id": row["review_batch_id"],
             "review_model": row["review_model"],
+            "duplicate_status": row["duplicate_status"],
+            "duplicate_of_incident_id": row["duplicate_of_incident_id"],
+            "canonical_incident_id": row["canonical_incident_id"],
+            "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
             "sources": sources_by_incident[row["id"]],
         }
 
@@ -2033,6 +2164,7 @@ class PostgresIncidentRepository:
                     claimant_name,
                     categories,
                     severity_score,
+                    suggested_severity_score,
                     reality_summary,
                     reality_summary_en,
                     reality_summary_zh,
@@ -2042,11 +2174,19 @@ class PostgresIncidentRepository:
                     review_notes,
                     legitimacy_score,
                     legitimacy_label,
+                    severity_confidence,
+                    severity_reasoning,
+                    severity_flags,
+                    severity_model,
+                    severity_decision_source,
                     legitimacy_reasoning,
                     source_validation_summary,
                     translation_status,
                     review_batch_id,
-                    review_model
+                    review_model,
+                    duplicate_status,
+                    duplicate_of_incident_id,
+                    canonical_incident_id
                 from incident_logs
                 where id = %s
                 """,
@@ -2084,6 +2224,7 @@ class PostgresIncidentRepository:
             "claimant_name": row["claimant_name"],
             "categories": json.loads(row["categories"]),
             "severity_score": row["severity_score"],
+            "suggested_severity_score": row["suggested_severity_score"],
             "reality_summary": row["reality_summary"],
             "reality_summary_en": row["reality_summary_en"],
             "reality_summary_zh": row["reality_summary_zh"],
@@ -2093,11 +2234,20 @@ class PostgresIncidentRepository:
             "review_notes": row["review_notes"],
             "legitimacy_score": row["legitimacy_score"],
             "legitimacy_label": row["legitimacy_label"],
+            "severity_confidence": row["severity_confidence"],
+            "severity_reasoning": row["severity_reasoning"],
+            "severity_flags": _parse_text_array(row["severity_flags"]),
+            "severity_model": row["severity_model"],
+            "severity_decision_source": row["severity_decision_source"],
             "legitimacy_reasoning": row["legitimacy_reasoning"],
             "source_validation_summary": row["source_validation_summary"],
             "translation_status": row["translation_status"],
             "review_batch_id": row["review_batch_id"],
             "review_model": row["review_model"],
+            "duplicate_status": row["duplicate_status"],
+            "duplicate_of_incident_id": row["duplicate_of_incident_id"],
+            "canonical_incident_id": row["canonical_incident_id"],
+            "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
             "sources": sources_by_incident[row["id"]],
         }
 
@@ -2294,3 +2444,15 @@ def _build_public_claim_payload(row: dict[str, Any]) -> dict[str, Any] | None:
         "claim_topic": row["claim_topic"],
         "match_confidence": row["claim_match_confidence"],
     }
+
+
+def _parse_text_array(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if str(item)]

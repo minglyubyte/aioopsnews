@@ -12,14 +12,14 @@ The repository now supports a functional end-to-end MVP slice:
 - daily RSS ingestion and historical backfill workflows
 - manual review queue for approving and correcting incidents
 
-It is not yet a full launch-ready MVP. The main remaining gaps are review audit history plus broader launch-readiness coverage and operations hardening. See `docs/product/mvp-status.md`, `docs/product/mvp-launch-checklist.md`, and `docs/product/launch-readiness-thresholds.md`.
+It is not yet a full launch-ready MVP. The main remaining gaps are review audit history plus broader launch-readiness coverage and operations hardening. The canonical product docs now live in four files: `docs/product/mvp.md`, `docs/product/daily-runner.md`, `docs/product/prod-spec.md`, and `docs/product/database-schema.md`.
 
 ## Repository Layout
 
 - `frontend/` - Vite + React + TypeScript project with lint, test, and build commands.
 - `backend/` - FastAPI service with pytest and Ruff configuration.
 - `infra/` - Supabase schema and scheduled-job runbooks.
-- `docs/product/` - product decisions, MVP status, and launch checklist.
+- `docs/product/` - four canonical product docs covering MVP, daily runner operations, product behavior, and readable schema docs.
 - `.env.example` - Shared environment template for local development.
 
 ## Prerequisites
@@ -113,16 +113,24 @@ cd backend
 ### Backend Workflows
 
 - PostgreSQL-backed repository for local development
-- RSS ingestion with dedupe and `pending_review` persistence
+- RSS ingestion with dedupe plus `pending_review` / `pending_llm_review` persistence
 - enrichment and heuristic claim matching
+- primary LLM review with strict structured output, taxonomy-bound categories, severity suggestion, and approval gating
 - resumable historical backfill with checkpoint and audit files
 - daily ingestion orchestration with retry and run metrics
 - CSV claim import with `python -m app.scripts.import_claims_csv /path/to/claims.csv --dry-run`
+- incident daily runner commands documented in `docs/product/daily-runner.md`
 
 ### Admin Review
 
 - shared-secret protected admin queue
-- editor overrides for status, company, severity, summary, categories, and claim match fields
+- editor overrides for status, company, final severity, summary, categories, and claim match fields
+- model-suggested severity, confidence, reasoning, and high-risk flags visible during review
+
+## Notes
+
+- The review taxonomy is fixed in code and currently includes `Autonomous Systems`, `Hallucinations`, `Job Automation Fails`, `Missed Timelines`, `Model Governance`, and `Privacy/Security`.
+- Model-suggested severity is stored separately from final `severity_score`; a `null` suggestion is valid for rejected or unresolved incidents.
 
 ## Quality Checks
 

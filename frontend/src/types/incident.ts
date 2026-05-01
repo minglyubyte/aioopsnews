@@ -76,6 +76,12 @@ export type AdminIncident = Incident & {
   review_notes?: string | null;
   legitimacy_score?: number | null;
   legitimacy_label?: string | null;
+  suggested_severity_score?: number | null;
+  severity_confidence?: number | null;
+  severity_reasoning?: string | null;
+  severity_flags?: string[];
+  severity_model?: string | null;
+  severity_decision_source?: string | null;
   legitimacy_reasoning?: string | null;
   source_validation_summary?: string | null;
   review_batch_id?: string | null;
@@ -91,7 +97,12 @@ export type AdminIncidentQueueResponse = {
 };
 
 export type AdminIncidentUpdateRequest = {
-  status: "pending_review" | "approved" | "rejected" | "needs_rework";
+  status:
+    | "pending_review"
+    | "pending_editor_review"
+    | "approved"
+    | "rejected"
+    | "needs_rework";
   company_involved: string;
   claimant_name?: string | null;
   categories: string[];

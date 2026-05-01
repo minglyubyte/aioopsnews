@@ -2,7 +2,6 @@ import type {
   DemoIncident,
   DemoMetric,
   DemoPageCopy,
-  DemoSidebarCard,
   LocalizedText,
 } from "./demo-types";
 
@@ -30,6 +29,8 @@ export const demoPageCopy: DemoPageCopy = {
   ],
   latestKicker: localized("Latest incidents", "最新事件"),
   latestTitle: localized("Documented breakdowns", "已记录的失效案例"),
+  detailKicker: localized("Source-backed detail", "来源支撑详情"),
+  detailTitle: localized("Incident detail", "事件详情"),
   claimKicker: localized("Claim vs. reality", "承诺与现实"),
   claimTitle: localized("Spotlight", "聚焦"),
   claimLabel: localized("Claim vs. reality", "承诺与现实"),
@@ -162,22 +163,5 @@ export const demoIncidents: DemoIncident[] = [
     ),
     sourceLabel: localized("Product Ledger", "产品纪事"),
     sourceUrl: "https://example.com/articles/signalloop-delay",
-  },
-];
-
-export const demoSidebarCards: DemoSidebarCard[] = [
-  {
-    title: localized("Editorial standard", "编辑标准"),
-    body: localized(
-      "Every public entry is manually approved and must link to accountable reporting or primary-source material.",
-      "每条公开记录都需经过人工批准，并且必须链接到可追责的报道或一手材料。",
-    ),
-  },
-  {
-    title: localized("Launch posture", "上线姿态"),
-    body: localized(
-      "The current launch model favors fewer, better-documented incidents over broad automation coverage.",
-      "当前上线策略优先选择数量更少但证据更充分的事件，而不是追求更广泛的自动化覆盖。",
-    ),
   },
 ];

@@ -5,7 +5,6 @@ import {
   demoIncidents,
   demoMetrics,
   demoPageCopy,
-  demoSidebarCards,
 } from "./demo-data";
 import type {
   DemoIncident,
@@ -344,37 +343,27 @@ export default function DemoDashboard() {
               </div>
             </article>
           </div>
-        </section>
 
-        <section className="demo-grid">
-          <aside className="demo-rail">
-            <section className="demo-panel">
+          <section className="demo-filter-toolbar">
+            <div className="demo-filter-toolbar-header">
               <p className="demo-kicker">
                 {copyForLocale(locale, demoPageCopy.filterKicker)}
               </p>
               <h3>{copyForLocale(locale, demoPageCopy.filterTitle)}</h3>
-              <div className="demo-filter-chips">
-                {demoPageCopy.filterChips.map((chip) => (
-                  <span className="demo-chip" key={chip.en}>
-                    {copyForLocale(locale, chip)}
-                  </span>
-                ))}
-              </div>
-            </section>
+            </div>
+            <div className="demo-filter-chips demo-filter-toolbar-chips">
+              {demoPageCopy.filterChips.map((chip) => (
+                <span className="demo-chip" key={chip.en}>
+                  {copyForLocale(locale, chip)}
+                </span>
+              ))}
+            </div>
+          </section>
+        </section>
 
-            {demoSidebarCards.map((card) => (
-              <section className="demo-panel" key={card.title.en}>
-                <p className="demo-kicker">
-                  {copyForLocale(locale, card.title)}
-                </p>
-                <h3>{copyForLocale(locale, card.title)}</h3>
-                <p>{copyForLocale(locale, card.body)}</p>
-              </section>
-            ))}
-          </aside>
-
-          <section className="demo-feed">
-            <section className="demo-panel">
+        <section className="demo-content-grid">
+          <section className="demo-feed-column">
+            <section className="demo-panel demo-feed-panel">
               <p className="demo-kicker">
                 {copyForLocale(locale, demoPageCopy.latestKicker)}
               </p>
@@ -417,42 +406,48 @@ export default function DemoDashboard() {
           </section>
 
           <aside className="demo-sidebar">
-            <section className="demo-panel">
+            <section className="demo-panel demo-spotlight" aria-live="polite">
               <p className="demo-kicker">
-                {copyForLocale(locale, demoPageCopy.claimKicker)}
+                {copyForLocale(locale, demoPageCopy.spotlightKicker)}
               </p>
-              <h3>{copyForLocale(locale, demoPageCopy.claimTitle)}</h3>
-              <div className="demo-claim">
-                <div className="demo-source-label">
-                  {copyForLocale(locale, demoPageCopy.claimLabel)}
+              <h2>{copyForLocale(locale, demoPageCopy.spotlightTitle)}</h2>
+              <article className="demo-spotlight-card">
+                <div className="demo-card-meta">
+                  {selectedIncident.company} •{" "}
+                  {copyForLocale(locale, selectedIncident.date)} •{" "}
+                  {copyForLocale(locale, selectedIncident.severity)}
                 </div>
-                <blockquote>
-                  “{copyForLocale(locale, demoIncidents[0].claimQuote!)}”
-                </blockquote>
-                <p>{copyForLocale(locale, demoIncidents[0].claimMeta!)}</p>
-              </div>
-            </section>
-
-            <section className="demo-panel">
-              <p className="demo-kicker">
-                {copyForLocale(locale, demoPageCopy.sourceCredibilityKicker)}
-              </p>
-              <h3>
-                {copyForLocale(locale, demoPageCopy.sourceCredibilityTitle)}
-              </h3>
-              <p>{copyForLocale(locale, demoPageCopy.sourceCredibilityBody)}</p>
+                <h3>{copyForLocale(locale, selectedIncident.headline)}</h3>
+                <p>{copyForLocale(locale, selectedIncident.summary)}</p>
+                <div className="demo-tag-row">
+                  {selectedIncident.categories.map((category) => (
+                    <span className="demo-tag" key={category.en}>
+                      {copyForLocale(locale, category)}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  className="demo-card-button demo-spotlight-button"
+                  type="button"
+                  onClick={() => setSelectedIncidentId(selectedIncident.id)}
+                >
+                  {locale === "zh"
+                    ? `打开${copyForLocale(locale, selectedIncident.headline)}的来源详情`
+                    : `Open source-backed detail for ${copyForLocale(locale, selectedIncident.headline)}`}
+                </button>
+              </article>
             </section>
           </aside>
         </section>
 
-        <section className="demo-spotlight">
+        <section className="demo-panel demo-detail-section">
           <p className="demo-kicker">
-            {copyForLocale(locale, demoPageCopy.spotlightKicker)}
+            {copyForLocale(locale, demoPageCopy.detailKicker)}
           </p>
-          <h2>{copyForLocale(locale, demoPageCopy.spotlightTitle)}</h2>
+          <h2>{copyForLocale(locale, demoPageCopy.detailTitle)}</h2>
 
-          <div className="demo-spotlight-grid">
-            <article className="demo-spotlight-card">
+          <div className="demo-detail-grid">
+            <article className="demo-detail-card">
               <div className="demo-card-meta">
                 {selectedIncident.company} •{" "}
                 {copyForLocale(locale, selectedIncident.date)} •{" "}
@@ -467,9 +462,20 @@ export default function DemoDashboard() {
                   </span>
                 ))}
               </div>
+              {selectedIncident.claimQuote && selectedIncident.claimMeta ? (
+                <section className="demo-claim">
+                  <div className="demo-source-label">
+                    {copyForLocale(locale, demoPageCopy.claimLabel)}
+                  </div>
+                  <blockquote>
+                    “{copyForLocale(locale, selectedIncident.claimQuote)}”
+                  </blockquote>
+                  <p>{copyForLocale(locale, selectedIncident.claimMeta)}</p>
+                </section>
+              ) : null}
             </article>
 
-            <aside className="demo-panel">
+            <aside className="demo-source-panel">
               <p className="demo-kicker">
                 {copyForLocale(locale, demoPageCopy.spotlightSourcesKicker)}
               </p>
@@ -482,6 +488,7 @@ export default function DemoDashboard() {
               <a className="demo-link" href={selectedIncident.sourceUrl}>
                 {selectedIncident.sourceUrl}
               </a>
+              <p>{copyForLocale(locale, demoPageCopy.sourceCredibilityBody)}</p>
             </aside>
           </div>
         </section>

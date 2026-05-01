@@ -241,7 +241,9 @@ export default function InternalReviewPage() {
                     type="button"
                     onClick={() => setActiveReviewId(incident.id)}
                   >
-                    <span className="public-archive-item-date">{incident.status}</span>
+                    <span className="public-archive-item-date">
+                      {formatQueueStatus(incident.status)}
+                    </span>
                     <span className="public-archive-item-title">
                       {incident.headline_en ?? incident.headline}
                     </span>
@@ -281,6 +283,30 @@ export default function InternalReviewPage() {
                 ) : null}
                 {activeIncident.legitimacy_label ? (
                   <p className="body-copy">{activeIncident.legitimacy_label}</p>
+                ) : null}
+                {activeIncident.suggested_severity_score ? (
+                  <div className="body-copy">
+                    <p>
+                      Suggested severity {activeIncident.suggested_severity_score}
+                    </p>
+                    {activeIncident.severity_confidence !== null &&
+                    activeIncident.severity_confidence !== undefined ? (
+                      <p>
+                        Confidence{" "}
+                        {Math.round(activeIncident.severity_confidence * 100)}%
+                      </p>
+                    ) : null}
+                    {activeIncident.severity_flags &&
+                    activeIncident.severity_flags.length > 0 ? (
+                      <p>Flags: {activeIncident.severity_flags.join(", ")}</p>
+                    ) : null}
+                    {activeIncident.severity_reasoning ? (
+                      <p>{activeIncident.severity_reasoning}</p>
+                    ) : null}
+                    {activeIncident.severity_model ? (
+                      <p>Suggested by {activeIncident.severity_model}</p>
+                    ) : null}
+                  </div>
                 ) : null}
                 {activeIncident.legitimacy_reasoning ? (
                   <p className="body-copy">{activeIncident.legitimacy_reasoning}</p>
@@ -388,7 +414,17 @@ function createReviewDraft(incident: AdminIncident): ReviewDraft {
   return {
     company: incident.company_involved,
     category: incident.categories[0] ?? "",
-    severity: incident.severity_score,
+    severity: incident.suggested_severity_score ?? incident.severity_score,
     reviewNotes: incident.review_notes ?? "",
   };
+}
+
+function formatQueueStatus(status: string): string {
+  if (status === "pending_editor_review") {
+    return "pending editor review";
+  }
+  if (status === "pending_llm_escalation") {
+    return "pending llm escalation";
+  }
+  return status;
 }

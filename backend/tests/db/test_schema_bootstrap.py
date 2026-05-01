@@ -11,9 +11,22 @@ from app.models.source import IncidentSourceRecord
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def test_product_docs_are_reorganized_into_four_canonical_files() -> None:
+    product_docs = sorted(
+        path.name for path in (REPO_ROOT / "docs" / "product").glob("*.md")
+    )
+
+    assert product_docs == [
+        "daily-runner.md",
+        "database-schema.md",
+        "mvp.md",
+        "prod-spec.md",
+    ]
+
+
 def test_product_decision_record_captures_mvp_foundation() -> None:
     decision_record = (
-        REPO_ROOT / "docs" / "product" / "mvp-foundation-decisions.md"
+        REPO_ROOT / "docs" / "product" / "prod-spec.md"
     ).read_text()
 
     lowered = decision_record.lower()
@@ -35,9 +48,15 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "create table if not exists incident_sources" in normalized
     assert "references claims(id)" in normalized
     assert "severity_score integer not null" in normalized
+    assert "suggested_severity_score integer" in normalized
     assert "source_kind text not null" in normalized
     assert "external_id text" in normalized
     assert "incident_topic text" in normalized
+    assert "severity_confidence double precision" in normalized
+    assert "severity_reasoning text" in normalized
+    assert "severity_flags text" in normalized
+    assert "severity_model text" in normalized
+    assert "severity_decision_source text" in normalized
     assert "legitimacy_score double precision" in normalized
     assert "legitimacy_label text" in normalized
     assert "legitimacy_reasoning text" in normalized
@@ -56,6 +75,7 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "embedding_model text" in normalized
     assert "embedding_vector text" in normalized
     assert "reviewed_at timestamptz" in normalized
+    assert "severity_suggested_at timestamptz" in normalized
     assert "canonical_url text" in normalized
     assert "fetch_status text" in normalized
     assert "http_status integer" in normalized
@@ -81,7 +101,13 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     assert "create table if not exists incident_sources" in migration_sql
     assert "external_id text" in migration_sql
     assert "incident_topic text" in migration_sql
+    assert "suggested_severity_score integer" in migration_sql
     assert "legitimacy_score" in migration_sql
+    assert "severity_confidence" in migration_sql
+    assert "severity_reasoning text" in migration_sql
+    assert "severity_flags text" in migration_sql
+    assert "severity_model text" in migration_sql
+    assert "severity_decision_source text" in migration_sql
     assert "headline_zh text" in migration_sql
     assert "translation_status text" in migration_sql
     assert "review_batch_id text" in migration_sql
@@ -113,11 +139,17 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         claimant_name="OpenAI",
         categories=["Job Automation Fails", "Missed Timelines"],
         severity_score=4,
+        suggested_severity_score=3,
         reality_summary="A supervised launch produced repeated escalations.",
         reality_summary_en="A supervised launch produced repeated escalations.",
         reality_summary_zh="一次受监督的发布引发了反复升级。",
-        status="pending_review",
+        status="pending_editor_review",
         confidence_score=0.82,
+        severity_confidence=0.88,
+        severity_reasoning="The incident caused meaningful operational disruption that required manual intervention.",
+        severity_flags=["core_system_outage"],
+        severity_model="gpt-5.4-mini",
+        severity_decision_source="editor",
         review_notes="Needs editor confirmation on severity.",
         ingestion_run_id="run-2026-04-29",
         matched_claim_id=claim.id,
@@ -139,6 +171,7 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         embedding_vector=[0.1, 0.9],
         created_at=datetime(2026, 4, 29, 12, 0, 0),
         reviewed_at=datetime(2026, 4, 29, 12, 2, 0),
+        severity_suggested_at=datetime(2026, 4, 29, 12, 1, 0),
         translated_at=datetime(2026, 4, 29, 12, 3, 0),
         updated_at=datetime(2026, 4, 29, 12, 5, 0),
     )
@@ -159,9 +192,11 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     assert incident.incident_topic == "job automation"
     assert incident.matched_claim_id == claim.id
     assert incident.legitimacy_score == 0.91
+    assert incident.suggested_severity_score == 3
     assert incident.translation_status == "completed"
     assert incident.review_batch_id == "batch-123"
     assert incident.review_model == "gpt-5.2"
+    assert incident.severity_decision_source == "editor"
     assert incident.duplicate_status == "suspected"
     assert incident.canonical_incident_id == "incident-0"
     assert incident.embedding_model == "text-embedding-3-small"

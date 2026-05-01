@@ -37,6 +37,8 @@ export type DemoPageCopy = {
   filterChips: LocalizedText[];
   latestKicker: LocalizedText;
   latestTitle: LocalizedText;
+  detailKicker: LocalizedText;
+  detailTitle: LocalizedText;
   claimKicker: LocalizedText;
   claimTitle: LocalizedText;
   claimLabel: LocalizedText;

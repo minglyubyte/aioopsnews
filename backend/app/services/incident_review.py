@@ -7,6 +7,10 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.core.incident_taxonomy import (
+    INCIDENT_CATEGORY_TAXONOMY,
+    normalize_incident_categories,
+)
 from app.db.repository_protocol import IncidentRepository
 from app.services.incident_deduplication import (
     IncidentDuplicateJudgeClient,
@@ -17,6 +21,27 @@ from app.services.incident_translation import (
     IncidentTranslationClient,
     translate_incident_copy,
 )
+
+AUTO_APPROVAL_SEVERITY_THRESHOLD = 2
+AUTO_APPROVAL_LEGITIMACY_THRESHOLD = 0.90
+AUTO_APPROVAL_SEVERITY_CONFIDENCE_THRESHOLD = 0.85
+ESCALATION_SEVERITY_CONFIDENCE_THRESHOLD = 0.75
+HIGH_RISK_SEVERITY_FLAGS = {
+    "safety",
+    "privacy_breach",
+    "legal_or_regulatory",
+    "financial_harm",
+    "core_system_outage",
+    "unclear_real_world_impact",
+}
+QUALITATIVE_SEVERITY_CONFIDENCE_SCORES = {
+    "very low": 0.1,
+    "low": 0.25,
+    "medium": 0.6,
+    "moderate": 0.6,
+    "high": 0.9,
+    "very high": 0.98,
+}
 
 
 @dataclass(frozen=True)
@@ -47,8 +72,13 @@ class IncidentReviewResult:
     company_confirmed: bool
     headline_en: str
     reality_summary_en: str
-    needs_escalation: bool
-    reviewed_model: str
+    categories: list[str] | None = None
+    suggested_severity_score: int | None = None
+    severity_confidence: float | None = None
+    severity_reasoning: str | None = None
+    severity_flags: list[str] | None = None
+    needs_escalation: bool = False
+    reviewed_model: str = ""
 
 
 @dataclass(frozen=True)
@@ -145,7 +175,7 @@ class OpenAIIncidentReviewClient:
                     "url": "/v1/chat/completions",
                     "body": {
                         "model": model,
-                        "response_format": {"type": "json_object"},
+                        "response_format": _build_review_response_format(),
                         "messages": _build_review_messages(incident),
                     },
                 }
@@ -220,7 +250,7 @@ class OpenAIIncidentReviewClient:
             "/chat/completions",
             {
                 "model": model,
-                "response_format": {"type": "json_object"},
+                "response_format": _build_review_response_format(),
                 "messages": _build_review_messages(incident),
             },
         )
@@ -330,7 +360,7 @@ def reconcile_incident_review_batch(
     embedding_model: str,
     duplicate_judge_model: str,
     escalation_model: str,
-    approval_threshold: float = 0.90,
+    approval_threshold: float = AUTO_APPROVAL_LEGITIMACY_THRESHOLD,
 ) -> IncidentReviewBatchReconciliation:
     incidents_by_id = {
         incident["id"]: incident
@@ -346,17 +376,35 @@ def reconcile_incident_review_batch(
         if incident is None:
             continue
 
-        final_result = result
-        if _should_escalate(result, approval_threshold=approval_threshold):
+        normalized_result = _normalize_review_result(result, incident=incident)
+        final_result = normalized_result
+        if _should_escalate(normalized_result, approval_threshold=approval_threshold):
             final_result = escalation_client.review_incident(
                 incident=incident,
                 model=escalation_model,
             )
+            final_result = _normalize_review_result(final_result, incident=incident)
             escalated += 1
 
         final_status = _resolve_final_status(
             final_result,
             approval_threshold=approval_threshold,
+        )
+        final_severity_score = (
+            final_result.suggested_severity_score
+            if final_status == "approved"
+            and final_result.suggested_severity_score is not None
+            else incident.get("severity_score")
+        )
+        severity_decision_source = (
+            "escalation_llm"
+            if final_status == "approved"
+            and final_result.reviewed_model == escalation_model
+            and final_result.suggested_severity_score is not None
+            else "primary_llm"
+            if final_status == "approved"
+            and final_result.suggested_severity_score is not None
+            else None
         )
         repository.apply_incident_review_result(
             incident_id=incident["id"],
@@ -367,6 +415,15 @@ def reconcile_incident_review_batch(
             source_validation_summary=final_result.source_quality_summary,
             headline_en=final_result.headline_en,
             reality_summary_en=final_result.reality_summary_en,
+            categories=final_result.categories or list(incident.get("categories", [])),
+            severity_score=final_severity_score,
+            suggested_severity_score=final_result.suggested_severity_score,
+            severity_confidence=final_result.severity_confidence,
+            severity_reasoning=final_result.severity_reasoning,
+            severity_flags=final_result.severity_flags or [],
+            severity_model=final_result.reviewed_model,
+            severity_decision_source=severity_decision_source,
+            severity_suggested_at=_now_isoformat(),
             review_model=final_result.reviewed_model,
             review_batch_id=batch_id,
             reviewed_at=_now_isoformat(),
@@ -376,10 +433,18 @@ def reconcile_incident_review_batch(
                 "status": final_status,
                 "headline_en": final_result.headline_en,
                 "reality_summary_en": final_result.reality_summary_en,
+                "categories": final_result.categories or list(incident.get("categories", [])),
                 "legitimacy_score": final_result.score,
                 "legitimacy_label": final_result.verdict,
                 "legitimacy_reasoning": final_result.reasoning,
                 "source_validation_summary": final_result.source_quality_summary,
+                "severity_score": final_severity_score,
+                "suggested_severity_score": final_result.suggested_severity_score,
+                "severity_confidence": final_result.severity_confidence,
+                "severity_reasoning": final_result.severity_reasoning,
+                "severity_flags": final_result.severity_flags or [],
+                "severity_model": final_result.reviewed_model,
+                "severity_decision_source": severity_decision_source,
                 "review_model": final_result.reviewed_model,
             }
         )
@@ -437,9 +502,15 @@ def _should_escalate(
 ) -> bool:
     if result.needs_escalation:
         return True
+    if (not result.date_confirmed) or (not result.company_confirmed):
+        return True
+    if result.severity_confidence is not None and (
+        result.severity_confidence < ESCALATION_SEVERITY_CONFIDENCE_THRESHOLD
+    ):
+        return True
     if result.verdict == "approved":
         return result.score < approval_threshold
-    return (not result.date_confirmed) or (not result.company_confirmed)
+    return result.verdict not in {"rejected", "pending_review"}
 
 
 def _resolve_final_status(
@@ -449,8 +520,10 @@ def _resolve_final_status(
 ) -> str:
     if result.verdict == "rejected":
         return "rejected"
-    if result.verdict == "approved" and result.score >= approval_threshold:
+    if _can_auto_approve(result, approval_threshold=approval_threshold):
         return "approved"
+    if _requires_editor_review(result):
+        return "pending_editor_review"
     return "pending_review"
 
 
@@ -462,7 +535,23 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 "You are an editorial reviewer for an AI incident database. "
                 "Return JSON only with keys: verdict, score, reasoning, "
                 "source_quality_summary, date_confirmed, company_confirmed, "
-                "headline_en, reality_summary_en."
+                "headline_en, reality_summary_en, categories, suggested_severity_score, "
+                "severity_confidence, severity_reasoning, severity_flags. "
+                "Return severity_confidence as a number between 0 and 1, "
+                "not a word or label. Choose one or more categories from the "
+                "approved taxonomy only. "
+                "Use this impact-first severity rubric: 1=minor, quickly "
+                "reversible, no meaningful external harm; 2=real but limited "
+                "impact, localized and reversible; 3=clear operational or "
+                "business impact requiring rollback or manual intervention; "
+                "4=major real-world or sensitive-domain harm involving privacy, "
+                "legal, regulatory, financial, or broad safety consequences; "
+                "5=catastrophic irreversible harm or major systemic safety "
+                "failure. Safety-critical incidents start at 4 unless clearly "
+                "minor. Serious injury or death is 5. Broad privacy breach, "
+                "major legal or regulatory action, or major financial harm is "
+                "at least 4. Near misses in safety-critical systems may raise "
+                "severity by one level, but do not replace actual harm."
             ),
         },
         {
@@ -471,11 +560,12 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 {
                     "incident_id": incident["id"],
                     "external_id": incident.get("external_id"),
-                    "company": incident["company_involved"],
-                    "incident_topic": incident.get("incident_topic"),
-                    "incident_date": incident["date_logged"],
-                    "headline": incident["headline"],
-                    "reality_summary": incident["reality_summary"],
+                        "company": incident["company_involved"],
+                        "incident_topic": incident.get("incident_topic"),
+                        "approved_categories": list(INCIDENT_CATEGORY_TAXONOMY),
+                        "incident_date": incident["date_logged"],
+                        "headline": incident["headline"],
+                        "reality_summary": incident["reality_summary"],
                     "editorial_input": {
                         "legitimacy_flag": incident.get("legitimacy_flag"),
                         "confidence_level": incident.get("confidence_level"),
@@ -497,6 +587,71 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
+def _build_review_response_format() -> dict[str, Any]:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "incident_review_result",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "verdict": {
+                        "type": "string",
+                        "enum": ["approved", "rejected", "pending_review"],
+                    },
+                    "score": {"type": "number", "minimum": 0, "maximum": 1},
+                    "reasoning": {"type": "string"},
+                    "source_quality_summary": {"type": "string"},
+                    "date_confirmed": {"type": "boolean"},
+                    "company_confirmed": {"type": "boolean"},
+                    "headline_en": {"type": "string"},
+                    "reality_summary_en": {"type": "string"},
+                    "categories": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "string",
+                            "enum": list(INCIDENT_CATEGORY_TAXONOMY),
+                        },
+                    },
+                    "suggested_severity_score": {
+                        "type": ["integer", "null"],
+                        "minimum": 1,
+                        "maximum": 5,
+                    },
+                    "severity_confidence": {
+                        "type": ["number", "null"],
+                        "minimum": 0,
+                        "maximum": 1,
+                    },
+                    "severity_reasoning": {"type": ["string", "null"]},
+                    "severity_flags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": [
+                    "verdict",
+                    "score",
+                    "reasoning",
+                    "source_quality_summary",
+                    "date_confirmed",
+                    "company_confirmed",
+                    "headline_en",
+                    "reality_summary_en",
+                    "categories",
+                    "suggested_severity_score",
+                    "severity_confidence",
+                    "severity_reasoning",
+                    "severity_flags",
+                ],
+            },
+        },
+    }
+
+
 def _parse_review_result(
     *,
     incident_id: str,
@@ -504,6 +659,10 @@ def _parse_review_result(
     content: str,
 ) -> IncidentReviewResult:
     payload = json.loads(content)
+    categories, invalid_categories = _parse_review_categories(payload.get("categories"))
+    severity_confidence, invalid_severity_confidence = (
+        _parse_optional_severity_confidence(payload.get("severity_confidence"))
+    )
     return IncidentReviewResult(
         incident_id=incident_id,
         verdict=payload["verdict"],
@@ -514,9 +673,126 @@ def _parse_review_result(
         company_confirmed=bool(payload["company_confirmed"]),
         headline_en=payload["headline_en"],
         reality_summary_en=payload["reality_summary_en"],
-        needs_escalation=bool(payload.get("needs_escalation", False)),
+        categories=categories,
+        suggested_severity_score=(
+            int(payload["suggested_severity_score"])
+            if payload.get("suggested_severity_score") is not None
+            else None
+        ),
+        severity_confidence=severity_confidence,
+        severity_reasoning=payload.get("severity_reasoning"),
+        severity_flags=[
+            str(flag) for flag in payload.get("severity_flags", []) if str(flag)
+        ],
+        needs_escalation=(
+            bool(payload.get("needs_escalation", False))
+            or invalid_categories
+            or invalid_severity_confidence
+        ),
         reviewed_model=model,
     )
+
+
+def _parse_review_categories(value: Any) -> tuple[list[str] | None, bool]:
+    if not isinstance(value, list):
+        return None, True
+    categories = normalize_incident_categories(
+        [str(category) for category in value if isinstance(category, str)]
+    )
+    if len(categories) != len(value) or not categories:
+        return None, True
+    return categories, False
+
+
+def _parse_optional_severity_confidence(value: Any) -> tuple[float | None, bool]:
+    if value is None:
+        return None, False
+    if isinstance(value, bool):
+        return None, True
+    if isinstance(value, (int, float)):
+        return _normalize_confidence_number(float(value))
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None, False
+        normalized = raw.lower().replace("_", " ").replace("-", " ")
+        if normalized in QUALITATIVE_SEVERITY_CONFIDENCE_SCORES:
+            return QUALITATIVE_SEVERITY_CONFIDENCE_SCORES[normalized], False
+        if raw.endswith("%"):
+            try:
+                return _normalize_confidence_number(float(raw[:-1]) / 100.0)
+            except ValueError:
+                return None, True
+        try:
+            return _normalize_confidence_number(float(raw))
+        except ValueError:
+            return None, True
+    return None, True
+
+
+def _normalize_confidence_number(value: float) -> tuple[float | None, bool]:
+    if 0.0 <= value <= 1.0:
+        return value, False
+    if 1.0 < value <= 100.0:
+        return value / 100.0, False
+    return None, True
+
+
+def _normalize_review_result(
+    result: IncidentReviewResult,
+    *,
+    incident: dict[str, Any],
+) -> IncidentReviewResult:
+    fallback_severity = incident.get("suggested_severity_score")
+    fallback_categories = list(incident.get("categories", []))
+    return IncidentReviewResult(
+        incident_id=result.incident_id,
+        verdict=result.verdict,
+        score=result.score,
+        reasoning=result.reasoning,
+        source_quality_summary=result.source_quality_summary,
+        date_confirmed=result.date_confirmed,
+        company_confirmed=result.company_confirmed,
+        headline_en=result.headline_en,
+        reality_summary_en=result.reality_summary_en,
+        categories=result.categories or fallback_categories,
+        suggested_severity_score=result.suggested_severity_score or fallback_severity,
+        severity_confidence=result.severity_confidence,
+        severity_reasoning=result.severity_reasoning,
+        severity_flags=list(result.severity_flags or []),
+        needs_escalation=result.needs_escalation,
+        reviewed_model=result.reviewed_model,
+    )
+
+
+def _can_auto_approve(
+    result: IncidentReviewResult,
+    *,
+    approval_threshold: float,
+) -> bool:
+    if result.verdict != "approved":
+        return False
+    if result.score < approval_threshold:
+        return False
+    if result.suggested_severity_score is None:
+        return result.date_confirmed and result.company_confirmed
+    if result.suggested_severity_score > AUTO_APPROVAL_SEVERITY_THRESHOLD:
+        return False
+    if result.severity_confidence is None:
+        return False
+    if result.severity_confidence < AUTO_APPROVAL_SEVERITY_CONFIDENCE_THRESHOLD:
+        return False
+    if (not result.date_confirmed) or (not result.company_confirmed):
+        return False
+    return not any(flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or [])
+
+
+def _requires_editor_review(result: IncidentReviewResult) -> bool:
+    if result.suggested_severity_score is None:
+        return False
+    if result.suggested_severity_score is not None and result.suggested_severity_score >= 3:
+        return True
+    return any(flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or [])
 
 
 def _extract_evidence_text(html: str) -> str:

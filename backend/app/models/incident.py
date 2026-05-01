@@ -7,8 +7,10 @@ from pydantic import BaseModel, Field
 
 IncidentStatus = Literal[
     "pending_llm_review",
+    "pending_llm_escalation",
     "pending_duplicate_review",
     "pending_review",
+    "pending_editor_review",
     "approved",
     "rejected",
     "duplicate_confirmed",
@@ -29,12 +31,18 @@ class IncidentRecord(BaseModel):
     claimant_name: str | None = None
     categories: list[str] = Field(default_factory=list)
     severity_score: int = Field(ge=1, le=5)
+    suggested_severity_score: int | None = Field(default=None, ge=1, le=5)
     reality_summary: str
     reality_summary_en: str | None = None
     reality_summary_zh: str | None = None
     status: IncidentStatus = "pending_review"
     ingestion_run_id: str | None = None
     confidence_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    severity_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    severity_reasoning: str | None = None
+    severity_flags: list[str] = Field(default_factory=list)
+    severity_model: str | None = None
+    severity_decision_source: str | None = None
     review_notes: str | None = None
     matched_claim_id: str | None = None
     claim_match_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -55,5 +63,6 @@ class IncidentRecord(BaseModel):
     embedding_vector: list[float] | None = None
     created_at: datetime | None = None
     reviewed_at: datetime | None = None
+    severity_suggested_at: datetime | None = None
     translated_at: datetime | None = None
     updated_at: datetime | None = None

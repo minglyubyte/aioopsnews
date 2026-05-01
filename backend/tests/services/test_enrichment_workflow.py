@@ -25,7 +25,7 @@ def test_summarizer_produces_neutral_two_sentence_summary() -> None:
     assert "must" not in summary.lower()
 
 
-def test_classifier_returns_structured_category_severity_and_company() -> None:
+def test_classifier_returns_structured_category_and_company() -> None:
     classification = classify_incident(
         headline="AssistCo support bot leaks internal notes",
         source_summary=(
@@ -36,7 +36,6 @@ def test_classifier_returns_structured_category_severity_and_company() -> None:
 
     assert classification.company_involved == "AssistCo"
     assert classification.categories == ["Privacy/Security"]
-    assert classification.severity_score == 4
     assert 0.0 < classification.confidence_score <= 1.0
 
 

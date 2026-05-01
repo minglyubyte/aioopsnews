@@ -3,12 +3,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.core.incident_taxonomy import (
+    CATEGORY_AUTONOMOUS_SYSTEMS,
+    CATEGORY_HALLUCINATIONS,
+    CATEGORY_MISSED_TIMELINES,
+    CATEGORY_PRIVACY_SECURITY,
+)
 
 @dataclass(frozen=True)
 class IncidentClassification:
     company_involved: str
     categories: list[str]
-    severity_score: int
     confidence_score: float
 
 
@@ -28,8 +33,7 @@ def classify_incident(*, headline: str, source_summary: str) -> IncidentClassifi
     ):
         return IncidentClassification(
             company_involved=company_involved,
-            categories=["Privacy/Security"],
-            severity_score=4,
+            categories=[CATEGORY_PRIVACY_SECURITY],
             confidence_score=0.87,
         )
 
@@ -39,22 +43,19 @@ def classify_incident(*, headline: str, source_summary: str) -> IncidentClassifi
     ):
         return IncidentClassification(
             company_involved=company_involved,
-            categories=["Autonomous Systems"],
-            severity_score=3,
+            categories=[CATEGORY_AUTONOMOUS_SYSTEMS],
             confidence_score=0.82,
         )
 
     if any(keyword in combined_text for keyword in ["timeline", "delay", "late"]):
         return IncidentClassification(
             company_involved=company_involved,
-            categories=["Missed Timelines"],
-            severity_score=2,
+            categories=[CATEGORY_MISSED_TIMELINES],
             confidence_score=0.74,
         )
 
     return IncidentClassification(
         company_involved=company_involved,
-        categories=["Hallucinations"],
-        severity_score=2,
+        categories=[CATEGORY_HALLUCINATIONS],
         confidence_score=0.61,
     )

@@ -204,11 +204,6 @@ describe("App", () => {
     ).toBeGreaterThan(0);
     expect(
       screen.getByRole("heading", {
-        name: "Spotlight",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", {
         name: "Incident spotlight",
       }),
     ).toBeInTheDocument();

@@ -37,7 +37,7 @@ function buildAdminIncident(
       overrides.reality_summary ??
       "A support automation rollout leaked internal notes into user-facing replies.",
     reality_summary_zh: overrides.reality_summary_zh ?? null,
-    status: overrides.status ?? "pending_review",
+    status: overrides.status ?? "pending_editor_review",
     translation_status: overrides.translation_status ?? "pending",
     matched_claim: overrides.matched_claim ?? null,
     sources: overrides.sources ?? [],
@@ -46,6 +46,14 @@ function buildAdminIncident(
     review_notes: overrides.review_notes ?? "Needs editor decision.",
     legitimacy_score: overrides.legitimacy_score ?? 0.92,
     legitimacy_label: overrides.legitimacy_label ?? "high_confidence",
+    suggested_severity_score: overrides.suggested_severity_score ?? 3,
+    severity_confidence: overrides.severity_confidence ?? 0.88,
+    severity_reasoning:
+      overrides.severity_reasoning ??
+      "The incident caused meaningful operational disruption that required staff intervention.",
+    severity_flags: overrides.severity_flags ?? ["core_system_outage"],
+    severity_model: overrides.severity_model ?? "gpt-5.4-mini",
+    severity_decision_source: overrides.severity_decision_source ?? null,
     legitimacy_reasoning:
       overrides.legitimacy_reasoning ??
       "Three credible sources agree on the same event and date.",
@@ -136,6 +144,14 @@ describe("InternalReviewPage", () => {
     ).toBeInTheDocument();
 
     expect(screen.getByText("high_confidence")).toBeInTheDocument();
+    expect(screen.getByText(/Suggested severity 3/i)).toBeInTheDocument();
+    expect(screen.getByText(/Confidence 88%/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The incident caused meaningful operational disruption that required staff intervention.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Flags: core_system_outage/i)).toBeInTheDocument();
     expect(
       screen.getByText("Three credible sources agree on the same event and date."),
     ).toBeInTheDocument();
@@ -159,7 +175,7 @@ describe("InternalReviewPage", () => {
           status: "approved",
           company_involved: "RoboFleet",
           categories: ["Privacy/Security"],
-          severity_score: 4,
+          severity_score: 3,
         }),
       );
     });

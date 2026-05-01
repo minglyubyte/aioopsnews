@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -224,6 +225,12 @@ describe("PublicDashboardPage", () => {
     expect(
       within(archiveControls).getByLabelText("Filter by company"),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("heading", { name: "Incident signals" }).closest("section") as HTMLElement).getByRole(
+        "heading",
+        { name: "Archive controls" },
+      ),
+    ).toBeInTheDocument();
 
     const archive = screen.getByRole("region", { name: "Incident archive" });
     expect(
@@ -278,6 +285,9 @@ describe("PublicDashboardPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "中文" }));
 
     expect(
+      screen.getByRole("heading", { name: "AI 现实校验" }),
+    ).toBeInTheDocument();
+    expect(
       within(spotlight as HTMLElement).getByRole("heading", {
         name: "AssistCo 助手泄露了私密账单备注",
       }),
@@ -287,10 +297,24 @@ describe("PublicDashboardPage", () => {
         name: "RoboFleet 机器人试点因导航失误而回滚",
       }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "事件信号" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "档案筛选" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("你是否也受够了这样的标题？"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "我们想提醒你，AI 并不完美，所以放轻松，不要恐慌。",
+      ),
+    ).toBeInTheDocument();
 
     fireEvent.click(
       within(spotlight as HTMLElement).getByRole("button", {
-        name: /Open source-backed detail for AssistCo 助手泄露了私密账单备注/i,
+        name: /打开\s*AssistCo 助手泄露了私密账单备注的来源详情/i,
       }),
     );
 
@@ -299,7 +323,7 @@ describe("PublicDashboardPage", () => {
     });
 
     expect(
-      within(detail as HTMLElement).getByText("Claim vs. reality"),
+      within(detail as HTMLElement).getByText("声明 vs. 现实"),
     ).toBeInTheDocument();
     expect(
       within(detail as HTMLElement).getByText(
@@ -397,5 +421,34 @@ describe("PublicDashboardPage", () => {
         name: "Warehouse classifier reroutes medical inventory",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("renders a public theme switch, defaults to light, and persists dark mode after toggle", async () => {
+    mockedFetchIncidentFeed.mockResolvedValue({
+      items: [buildIncident()],
+    });
+    mockedFetchIncidentDetail.mockResolvedValue(buildIncident());
+
+    render(<PublicDashboardPage />);
+
+    expect(
+      await screen.findByRole("group", { name: "Reader theme switch" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("main")).toHaveAttribute("data-theme", "light");
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    });
+
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("main")).toHaveAttribute("data-theme", "dark");
+    expect(window.localStorage.getItem("ai-reality-check-theme")).toBe("dark");
   });
 });

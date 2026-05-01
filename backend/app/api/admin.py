@@ -13,7 +13,13 @@ from app.services.incident_translation import translate_incident_copy
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-ReviewStatus = Literal["pending_review", "approved", "rejected", "needs_rework"]
+ReviewStatus = Literal[
+    "pending_review",
+    "pending_editor_review",
+    "approved",
+    "rejected",
+    "needs_rework",
+]
 
 
 class AdminIncidentResponse(BaseModel):
@@ -27,6 +33,12 @@ class AdminIncidentResponse(BaseModel):
     claimant_name: str | None = None
     categories: list[str]
     severity_score: int
+    suggested_severity_score: int | None = None
+    severity_confidence: float | None = None
+    severity_reasoning: str | None = None
+    severity_flags: list[str] = Field(default_factory=list)
+    severity_model: str | None = None
+    severity_decision_source: str | None = None
     reality_summary: str
     reality_summary_en: str | None = None
     reality_summary_zh: str | None = None
