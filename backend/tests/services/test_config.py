@@ -156,3 +156,26 @@ def test_get_settings_prefers_provider_neutral_primary_review_values(
     assert settings.openai_primary_review_model == "deepseek-v4-flash"
     assert settings.deepseek_api_key == "deepseek-key"
     assert settings.openai_api_key == "openai-key"
+
+
+def test_get_settings_does_not_reuse_openai_key_for_primary_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    backend_dir = repo_root / "backend"
+    backend_dir.mkdir(parents=True)
+    (repo_root / ".env").write_text(
+        "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_reality_check\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(backend_dir)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.delenv("PRIMARY_REVIEW_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    settings = get_settings()
+
+    assert settings.openai_api_key == "openai-key"
+    assert settings.primary_review_api_key is None

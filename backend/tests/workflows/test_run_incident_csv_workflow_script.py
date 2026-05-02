@@ -140,3 +140,101 @@ def test_workflow_script_logs_start_and_finish(
     assert workflow_calls[0]["primary_model"] == "deepseek-v4-flash"
     stdout = capsys.readouterr().out
     assert json.loads(stdout) == summary
+
+
+def test_workflow_script_does_not_send_openai_key_to_deepseek_primary_client(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    repository = _StubRepository()
+    review_client_calls: list[dict[str, str]] = []
+
+    monkeypatch.setattr(
+        workflow_script,
+        "get_settings",
+        lambda: Settings(
+            database_url="postgresql://example/db",
+            openai_api_key="test-openai-key",
+            primary_review_api_key=None,
+            primary_review_base_url="https://api.deepseek.com",
+            primary_review_model="deepseek-v4-flash",
+            deepseek_api_key="test-deepseek-key",
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "build_incident_repository",
+        lambda database_url: repository,
+    )
+    monkeypatch.setattr(
+        workflow_script.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            inbox_dir=tmp_path / "inbox",
+            archive_dir=tmp_path / "archive",
+            dry_run=False,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "HttpIncidentSourceFetcher",
+        lambda: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "AsyncOpenAIIncidentReviewClient",
+        lambda **kwargs: review_client_calls.append(kwargs) or object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "OpenAIIncidentReviewClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "OpenAIIncidentEmbeddingClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "OpenAIIncidentDuplicateJudgeClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "DeepSeekIncidentTranslationClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "run_incident_csv_workflow",
+        lambda **kwargs: _async_summary(
+            {
+                "files_found": 0,
+                "files_imported": 0,
+                "files_failed": 0,
+                "incidents_imported": 0,
+                "reviews_attempted": 0,
+                "reviews_completed": 0,
+                "reviews_failed": 0,
+                "review_failures": [],
+                "approved": 0,
+                "pending_review": 0,
+                "rejected": 0,
+                "translations_completed": 0,
+                "translations_failed": 0,
+                "file_results": [],
+            }
+        ),
+    )
+
+    exit_code = workflow_script.main()
+
+    assert exit_code == 0
+    assert repository.closed is True
+    assert review_client_calls == [
+        {
+            "api_key": "",
+            "base_url": "https://api.deepseek.com",
+        }
+    ]
