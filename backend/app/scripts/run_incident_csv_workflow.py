@@ -23,6 +23,18 @@ from app.workflows.incident_csv_workflow import run_incident_csv_workflow
 LOGGER = logging.getLogger(__name__)
 
 
+def _require_primary_review_credentials(settings) -> None:
+    if settings.primary_review_api_key:
+        return
+
+    raise ValueError(
+        "Primary review credentials are missing. Set PRIMARY_REVIEW_API_KEY "
+        "(or DEEPSEEK_API_KEY for the default DeepSeek path), or configure "
+        "OPENAI_PRIMARY_REVIEW_MODEL together with OPENAI_API_KEY for the "
+        "legacy OpenAI path."
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the daily incident CSV import and review workflow."
@@ -48,6 +60,7 @@ def main() -> int:
     _configure_logging()
 
     settings = get_settings()
+    _require_primary_review_credentials(settings)
     repository = build_incident_repository(settings.database_url)
     try:
         LOGGER.info(
@@ -58,7 +71,7 @@ def main() -> int:
         )
         source_fetcher = HttpIncidentSourceFetcher()
         review_client = AsyncOpenAIIncidentReviewClient(
-            api_key=settings.primary_review_api_key or "",
+            api_key=settings.primary_review_api_key,
             base_url=settings.primary_review_base_url,
         )
         escalation_client = OpenAIIncidentReviewClient(

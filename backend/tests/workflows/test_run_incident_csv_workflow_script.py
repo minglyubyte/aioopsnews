@@ -4,6 +4,8 @@ import argparse
 import json
 import logging
 
+import pytest
+
 from app.core.config import Settings
 from app.scripts import run_incident_csv_workflow as workflow_script
 
@@ -142,12 +144,12 @@ def test_workflow_script_logs_start_and_finish(
     assert json.loads(stdout) == summary
 
 
-def test_workflow_script_does_not_send_openai_key_to_deepseek_primary_client(
+def test_workflow_script_fails_fast_without_primary_review_credentials(
     monkeypatch,
     tmp_path,
 ) -> None:
     repository = _StubRepository()
-    review_client_calls: list[dict[str, str]] = []
+    build_repository_calls: list[str] = []
 
     monkeypatch.setattr(
         workflow_script,
@@ -164,7 +166,7 @@ def test_workflow_script_does_not_send_openai_key_to_deepseek_primary_client(
     monkeypatch.setattr(
         workflow_script,
         "build_incident_repository",
-        lambda database_url: repository,
+        lambda database_url: build_repository_calls.append(database_url) or repository,
     )
     monkeypatch.setattr(
         workflow_script.argparse.ArgumentParser,
@@ -179,11 +181,6 @@ def test_workflow_script_does_not_send_openai_key_to_deepseek_primary_client(
         workflow_script,
         "HttpIncidentSourceFetcher",
         lambda: object(),
-    )
-    monkeypatch.setattr(
-        workflow_script,
-        "AsyncOpenAIIncidentReviewClient",
-        lambda **kwargs: review_client_calls.append(kwargs) or object(),
     )
     monkeypatch.setattr(
         workflow_script,
@@ -228,13 +225,9 @@ def test_workflow_script_does_not_send_openai_key_to_deepseek_primary_client(
         ),
     )
 
-    exit_code = workflow_script.main()
+    with pytest.raises(ValueError) as exc_info:
+        workflow_script.main()
 
-    assert exit_code == 0
-    assert repository.closed is True
-    assert review_client_calls == [
-        {
-            "api_key": "",
-            "base_url": "https://api.deepseek.com/v1",
-        }
-    ]
+    assert build_repository_calls == []
+    assert repository.closed is False
+    assert "PRIMARY_REVIEW_API_KEY" in str(exc_info.value)

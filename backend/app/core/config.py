@@ -46,10 +46,26 @@ def get_settings() -> Settings:
 
     openai_api_key = os.getenv("OPENAI_API_KEY")
     deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-    primary_review_model = os.getenv(
-        "PRIMARY_REVIEW_MODEL",
-        "deepseek-v4-flash",
+    primary_review_model_env = os.getenv("PRIMARY_REVIEW_MODEL")
+    primary_review_api_key_env = os.getenv("PRIMARY_REVIEW_API_KEY")
+    primary_review_base_url_env = os.getenv("PRIMARY_REVIEW_BASE_URL")
+    legacy_openai_primary_review_model = os.getenv("OPENAI_PRIMARY_REVIEW_MODEL")
+    use_legacy_openai_primary_review = (
+        primary_review_model_env is None
+        and primary_review_api_key_env is None
+        and primary_review_base_url_env is None
+        and legacy_openai_primary_review_model is not None
     )
+    if use_legacy_openai_primary_review:
+        primary_review_model = legacy_openai_primary_review_model
+        primary_review_api_key = openai_api_key
+        primary_review_base_url = "https://api.openai.com/v1"
+    else:
+        primary_review_model = primary_review_model_env or "deepseek-v4-flash"
+        primary_review_api_key = primary_review_api_key_env or deepseek_api_key
+        primary_review_base_url = (
+            primary_review_base_url_env or "https://api.deepseek.com/v1"
+        )
 
     return Settings(
         database_url=database_url,
@@ -67,14 +83,8 @@ def get_settings() -> Settings:
             "OPENAI_EMBEDDING_MODEL",
             "text-embedding-3-small",
         ),
-        primary_review_api_key=os.getenv(
-            "PRIMARY_REVIEW_API_KEY",
-            deepseek_api_key,
-        ),
-        primary_review_base_url=os.getenv(
-            "PRIMARY_REVIEW_BASE_URL",
-            "https://api.deepseek.com/v1",
-        ),
+        primary_review_api_key=primary_review_api_key,
+        primary_review_base_url=primary_review_base_url,
         primary_review_model=primary_review_model,
         deepseek_api_key=deepseek_api_key,
         deepseek_translation_model=os.getenv(
