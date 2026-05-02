@@ -126,3 +126,74 @@ def test_import_incidents_csv_text_dry_run_validates_without_persisting() -> Non
     assert summary.validated == 2
     assert summary.inserted == 0
     assert repository.incidents == {}
+
+
+def test_in_memory_repository_accepts_forensic_review_and_translation_kwargs() -> None:
+    repository = InMemoryIncidentRepository(
+        incidents=[
+            {
+                "id": "incident-1",
+                "headline": "Original headline",
+                "headline_en": "Original headline",
+                "headline_zh": None,
+                "date_logged": "2026-05-01",
+                "company_involved": "OpenAI",
+                "incident_topic": "model governance",
+                "claimant_name": None,
+                "categories": [],
+                "severity_score": 2,
+                "reality_summary": "Original summary",
+                "reality_summary_en": "Original summary",
+                "reality_summary_zh": None,
+                "status": "pending_review",
+                "translation_status": "not_requested",
+                "sources": [],
+            }
+        ]
+    )
+
+    reviewed = repository.apply_incident_review_result(
+        incident_id="incident-1",
+        status="approved",
+        legitimacy_score=0.95,
+        legitimacy_label="approved",
+        legitimacy_reasoning="Strong evidence.",
+        source_validation_summary="Validated sources.",
+        headline_en="Reviewed headline",
+        reality_summary_en="Reviewed summary",
+        categories=["Model Governance"],
+        severity_score=3,
+        suggested_severity_score=3,
+        severity_confidence=0.9,
+        severity_reasoning="High confidence.",
+        severity_flags=[],
+        severity_model="deepseek-v4-flash",
+        severity_decision_source="llm",
+        severity_suggested_at="2026-05-01T12:00:00+00:00",
+        review_model="deepseek-v4-flash",
+        review_batch_id="batch-1",
+        reviewed_at="2026-05-01T12:01:00+00:00",
+        incident_summary_en="Summary.",
+        what_happened_en="What happened.",
+        ai_failure_point_en="Failure point.",
+        why_it_matters_en="Importance.",
+        evidence_summary_en="Evidence summary.",
+    )
+    translated = repository.update_incident_translation(
+        incident_id="incident-1",
+        company_involved_zh="开放人工智能",
+        headline_zh="审核后标题",
+        reality_summary_zh="审核后摘要",
+        legitimacy_reasoning_zh="证据充分。",
+        source_validation_summary_zh="来源已核实。",
+        translation_status="completed",
+        translated_at="2026-05-01T12:02:00+00:00",
+        incident_summary_zh="摘要。",
+        what_happened_zh="发生了什么。",
+        ai_failure_point_zh="失败点。",
+        why_it_matters_zh="重要性。",
+        evidence_summary_zh="证据摘要。",
+    )
+
+    assert reviewed is not None
+    assert translated is not None

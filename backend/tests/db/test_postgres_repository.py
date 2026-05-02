@@ -283,6 +283,11 @@ def test_apply_incident_review_result_uses_python_decided_severity_score(
         review_model="gpt-5.4-mini",
         review_batch_id="batch-1",
         reviewed_at="2026-04-30T12:00:00+00:00",
+        incident_summary_en="Short incident summary.",
+        what_happened_en="What happened.",
+        ai_failure_point_en="Failure point.",
+        why_it_matters_en="Why it matters.",
+        evidence_summary_en="Evidence summary.",
     )
 
     update_query, update_args = next(
@@ -366,6 +371,11 @@ def test_update_incident_translation_persists_company_name_translation(
         source_validation_summary_zh="中文证据摘要",
         translation_status="completed",
         translated_at="2026-04-30T12:00:00+00:00",
+        incident_summary_zh="事件摘要",
+        what_happened_zh="发生了什么",
+        ai_failure_point_zh="失败点",
+        why_it_matters_zh="重要性说明",
+        evidence_summary_zh="证据摘要",
     )
 
     update_query, update_args = next(

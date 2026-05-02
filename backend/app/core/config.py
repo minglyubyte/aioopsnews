@@ -48,7 +48,7 @@ def get_settings() -> Settings:
     deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
     primary_review_model = os.getenv(
         "PRIMARY_REVIEW_MODEL",
-        os.getenv("OPENAI_PRIMARY_REVIEW_MODEL", "deepseek-v4-flash"),
+        "deepseek-v4-flash",
     )
 
     return Settings(
