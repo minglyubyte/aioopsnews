@@ -185,6 +185,32 @@ def test_get_settings_preserves_legacy_openai_primary_review_path(
     assert settings.primary_review_base_url == "https://api.openai.com/v1"
 
 
+def test_get_settings_rejects_mixed_legacy_and_provider_neutral_primary_review_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    backend_dir = repo_root / "backend"
+    backend_dir.mkdir(parents=True)
+    (repo_root / ".env").write_text(
+        "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_reality_check\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(backend_dir)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_MODEL", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_API_KEY", raising=False)
+    monkeypatch.setenv("PRIMARY_REVIEW_BASE_URL", "https://deepseek.example/v1")
+    monkeypatch.setenv("OPENAI_PRIMARY_REVIEW_MODEL", "gpt-5.4-mini")
+
+    with pytest.raises(ValueError) as exc_info:
+        get_settings()
+
+    assert "OPENAI_PRIMARY_REVIEW_MODEL" in str(exc_info.value)
+    assert "PRIMARY_REVIEW_BASE_URL" in str(exc_info.value)
+
+
 def test_get_settings_does_not_reuse_openai_key_for_primary_review(
     tmp_path: Path,
     monkeypatch,

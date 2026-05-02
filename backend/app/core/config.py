@@ -50,6 +50,25 @@ def get_settings() -> Settings:
     primary_review_api_key_env = os.getenv("PRIMARY_REVIEW_API_KEY")
     primary_review_base_url_env = os.getenv("PRIMARY_REVIEW_BASE_URL")
     legacy_openai_primary_review_model = os.getenv("OPENAI_PRIMARY_REVIEW_MODEL")
+    mixed_primary_review_env_vars = [
+        key
+        for key, value in (
+            ("PRIMARY_REVIEW_MODEL", primary_review_model_env),
+            ("PRIMARY_REVIEW_API_KEY", primary_review_api_key_env),
+            ("PRIMARY_REVIEW_BASE_URL", primary_review_base_url_env),
+        )
+        if value is not None
+    ]
+    if (
+        legacy_openai_primary_review_model is not None
+        and mixed_primary_review_env_vars
+    ):
+        joined_vars = ", ".join(mixed_primary_review_env_vars)
+        raise ValueError(
+            "Mixed legacy and provider-neutral primary review config is not "
+            "supported. Remove OPENAI_PRIMARY_REVIEW_MODEL or the new "
+            f"PRIMARY_REVIEW_* override(s): {joined_vars}."
+        )
     use_legacy_openai_primary_review = (
         primary_review_model_env is None
         and primary_review_api_key_env is None
