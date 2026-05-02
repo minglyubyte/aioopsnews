@@ -9,6 +9,18 @@ from app.models.incident import IncidentRecord
 from app.models.source import IncidentSourceRecord
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+FORENSIC_COLUMN_DEFINITIONS = [
+    "incident_summary_en text",
+    "incident_summary_zh text",
+    "what_happened_en text",
+    "what_happened_zh text",
+    "ai_failure_point_en text",
+    "ai_failure_point_zh text",
+    "why_it_matters_en text",
+    "why_it_matters_zh text",
+    "evidence_summary_en text",
+    "evidence_summary_zh text",
+]
 
 
 def test_product_docs_are_reorganized_into_four_canonical_files() -> None:
@@ -84,6 +96,8 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "http_status integer" in normalized
     assert "evidence_text text" in normalized
     assert "create table if not exists incident_duplicate_candidates" in normalized
+    for column_definition in FORENSIC_COLUMN_DEFINITIONS:
+        assert column_definition in normalized
 
 
 def test_initial_migration_bootstraps_same_core_tables() -> None:
@@ -136,16 +150,10 @@ def test_forensic_migration_adds_incident_log_review_fields() -> None:
     migration_sql = migration_path.read_text().lower()
 
     assert "alter table incident_logs" in migration_sql
-    assert "add column if not exists incident_summary_en text" in migration_sql
-    assert "add column if not exists incident_summary_zh text" in migration_sql
-    assert "add column if not exists what_happened_en text" in migration_sql
-    assert "add column if not exists what_happened_zh text" in migration_sql
-    assert "add column if not exists ai_failure_point_en text" in migration_sql
-    assert "add column if not exists ai_failure_point_zh text" in migration_sql
-    assert "add column if not exists why_it_matters_en text" in migration_sql
-    assert "add column if not exists why_it_matters_zh text" in migration_sql
-    assert "add column if not exists evidence_summary_en text" in migration_sql
-    assert "add column if not exists evidence_summary_zh text" in migration_sql
+    for column_definition in FORENSIC_COLUMN_DEFINITIONS:
+        assert column_definition in migration_sql
+        assert f"add column if not exists {column_definition}" in migration_sql
+        assert f"add column if not exists {column_definition}" in _POSTGRES_SCHEMA.lower()
 
 
 def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
