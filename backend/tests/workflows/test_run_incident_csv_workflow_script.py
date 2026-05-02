@@ -233,6 +233,49 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
     assert "PRIMARY_REVIEW_API_KEY" in str(exc_info.value)
 
 
+def test_workflow_script_fails_fast_without_downstream_review_credentials(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    repository = _StubRepository()
+    build_repository_calls: list[str] = []
+
+    monkeypatch.setattr(
+        workflow_script,
+        "get_settings",
+        lambda: Settings(
+            database_url="postgresql://example/db",
+            openai_api_key=None,
+            primary_review_api_key="test-primary-key",
+            primary_review_base_url="https://api.deepseek.com/v1",
+            primary_review_model="deepseek-v4-flash",
+            deepseek_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "build_incident_repository",
+        lambda database_url: build_repository_calls.append(database_url) or repository,
+    )
+    monkeypatch.setattr(
+        workflow_script.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            inbox_dir=tmp_path / "inbox",
+            archive_dir=tmp_path / "archive",
+            dry_run=False,
+        ),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        workflow_script.main()
+
+    assert build_repository_calls == []
+    assert repository.closed is False
+    assert "OPENAI_API_KEY" in str(exc_info.value)
+    assert "DEEPSEEK_API_KEY" in str(exc_info.value)
+
+
 def test_workflow_script_allows_dry_run_without_primary_review_credentials(
     monkeypatch,
     capsys,

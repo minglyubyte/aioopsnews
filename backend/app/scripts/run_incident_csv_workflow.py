@@ -23,15 +23,25 @@ from app.workflows.incident_csv_workflow import run_incident_csv_workflow
 LOGGER = logging.getLogger(__name__)
 
 
-def _require_primary_review_credentials(settings) -> None:
-    if settings.primary_review_api_key:
+def _require_non_dry_run_credentials(settings) -> None:
+    missing: list[str] = []
+    if not settings.primary_review_api_key:
+        missing.append("PRIMARY_REVIEW_API_KEY")
+    if not settings.openai_api_key:
+        missing.append("OPENAI_API_KEY")
+    if not settings.deepseek_api_key:
+        missing.append("DEEPSEEK_API_KEY")
+
+    if not missing:
         return
 
     raise ValueError(
-        "Primary review credentials are missing. Set PRIMARY_REVIEW_API_KEY "
-        "(or DEEPSEEK_API_KEY for the default DeepSeek path), or configure "
-        "OPENAI_PRIMARY_REVIEW_MODEL together with OPENAI_API_KEY for the "
-        "legacy OpenAI path."
+        "Workflow credentials are missing for non-dry runs: "
+        + ", ".join(missing)
+        + ". PRIMARY_REVIEW_API_KEY (or DEEPSEEK_API_KEY / legacy OpenAI "
+        "primary-review settings) is required for review, OPENAI_API_KEY is "
+        "required for escalation/embedding/duplicate checks, and "
+        "DEEPSEEK_API_KEY is required for translation."
     )
 
 
@@ -61,7 +71,7 @@ def main() -> int:
 
     settings = get_settings()
     if not args.dry_run:
-        _require_primary_review_credentials(settings)
+        _require_non_dry_run_credentials(settings)
     repository = build_incident_repository(settings.database_url)
     try:
         LOGGER.info(
