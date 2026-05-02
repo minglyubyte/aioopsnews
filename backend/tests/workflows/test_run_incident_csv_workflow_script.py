@@ -231,3 +231,74 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
     assert build_repository_calls == []
     assert repository.closed is False
     assert "PRIMARY_REVIEW_API_KEY" in str(exc_info.value)
+
+
+def test_workflow_script_allows_dry_run_without_primary_review_credentials(
+    monkeypatch,
+    capsys,
+    tmp_path,
+) -> None:
+    repository = _StubRepository()
+    summary = {
+        "files_found": 1,
+        "files_imported": 1,
+        "files_failed": 0,
+        "incidents_imported": 2,
+        "reviews_attempted": 0,
+        "reviews_completed": 0,
+        "reviews_failed": 0,
+        "review_failures": [],
+        "approved": 0,
+        "pending_review": 0,
+        "rejected": 0,
+        "translations_completed": 0,
+        "translations_failed": 0,
+        "file_results": [],
+    }
+    workflow_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        workflow_script,
+        "get_settings",
+        lambda: Settings(
+            database_url="postgresql://example/db",
+            openai_api_key="test-openai-key",
+            primary_review_api_key=None,
+            primary_review_base_url="https://api.deepseek.com/v1",
+            primary_review_model="deepseek-v4-flash",
+            deepseek_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "build_incident_repository",
+        lambda database_url: repository,
+    )
+    monkeypatch.setattr(
+        workflow_script.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            inbox_dir=tmp_path / "inbox",
+            archive_dir=tmp_path / "archive",
+            dry_run=True,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "AsyncOpenAIIncidentReviewClient",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("primary review client should not be built for dry-run")
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "run_incident_csv_workflow",
+        lambda **kwargs: workflow_calls.append(kwargs) or _async_summary(summary),
+    )
+
+    exit_code = workflow_script.main()
+
+    assert exit_code == 0
+    assert repository.closed is True
+    assert workflow_calls[0]["dry_run"] is True
+    assert json.loads(capsys.readouterr().out) == summary

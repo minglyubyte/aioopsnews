@@ -60,7 +60,8 @@ def main() -> int:
     _configure_logging()
 
     settings = get_settings()
-    _require_primary_review_credentials(settings)
+    if not args.dry_run:
+        _require_primary_review_credentials(settings)
     repository = build_incident_repository(settings.database_url)
     try:
         LOGGER.info(
@@ -69,24 +70,32 @@ def main() -> int:
             args.archive_dir,
             args.dry_run,
         )
-        source_fetcher = HttpIncidentSourceFetcher()
-        review_client = AsyncOpenAIIncidentReviewClient(
-            api_key=settings.primary_review_api_key,
-            base_url=settings.primary_review_base_url,
-        )
-        escalation_client = OpenAIIncidentReviewClient(
-            api_key=settings.openai_api_key or ""
-        )
-        embedding_client = OpenAIIncidentEmbeddingClient(
-            api_key=settings.openai_api_key or ""
-        )
-        duplicate_judge_client = OpenAIIncidentDuplicateJudgeClient(
-            api_key=settings.openai_api_key or ""
-        )
-        translation_client = DeepSeekIncidentTranslationClient(
-            api_key=settings.deepseek_api_key or "",
-            model=settings.deepseek_translation_model,
-        )
+        if args.dry_run:
+            source_fetcher = object()
+            review_client = object()
+            escalation_client = object()
+            embedding_client = object()
+            duplicate_judge_client = object()
+            translation_client = object()
+        else:
+            source_fetcher = HttpIncidentSourceFetcher()
+            review_client = AsyncOpenAIIncidentReviewClient(
+                api_key=settings.primary_review_api_key,
+                base_url=settings.primary_review_base_url,
+            )
+            escalation_client = OpenAIIncidentReviewClient(
+                api_key=settings.openai_api_key or ""
+            )
+            embedding_client = OpenAIIncidentEmbeddingClient(
+                api_key=settings.openai_api_key or ""
+            )
+            duplicate_judge_client = OpenAIIncidentDuplicateJudgeClient(
+                api_key=settings.openai_api_key or ""
+            )
+            translation_client = DeepSeekIncidentTranslationClient(
+                api_key=settings.deepseek_api_key or "",
+                model=settings.deepseek_translation_model,
+            )
 
         summary = asyncio.run(
             run_incident_csv_workflow(
