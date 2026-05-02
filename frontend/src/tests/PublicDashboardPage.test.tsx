@@ -85,9 +85,15 @@ function buildIncidentDetail(
       overrides.reality_summary_zh ??
       "一次支持自动化发布将内部备注泄露给了用户。",
     analysis: overrides.analysis ?? {
+      incident_summary_en:
+        "A support automation rollout exposed private notes in customer replies.",
+      incident_summary_zh: "一次支持自动化发布在客户回复中暴露了私密备注。",
       what_happened_en:
         "A support automation rollout leaked internal notes into user-facing replies.",
       what_happened_zh: "一次支持自动化发布将内部备注泄露给了用户。",
+      ai_failure_point_en:
+        "The assistant failed to keep internal support context out of generated replies.",
+      ai_failure_point_zh: "该助手未能阻止内部支持上下文进入生成的回复。",
       why_it_matters_en:
         "Private account context escaped the support workflow and reached customers directly.",
       why_it_matters_zh: "私密账户背景信息离开了支持工作流，并直接出现在客户对话中。",
@@ -195,9 +201,15 @@ describe("PublicDashboardPage", () => {
         "A support automation rollout leaked internal notes into user-facing replies.",
       reality_summary_zh: "一次支持自动化发布将内部备注泄露给了用户。",
       analysis: {
+        incident_summary_en:
+          "A support automation release exposed private billing notes in customer replies.",
+        incident_summary_zh: "一次支持自动化发布在客户回复中暴露了私密账单备注。",
         what_happened_en:
           "A support automation rollout leaked internal notes into user-facing replies.",
         what_happened_zh: "一次支持自动化发布将内部备注泄露给了用户。",
+        ai_failure_point_en:
+          "The reply composer mixed internal billing annotations into customer-facing output.",
+        ai_failure_point_zh: "回复生成器将内部账单注释混入了面向客户的输出。",
         why_it_matters_en:
           "Sensitive billing context appeared in customer conversations instead of staying inside the support workflow.",
         why_it_matters_zh:
@@ -254,9 +266,15 @@ describe("PublicDashboardPage", () => {
       reality_summary_zh:
         "城市机器人试点在多次路线错误和人工干预后被暂停。",
       analysis: {
+        incident_summary_en:
+          "An urban robot pilot paused after repeated navigation failures.",
+        incident_summary_zh: "一次城市机器人试点在反复的导航失误后被暂停。",
         what_happened_en:
           "Repeated navigation failures forced operators to pause the urban robot pilot.",
         what_happened_zh: "反复的导航失误迫使运营人员暂停了城市机器人试点。",
+        ai_failure_point_en:
+          "The autonomy stack could not reliably interpret dense downtown routing constraints.",
+        ai_failure_point_zh: "自动驾驶栈无法稳定理解高密度市中心路线约束。",
         why_it_matters_en:
           "The rollback shows the system still could not handle dense downtown routing without human supervision.",
         why_it_matters_zh:
@@ -426,10 +444,18 @@ describe("PublicDashboardPage", () => {
       within(detail as HTMLElement).getByText("What happened"),
     ).toBeInTheDocument();
     expect(
-      within(detail as HTMLElement).getAllByText(
-        "A support automation rollout leaked internal notes into user-facing replies.",
+      within(detail as HTMLElement).getByText(
+        "A support automation release exposed private billing notes in customer replies.",
       ),
-    ).toHaveLength(2);
+    ).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByText("AI failure point"),
+    ).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByText(
+        "The reply composer mixed internal billing annotations into customer-facing output.",
+      ),
+    ).toBeInTheDocument();
     expect(
       within(detail as HTMLElement).getByText("Why it matters"),
     ).toBeInTheDocument();
@@ -495,10 +521,18 @@ describe("PublicDashboardPage", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      within(detail as HTMLElement).getAllByText(
-        "一次支持自动化发布将内部备注泄露给了用户。",
+      within(detail as HTMLElement).getByText(
+        "一次支持自动化发布在客户回复中暴露了私密账单备注。",
       ),
-    ).toHaveLength(2);
+    ).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByText("AI 失效点"),
+    ).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByText(
+        "回复生成器将内部账单注释混入了面向客户的输出。",
+      ),
+    ).toBeInTheDocument();
     expect(within(archive).getByText("助理公司")).toBeInTheDocument();
     expect(within(detail as HTMLElement).getByText("助理公司")).toBeInTheDocument();
 
@@ -664,6 +698,73 @@ describe("PublicDashboardPage", () => {
         name: "Warehouse classifier reroutes medical inventory",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the forensic detail structure for legacy incidents without structured ai failure data", async () => {
+    const legacyIncident = buildArchiveIncident({
+      id: "incident-legacy",
+      headline:
+        "Mercedes Benz: An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
+      company_involved: "Mercedes Benz",
+      categories: ["Autonomous Systems"],
+      severity_score: 2,
+      archive_summary:
+        "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
+      archive_summary_en:
+        "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
+      date_logged: "2023-11-29",
+    });
+
+    mockedFetchIncidentFeed.mockResolvedValue(buildFeedResponse([legacyIncident]));
+    mockedFetchIncidentDetail.mockResolvedValue(
+      buildIncidentDetail({
+        ...legacyIncident,
+        reality_summary:
+          "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
+        reality_summary_en:
+          "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
+        analysis: {
+          what_happened_en: null,
+          what_happened_zh: null,
+          ai_failure_point_en: null,
+          ai_failure_point_zh: null,
+          why_it_matters_en:
+            "Incident involves a Mercedes Benz autonomous testing vehicle collision with official DMV documentation.",
+          why_it_matters_zh: null,
+          evidence_summary_en:
+            "High quality, official DMV collision report and academic dashboard.",
+          evidence_summary_zh: null,
+        },
+      }),
+    );
+
+    render(<PublicDashboardPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Open full context for Mercedes Benz: An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles./i,
+      }),
+    );
+
+    const detail = await screen.findByRole("heading", { name: "Full context" });
+    const detailSection = detail.closest("section");
+    expect(detailSection).not.toBeNull();
+    expect(
+      within(detailSection as HTMLElement).getByText("AI failure point"),
+    ).toBeInTheDocument();
+    expect(
+      within(detailSection as HTMLElement).getByText(
+        "Not yet structured for this incident.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(detailSection as HTMLElement).queryByText("What happened"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(detailSection as HTMLElement).getAllByText(
+        "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
+      ),
+    ).toHaveLength(1);
   });
 
   it("paginates archive results and keeps the selected detail visible across page changes", async () => {

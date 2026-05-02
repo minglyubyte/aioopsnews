@@ -91,10 +91,18 @@ def main() -> int:
             review_client = AsyncCompatibleIncidentReviewClient(
                 api_key=settings.primary_review_api_key,
                 base_url=settings.primary_review_base_url,
+                max_output_tokens=settings.review_max_output_tokens,
+                response_parse_max_attempts=(
+                    settings.review_response_parse_max_attempts
+                ),
             )
             escalation_client = CompatibleIncidentReviewClient(
                 api_key=settings.primary_review_api_key,
                 base_url=settings.primary_review_base_url,
+                max_output_tokens=settings.review_max_output_tokens,
+                response_parse_max_attempts=(
+                    settings.review_response_parse_max_attempts
+                ),
             )
             embedding_client = OpenAIIncidentEmbeddingClient(
                 api_key=settings.openai_api_key or ""

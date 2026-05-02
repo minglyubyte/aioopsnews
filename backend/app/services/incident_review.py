@@ -56,6 +56,13 @@ BROWSER_SOURCE_FETCH_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
+REVIEW_MAX_OUTPUT_TOKENS = 8000
+REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS = 3
+FORENSIC_MIN_WORD_COUNTS = {
+    "what_happened_en": 100,
+    "ai_failure_point_en": 100,
+    "why_it_matters_en": 100,
+}
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,11 @@ class IncidentReviewResult:
     company_confirmed: bool
     headline_en: str
     reality_summary_en: str
+    incident_summary_en: str | None = None
+    what_happened_en: str | None = None
+    ai_failure_point_en: str | None = None
+    why_it_matters_en: str | None = None
+    evidence_summary_en: str | None = None
     categories: list[str] | None = None
     suggested_severity_score: int | None = None
     severity_confidence: float | None = None
@@ -108,6 +120,10 @@ class IncidentReviewFailure:
     incident_id: str
     external_id: str | None
     error: str
+
+
+class ReviewResponseParseError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -228,10 +244,14 @@ class OpenAIIncidentReviewClient:
         *,
         api_key: str,
         base_url: str = "https://api.openai.com/v1",
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = 120.0,
+        max_output_tokens: int = REVIEW_MAX_OUTPUT_TOKENS,
+        response_parse_max_attempts: int = REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._max_output_tokens = max_output_tokens
+        self._response_parse_max_attempts = response_parse_max_attempts
         self._headers = {"Authorization": f"Bearer {api_key}"}
         self._response_format = _build_review_response_format(base_url=self._base_url)
 
@@ -251,7 +271,7 @@ class OpenAIIncidentReviewClient:
                         "model": model,
                         "response_format": self._response_format,
                         "messages": _build_review_messages(incident),
-                        "max_tokens": 1200,
+                        "max_tokens": self._max_output_tokens,
                     },
                 }
             )
@@ -321,20 +341,29 @@ class OpenAIIncidentReviewClient:
         incident: dict[str, Any],
         model: str,
     ) -> IncidentReviewResult:
-        payload = self._post_json(
-            "/chat/completions",
-            {
-                "model": model,
-                "response_format": self._response_format,
-                "messages": _build_review_messages(incident),
-                "max_tokens": 1200,
-            },
-        )
-        return _parse_review_result(
-            incident_id=incident["id"],
-            model=payload["model"],
-            content=payload["choices"][0]["message"]["content"],
-        )
+        last_error: ReviewResponseParseError | None = None
+        for attempt in range(self._response_parse_max_attempts):
+            payload = self._post_json(
+                "/chat/completions",
+                {
+                    "model": model,
+                    "response_format": self._response_format,
+                    "messages": _build_review_messages(incident),
+                    "max_tokens": self._max_output_tokens,
+                },
+            )
+            try:
+                return _parse_review_result_from_provider_payload(
+                    incident_id=incident["id"],
+                    payload=payload,
+                )
+            except ReviewResponseParseError as exc:
+                last_error = exc
+                if attempt == self._response_parse_max_attempts - 1:
+                    break
+        if last_error is None:
+            raise RuntimeError("Review failed without a parse exception")
+        raise last_error
 
     def _upload_batch_file(self, jsonl_body: str) -> str:
         response = httpx.post(
@@ -379,7 +408,9 @@ class AsyncOpenAIIncidentReviewClient:
         *,
         api_key: str,
         base_url: str = "https://api.openai.com/v1",
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = 120.0,
+        max_output_tokens: int = REVIEW_MAX_OUTPUT_TOKENS,
+        response_parse_max_attempts: int = REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS,
     ) -> None:
         try:
             from openai import AsyncOpenAI
@@ -389,6 +420,8 @@ class AsyncOpenAIIncidentReviewClient:
             ) from exc
 
         self._base_url = base_url.rstrip("/")
+        self._max_output_tokens = max_output_tokens
+        self._response_parse_max_attempts = response_parse_max_attempts
         self._response_format = _build_review_response_format(base_url=self._base_url)
         self._client = AsyncOpenAI(
             api_key=api_key,
@@ -402,20 +435,26 @@ class AsyncOpenAIIncidentReviewClient:
         incident: dict[str, Any],
         model: str,
     ) -> IncidentReviewResult:
-        payload = await self._client.chat.completions.create(
-            model=model,
-            response_format=self._response_format,
-            messages=_build_review_messages(incident),
-            max_tokens=1200,
-        )
-        content = payload.choices[0].message.content
-        if not isinstance(content, str):
-            raise RuntimeError("Expected structured review content from the review provider")
-        return _parse_review_result(
-            incident_id=incident["id"],
-            model=payload.model,
-            content=content,
-        )
+        last_error: ReviewResponseParseError | None = None
+        for attempt in range(self._response_parse_max_attempts):
+            payload = await self._client.chat.completions.create(
+                model=model,
+                response_format=self._response_format,
+                messages=_build_review_messages(incident),
+                max_tokens=self._max_output_tokens,
+            )
+            try:
+                return _parse_review_result_from_provider_payload(
+                    incident_id=incident["id"],
+                    payload=payload,
+                )
+            except ReviewResponseParseError as exc:
+                last_error = exc
+                if attempt == self._response_parse_max_attempts - 1:
+                    break
+        if last_error is None:
+            raise RuntimeError("Review failed without a parse exception")
+        raise last_error
 
 
 CompatibleIncidentReviewClient = OpenAIIncidentReviewClient
@@ -510,14 +549,13 @@ async def review_pending_incidents(
         incident: dict[str, Any],
     ) -> tuple[IncidentReviewApplicationResult, bool, IncidentReviewFailure | None]:
         async with semaphore:
-            try:
-                primary_result = await _review_incident_with_retries(
-                    review_client,
-                    incident=incident,
-                    model=primary_model,
-                    max_attempts=max_attempts,
-                )
-            except Exception as exc:
+            def _failure_result(
+                exc: Exception,
+            ) -> tuple[
+                IncidentReviewApplicationResult,
+                bool,
+                IncidentReviewFailure | None,
+            ]:
                 return (
                     IncidentReviewApplicationResult(
                         approved=0,
@@ -534,26 +572,39 @@ async def review_pending_incidents(
                     ),
                 )
 
-            decision = _resolve_review_decision(
-                incident=incident,
-                initial_result=primary_result,
-                escalation_client=escalation_client,
-                escalation_model=escalation_model,
-                approval_threshold=approval_threshold,
-            )
-            application_result = _apply_review_decision(
-                repository,
-                incident=incident,
-                decision=decision,
-                translation_client=translation_client,
-                embedding_client=embedding_client,
-                duplicate_judge_client=duplicate_judge_client,
-                embedding_model=embedding_model,
-                duplicate_judge_model=duplicate_judge_model,
-                escalation_model=escalation_model,
-                approval_threshold=approval_threshold,
-                review_batch_id=incident.get("review_batch_id"),
-            )
+            try:
+                primary_result = await _review_incident_with_retries(
+                    review_client,
+                    incident=incident,
+                    model=primary_model,
+                    max_attempts=max_attempts,
+                )
+            except Exception as exc:
+                return _failure_result(exc)
+
+            try:
+                decision = _resolve_review_decision(
+                    incident=incident,
+                    initial_result=primary_result,
+                    escalation_client=escalation_client,
+                    escalation_model=escalation_model,
+                    approval_threshold=approval_threshold,
+                )
+                application_result = _apply_review_decision(
+                    repository,
+                    incident=incident,
+                    decision=decision,
+                    translation_client=translation_client,
+                    embedding_client=embedding_client,
+                    duplicate_judge_client=duplicate_judge_client,
+                    embedding_model=embedding_model,
+                    duplicate_judge_model=duplicate_judge_model,
+                    escalation_model=escalation_model,
+                    approval_threshold=approval_threshold,
+                    review_batch_id=incident.get("review_batch_id"),
+                )
+            except Exception as exc:
+                return _failure_result(exc)
             return application_result, decision.escalated, None
 
     results = await asyncio.gather(
@@ -700,6 +751,11 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 '"date_confirmed":true,"company_confirmed":true,'
                 '"headline_en":"...",'
                 '"reality_summary_en":"...",'
+                '"incident_summary_en":"...",'
+                '"what_happened_en":"...",'
+                '"ai_failure_point_en":"...",'
+                '"why_it_matters_en":"...",'
+                '"evidence_summary_en":"...",'
                 '"categories":["Hallucinations"],'
                 '"suggested_severity_score":3,'
                 '"severity_confidence":0.8,'
@@ -709,6 +765,9 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 "Return severity_confidence as a number between 0 and 1, "
                 "not a word or label. Choose one or more categories from the "
                 "approved taxonomy only. "
+                "Write what_happened_en, ai_failure_point_en, and "
+                "why_it_matters_en as substantive narrative sections of at "
+                "least 100 words each. "
                 "Set needs_escalation to true when source quality is weak, "
                 "date or company attribution remains unresolved, severity is "
                 "materially unclear, the evidence conflicts, or you believe "
@@ -776,6 +835,29 @@ def _parse_review_result(
     severity_confidence, invalid_severity_confidence = (
         _parse_optional_severity_confidence(payload.get("severity_confidence"))
     )
+    incident_summary_en = _parse_required_review_text_field(
+        payload,
+        "incident_summary_en",
+    )
+    what_happened_en = _parse_required_review_text_field(
+        payload,
+        "what_happened_en",
+        min_words=FORENSIC_MIN_WORD_COUNTS["what_happened_en"],
+    )
+    ai_failure_point_en = _parse_required_review_text_field(
+        payload,
+        "ai_failure_point_en",
+        min_words=FORENSIC_MIN_WORD_COUNTS["ai_failure_point_en"],
+    )
+    why_it_matters_en = _parse_required_review_text_field(
+        payload,
+        "why_it_matters_en",
+        min_words=FORENSIC_MIN_WORD_COUNTS["why_it_matters_en"],
+    )
+    evidence_summary_en = _parse_required_review_text_field(
+        payload,
+        "evidence_summary_en",
+    )
     return IncidentReviewResult(
         incident_id=incident_id,
         verdict=payload["verdict"],
@@ -786,6 +868,11 @@ def _parse_review_result(
         company_confirmed=bool(payload["company_confirmed"]),
         headline_en=payload["headline_en"],
         reality_summary_en=payload["reality_summary_en"],
+        incident_summary_en=incident_summary_en,
+        what_happened_en=what_happened_en,
+        ai_failure_point_en=ai_failure_point_en,
+        why_it_matters_en=why_it_matters_en,
+        evidence_summary_en=evidence_summary_en,
         categories=categories,
         suggested_severity_score=(
             int(payload["suggested_severity_score"])
@@ -806,6 +893,36 @@ def _parse_review_result(
     )
 
 
+def _parse_review_result_from_provider_payload(
+    *,
+    incident_id: str,
+    payload: Any,
+) -> IncidentReviewResult:
+    try:
+        if isinstance(payload, dict):
+            model = payload["model"]
+            content = payload["choices"][0]["message"]["content"]
+        else:
+            model = payload.model
+            content = payload.choices[0].message.content
+    except (AttributeError, KeyError, IndexError, TypeError) as exc:
+        raise ReviewResponseParseError(
+            "Review provider returned an unexpected response shape"
+        ) from exc
+    if not isinstance(content, str):
+        raise ReviewResponseParseError(
+            "Expected structured review content from the review provider"
+        )
+    try:
+        return _parse_review_result(
+            incident_id=incident_id,
+            model=model,
+            content=content,
+        )
+    except json.JSONDecodeError as exc:
+        raise ReviewResponseParseError(str(exc)) from exc
+
+
 def _parse_review_categories(value: Any) -> tuple[list[str] | None, bool]:
     if not isinstance(value, list):
         return None, True
@@ -815,6 +932,33 @@ def _parse_review_categories(value: Any) -> tuple[list[str] | None, bool]:
     if len(categories) != len(value) or not categories:
         return None, True
     return categories, False
+
+
+def _parse_required_review_text_field(
+    payload: dict[str, Any],
+    field_name: str,
+    *,
+    min_words: int = 0,
+) -> str:
+    value = payload.get(field_name)
+    if not isinstance(value, str):
+        raise ReviewResponseParseError(
+            f"Expected {field_name} to be a string in the structured review output"
+        )
+    normalized = " ".join(value.split())
+    if not normalized:
+        raise ReviewResponseParseError(
+            f"Expected {field_name} to be a non-empty string in the structured review output"
+        )
+    if min_words > 0 and _count_words(normalized) < min_words:
+        raise ReviewResponseParseError(
+            f"Expected {field_name} to contain at least {min_words} words"
+        )
+    return normalized
+
+
+def _count_words(value: str) -> int:
+    return len([part for part in value.split(" ") if part])
 
 
 def _parse_optional_severity_confidence(value: Any) -> tuple[float | None, bool]:
@@ -868,6 +1012,11 @@ def _normalize_review_result(
         company_confirmed=result.company_confirmed,
         headline_en=result.headline_en,
         reality_summary_en=result.reality_summary_en,
+        incident_summary_en=result.incident_summary_en,
+        what_happened_en=result.what_happened_en,
+        ai_failure_point_en=result.ai_failure_point_en,
+        why_it_matters_en=result.why_it_matters_en,
+        evidence_summary_en=result.evidence_summary_en,
         categories=result.categories or fallback_categories,
         suggested_severity_score=result.suggested_severity_score or fallback_severity,
         severity_confidence=result.severity_confidence,
@@ -950,6 +1099,8 @@ async def _review_incident_with_retries(
     for attempt in range(max_attempts):
         try:
             return await review_client.review_incident(incident=incident, model=model)
+        except ReviewResponseParseError:
+            raise
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             if attempt == max_attempts - 1:
@@ -1042,6 +1193,11 @@ def _apply_review_decision(
         source_validation_summary=final_result.source_quality_summary,
         headline_en=final_result.headline_en,
         reality_summary_en=final_result.reality_summary_en,
+        incident_summary_en=final_result.incident_summary_en,
+        what_happened_en=final_result.what_happened_en,
+        ai_failure_point_en=final_result.ai_failure_point_en,
+        why_it_matters_en=final_result.why_it_matters_en,
+        evidence_summary_en=final_result.evidence_summary_en,
         categories=final_result.categories or list(incident.get("categories", [])),
         severity_score=final_severity_score,
         suggested_severity_score=final_result.suggested_severity_score,
@@ -1060,6 +1216,11 @@ def _apply_review_decision(
             "status": final_status,
             "headline_en": final_result.headline_en,
             "reality_summary_en": final_result.reality_summary_en,
+            "incident_summary_en": final_result.incident_summary_en,
+            "what_happened_en": final_result.what_happened_en,
+            "ai_failure_point_en": final_result.ai_failure_point_en,
+            "why_it_matters_en": final_result.why_it_matters_en,
+            "evidence_summary_en": final_result.evidence_summary_en,
             "categories": final_result.categories
             or list(incident.get("categories", [])),
             "legitimacy_score": final_result.score,
@@ -1121,6 +1282,11 @@ def _apply_review_decision(
         reality_summary_en=final_result.reality_summary_en,
         legitimacy_reasoning_en=final_result.reasoning,
         source_validation_summary_en=final_result.source_quality_summary,
+        incident_summary_en=final_result.incident_summary_en or "",
+        what_happened_en=final_result.what_happened_en or "",
+        ai_failure_point_en=final_result.ai_failure_point_en or "",
+        why_it_matters_en=final_result.why_it_matters_en or "",
+        evidence_summary_en=final_result.evidence_summary_en or "",
         client=translation_client,
     )
     repository.update_incident_translation(
@@ -1128,6 +1294,11 @@ def _apply_review_decision(
         company_involved_zh=translation.company_involved_zh,
         headline_zh=translation.headline_zh,
         reality_summary_zh=translation.reality_summary_zh,
+        incident_summary_zh=translation.incident_summary_zh,
+        what_happened_zh=translation.what_happened_zh,
+        ai_failure_point_zh=translation.ai_failure_point_zh,
+        why_it_matters_zh=translation.why_it_matters_zh,
+        evidence_summary_zh=translation.evidence_summary_zh,
         legitimacy_reasoning_zh=translation.legitimacy_reasoning_zh,
         source_validation_summary_zh=translation.source_validation_summary_zh,
         translation_status=translation.status,
@@ -1137,6 +1308,11 @@ def _apply_review_decision(
     incident["company_involved_zh"] = translation.company_involved_zh
     incident["headline_zh"] = translation.headline_zh
     incident["reality_summary_zh"] = translation.reality_summary_zh
+    incident["incident_summary_zh"] = translation.incident_summary_zh
+    incident["what_happened_zh"] = translation.what_happened_zh
+    incident["ai_failure_point_zh"] = translation.ai_failure_point_zh
+    incident["why_it_matters_zh"] = translation.why_it_matters_zh
+    incident["evidence_summary_zh"] = translation.evidence_summary_zh
     incident["legitimacy_reasoning_zh"] = translation.legitimacy_reasoning_zh
     incident["source_validation_summary_zh"] = (
         translation.source_validation_summary_zh

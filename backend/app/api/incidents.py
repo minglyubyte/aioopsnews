@@ -54,8 +54,12 @@ class IncidentArchiveItemResponse(PublicIncidentBaseResponse):
 
 
 class IncidentAnalysisResponse(BaseModel):
+    incident_summary_en: str | None = None
+    incident_summary_zh: str | None = None
     what_happened_en: str | None = None
     what_happened_zh: str | None = None
+    ai_failure_point_en: str | None = None
+    ai_failure_point_zh: str | None = None
     why_it_matters_en: str | None = None
     why_it_matters_zh: str | None = None
     evidence_summary_en: str | None = None

@@ -505,6 +505,16 @@ def test_get_public_incident_serializes_company_name_translation(
     monkeypatch,
 ) -> None:
     connection = _StubConnection()
+    connection.incident_row["incident_summary_en"] = "Short summary."
+    connection.incident_row["incident_summary_zh"] = "简短摘要。"
+    connection.incident_row["what_happened_en"] = "Detailed sequence."
+    connection.incident_row["what_happened_zh"] = "详细经过。"
+    connection.incident_row["ai_failure_point_en"] = "Guardrail failure."
+    connection.incident_row["ai_failure_point_zh"] = "护栏失效。"
+    connection.incident_row["why_it_matters_en"] = "This mattered."
+    connection.incident_row["why_it_matters_zh"] = "这很重要。"
+    connection.incident_row["evidence_summary_en"] = "Primary report."
+    connection.incident_row["evidence_summary_zh"] = "一手报告。"
 
     class StubConnectionPool:
         def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
@@ -527,6 +537,11 @@ def test_get_public_incident_serializes_company_name_translation(
 
     assert incident is not None
     assert incident["company_involved_zh"] == "开放人工智能"
+    assert incident["analysis"]["incident_summary_en"] == "Short summary."
+    assert incident["analysis"]["what_happened_en"] == "Detailed sequence."
+    assert incident["analysis"]["ai_failure_point_en"] == "Guardrail failure."
+    assert incident["analysis"]["why_it_matters_en"] == "This mattered."
+    assert incident["analysis"]["evidence_summary_en"] == "Primary report."
 
 
 def test_get_filter_values_returns_chinese_company_labels(monkeypatch) -> None:

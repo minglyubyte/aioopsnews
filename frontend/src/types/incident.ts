@@ -39,13 +39,19 @@ export type IncidentArchiveItem = PublicIncidentBase & {
 };
 
 export type IncidentAnalysis = {
+  incident_summary_en?: string | null;
+  incident_summary_zh?: string | null;
   what_happened_en?: string | null;
   what_happened_zh?: string | null;
+  ai_failure_point_en?: string | null;
+  ai_failure_point_zh?: string | null;
   why_it_matters_en?: string | null;
   why_it_matters_zh?: string | null;
   evidence_summary_en?: string | null;
   evidence_summary_zh?: string | null;
+  incident_summary?: string | null;
   what_happened?: string | null;
+  ai_failure_point?: string | null;
   why_it_matters?: string | null;
   evidence_summary?: string | null;
 };

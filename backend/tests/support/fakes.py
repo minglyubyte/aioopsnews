@@ -830,12 +830,25 @@ class InMemoryIncidentRepository:
             "status": incident["status"],
             "translation_status": incident.get("translation_status"),
             "analysis": {
-                "what_happened_en": incident.get(
-                    "reality_summary_en",
-                    incident["reality_summary"],
+                "incident_summary_en": _sanitize_reader_text(
+                    incident.get("incident_summary_en")
+                )
+                or incident.get("reality_summary_en", incident["reality_summary"]),
+                "incident_summary_zh": _sanitize_reader_text(
+                    incident.get("incident_summary_zh")
+                )
+                or _sanitize_reader_text(incident.get("reality_summary_zh")),
+                "what_happened_en": _sanitize_reader_text(
+                    incident.get("what_happened_en")
                 ),
                 "what_happened_zh": _sanitize_reader_text(
-                    incident.get("reality_summary_zh")
+                    incident.get("what_happened_zh")
+                ),
+                "ai_failure_point_en": _sanitize_reader_text(
+                    incident.get("ai_failure_point_en")
+                ),
+                "ai_failure_point_zh": _sanitize_reader_text(
+                    incident.get("ai_failure_point_zh")
                 ),
                 "why_it_matters_en": _sanitize_reader_text(
                     incident.get("legitimacy_reasoning"),

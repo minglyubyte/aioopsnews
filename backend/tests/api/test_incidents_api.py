@@ -71,6 +71,21 @@ def _build_repository() -> InMemoryIncidentRepository:
                     "A reviewed database record leaked internal notes into replies."
                 ),
                 "reality_summary_zh": "经审核的数据库记录将内部备注泄露到回复中。",
+                "incident_summary_en": (
+                    "A customer-support automation release exposed internal billing "
+                    "notes in live replies."
+                ),
+                "incident_summary_zh": "一次客户支持自动化发布在实时回复中暴露了内部账单备注。",
+                "what_happened_en": (
+                    "The rollout surfaced internal account notes directly in "
+                    "customer-facing assistant messages."
+                ),
+                "what_happened_zh": "这次发布让内部账户备注直接出现在面向客户的助手消息中。",
+                "ai_failure_point_en": (
+                    "The assistant failed to separate private support context from "
+                    "reply-generation context."
+                ),
+                "ai_failure_point_zh": "该助手未能将私密支持上下文与回复生成上下文隔离开。",
                 "status": "approved",
                 "translation_status": "completed",
                 "matched_claim_id": "claim-1",
@@ -326,10 +341,21 @@ def test_get_incident_detail_returns_public_record_with_analysis_and_sources() -
     assert detail_response.json()["headline_zh"] == "数据库支持的隐私事件已完成审核"
     assert detail_response.json()["company_involved_zh"] == "未来栈"
     assert detail_response.json()["analysis"] == {
-        "what_happened_en": (
-            "A reviewed database record leaked internal notes into replies."
+        "incident_summary_en": (
+            "A customer-support automation release exposed internal billing "
+            "notes in live replies."
         ),
-        "what_happened_zh": "经审核的数据库记录将内部备注泄露到回复中。",
+        "incident_summary_zh": "一次客户支持自动化发布在实时回复中暴露了内部账单备注。",
+        "what_happened_en": (
+            "The rollout surfaced internal account notes directly in "
+            "customer-facing assistant messages."
+        ),
+        "what_happened_zh": "这次发布让内部账户备注直接出现在面向客户的助手消息中。",
+        "ai_failure_point_en": (
+            "The assistant failed to separate private support context from "
+            "reply-generation context."
+        ),
+        "ai_failure_point_zh": "该助手未能将私密支持上下文与回复生成上下文隔离开。",
         "why_it_matters_en": (
             "The failure matters because internal account data appeared in "
             "customer-facing replies."

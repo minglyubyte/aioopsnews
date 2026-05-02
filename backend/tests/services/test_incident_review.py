@@ -1,17 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import sys
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import httpx
+import pytest
 
 from app.core.incident_taxonomy import INCIDENT_CATEGORY_TAXONOMY
+from app.scripts.backfill_incident_forensic_fields import _missing_forensic_fields
 from app.services.incident_deduplication import DuplicateJudgeDecision
 from app.services.incident_import import import_incidents_csv_text
 from app.services.incident_review import (
     FetchedIncidentSource,
     HttpIncidentSourceFetcher,
     IncidentReviewResult,
+    OpenAIIncidentReviewClient,
+    AsyncOpenAIIncidentReviewClient,
+    REVIEW_MAX_OUTPUT_TOKENS,
+    ReviewResponseParseError,
     _build_review_messages,
     _build_review_response_format,
     _extract_evidence_text,
@@ -22,6 +31,10 @@ from app.services.incident_review import (
 from app.services.incident_translation import IncidentTranslation
 from tests.support.fakes import InMemoryIncidentRepository
 from tests.support.incident_csv_fixtures import VALID_IMPORT_CSV
+
+
+def _wordy(prefix: str, *, count: int = 100) -> str:
+    return " ".join(f"{prefix}{index}" for index in range(1, count + 1))
 
 
 @dataclass
@@ -75,7 +88,7 @@ class FakeBatchReviewClient:
 
 class FakeTranslationClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str, str, str]] = []
+        self.calls: list[dict[str, str]] = []
 
     def translate(
         self,
@@ -85,15 +98,25 @@ class FakeTranslationClient:
         reality_summary_en: str,
         legitimacy_reasoning_en: str,
         source_validation_summary_en: str,
+        incident_summary_en: str = "",
+        what_happened_en: str = "",
+        ai_failure_point_en: str = "",
+        why_it_matters_en: str = "",
+        evidence_summary_en: str = "",
     ) -> IncidentTranslation:
         self.calls.append(
-            (
-                company_involved_en,
-                headline_en,
-                reality_summary_en,
-                legitimacy_reasoning_en,
-                source_validation_summary_en,
-            )
+            {
+                "company_involved_en": company_involved_en,
+                "headline_en": headline_en,
+                "reality_summary_en": reality_summary_en,
+                "legitimacy_reasoning_en": legitimacy_reasoning_en,
+                "source_validation_summary_en": source_validation_summary_en,
+                "incident_summary_en": incident_summary_en,
+                "what_happened_en": what_happened_en,
+                "ai_failure_point_en": ai_failure_point_en,
+                "why_it_matters_en": why_it_matters_en,
+                "evidence_summary_en": evidence_summary_en,
+            }
         )
         return IncidentTranslation(
             company_involved_zh=f"ZH:{company_involved_en}",
@@ -101,6 +124,11 @@ class FakeTranslationClient:
             reality_summary_zh=f"ZH:{reality_summary_en}",
             legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
             source_validation_summary_zh=f"ZH:{source_validation_summary_en}",
+            incident_summary_zh=f"ZH:{incident_summary_en}",
+            what_happened_zh=f"ZH:{what_happened_en}",
+            ai_failure_point_zh=f"ZH:{ai_failure_point_en}",
+            why_it_matters_zh=f"ZH:{why_it_matters_en}",
+            evidence_summary_zh=f"ZH:{evidence_summary_en}",
             status="completed",
         )
 
@@ -194,6 +222,11 @@ def test_parse_review_result_accepts_qualitative_severity_confidence() -> None:
             '"source_quality_summary":"Two credible sources.",'
             '"date_confirmed":true,"company_confirmed":true,'
             '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+            f'"incident_summary_en":"{_wordy("summary", count=40)}",'
+            f'"what_happened_en":"{_wordy("happened")}",'
+            f'"ai_failure_point_en":"{_wordy("failure")}",'
+            f'"why_it_matters_en":"{_wordy("matters")}",'
+            f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
             '"categories":["Hallucinations"],'
             '"suggested_severity_score":2,"severity_confidence":"low",'
             '"severity_reasoning":"Limited confidence.","severity_flags":[],'
@@ -231,8 +264,88 @@ def test_build_review_messages_include_json_guidance_example() -> None:
 
     assert "json" in system_prompt
     assert '"verdict"' in messages[0]["content"]
+    assert '"incident_summary_en"' in messages[0]["content"]
+    assert '"ai_failure_point_en"' in messages[0]["content"]
+    assert "at least 100 words" in system_prompt
     assert '"needs_escalation"' in messages[0]["content"]
     assert user_payload["approved_categories"] == list(INCIDENT_CATEGORY_TAXONOMY)
+
+
+def test_parse_review_result_reads_structured_forensic_fields() -> None:
+    result = _parse_review_result(
+        incident_id="incident-1",
+        model="gpt-5.4-mini",
+        content=(
+            '{"verdict":"approved","score":0.94,"reasoning":"Strong evidence.",'
+            '"source_quality_summary":"Two credible sources.",'
+            '"date_confirmed":true,"company_confirmed":true,'
+            '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+            f'"incident_summary_en":"{_wordy("summary", count=40)}",'
+            f'"what_happened_en":"{_wordy("happened")}",'
+            f'"ai_failure_point_en":"{_wordy("failure")}",'
+            f'"why_it_matters_en":"{_wordy("matters")}",'
+            f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
+            '"categories":["Hallucinations"],'
+            '"suggested_severity_score":2,"severity_confidence":0.92,'
+            '"severity_reasoning":"High confidence.","severity_flags":[],'
+            '"needs_escalation":false}'
+        ),
+    )
+
+    assert result.incident_summary_en == _wordy("summary", count=40)
+    assert result.what_happened_en == _wordy("happened")
+    assert result.ai_failure_point_en == _wordy("failure")
+    assert result.why_it_matters_en == _wordy("matters")
+    assert result.evidence_summary_en == _wordy("evidence", count=40)
+
+
+def test_parse_review_result_rejects_forensic_sections_under_100_words() -> None:
+    with pytest.raises(ReviewResponseParseError) as exc_info:
+        _parse_review_result(
+            incident_id="incident-1",
+            model="gpt-5.4-mini",
+            content=(
+                '{"verdict":"approved","score":0.94,"reasoning":"Strong evidence.",'
+                '"source_quality_summary":"Two credible sources.",'
+                '"date_confirmed":true,"company_confirmed":true,'
+                '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+                f'"incident_summary_en":"{_wordy("summary", count=40)}",'
+                f'"what_happened_en":"{_wordy("short", count=99)}",'
+                f'"ai_failure_point_en":"{_wordy("failure")}",'
+                f'"why_it_matters_en":"{_wordy("matters")}",'
+                f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
+                '"categories":["Hallucinations"],'
+                '"suggested_severity_score":2,"severity_confidence":0.92,'
+                '"severity_reasoning":"High confidence.","severity_flags":[],'
+                '"needs_escalation":false}'
+            ),
+        )
+
+    assert "what_happened_en" in str(exc_info.value)
+    assert "100 words" in str(exc_info.value)
+
+
+def test_backfill_marks_short_forensic_sections_as_missing() -> None:
+    missing_fields = _missing_forensic_fields(
+        {
+            "analysis": {
+                "incident_summary_en": _wordy("summary", count=40),
+                "incident_summary_zh": "摘要",
+                "what_happened_en": _wordy("happened", count=99),
+                "what_happened_zh": "发生了什么",
+                "ai_failure_point_en": _wordy("failure", count=75),
+                "ai_failure_point_zh": "失败点",
+                "why_it_matters_en": _wordy("matters"),
+                "why_it_matters_zh": "重要性",
+                "evidence_summary_en": _wordy("evidence", count=40),
+                "evidence_summary_zh": "证据摘要",
+            }
+        }
+    )
+
+    assert "what_happened_en" in missing_fields
+    assert "ai_failure_point_en" in missing_fields
+    assert "why_it_matters_en" not in missing_fields
 
 
 def test_parse_review_result_marks_unknown_categories_for_escalation() -> None:
@@ -244,6 +357,11 @@ def test_parse_review_result_marks_unknown_categories_for_escalation() -> None:
             '"source_quality_summary":"Two credible sources.",'
             '"date_confirmed":true,"company_confirmed":true,'
             '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+            f'"incident_summary_en":"{_wordy("summary", count=40)}",'
+            f'"what_happened_en":"{_wordy("happened")}",'
+            f'"ai_failure_point_en":"{_wordy("failure")}",'
+            f'"why_it_matters_en":"{_wordy("matters")}",'
+            f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
             '"categories":["Made Up Category"],'
             '"suggested_severity_score":2,"severity_confidence":0.92,'
             '"severity_reasoning":"High confidence.","severity_flags":[],'
@@ -265,6 +383,11 @@ def test_parse_review_result_preserves_explicit_needs_escalation() -> None:
             '"source_quality_summary":"Sources conflict.",'
             '"date_confirmed":false,"company_confirmed":true,'
             '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+            f'"incident_summary_en":"{_wordy("summary", count=40)}",'
+            f'"what_happened_en":"{_wordy("happened")}",'
+            f'"ai_failure_point_en":"{_wordy("failure")}",'
+            f'"why_it_matters_en":"{_wordy("matters")}",'
+            f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
             '"categories":["Hallucinations"],'
             '"suggested_severity_score":3,"severity_confidence":0.61,'
             '"severity_reasoning":"Signals conflict.","severity_flags":[],'
@@ -273,6 +396,193 @@ def test_parse_review_result_preserves_explicit_needs_escalation() -> None:
     )
 
     assert result.needs_escalation is True
+
+
+def test_sync_review_client_retries_malformed_json_and_uses_higher_max_tokens(
+    monkeypatch,
+) -> None:
+    client = OpenAIIncidentReviewClient(
+        api_key="test-key",
+        base_url="https://api.deepseek.com/v1",
+    )
+    calls: list[dict[str, object]] = []
+    contents = [
+        "",
+        '{"verdict":"approved","score":0.96,"reasoning":"Strong evidence.',
+        (
+            '{"verdict":"approved","score":0.96,"reasoning":"Strong evidence.",'
+            '"source_quality_summary":"Multiple sources agree.",'
+            '"date_confirmed":true,"company_confirmed":true,'
+            '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+            f'"incident_summary_en":"{_wordy("summary", count=40)}",'
+            f'"what_happened_en":"{_wordy("happened")}",'
+            f'"ai_failure_point_en":"{_wordy("failure")}",'
+            f'"why_it_matters_en":"{_wordy("matters")}",'
+            f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
+            '"categories":["Hallucinations"],'
+            '"suggested_severity_score":2,"severity_confidence":0.91,'
+            '"severity_reasoning":"Confirmed by multiple sources.",'
+            '"severity_flags":[],"needs_escalation":false}'
+        ),
+    ]
+
+    def fake_post(
+        url: str,
+        *,
+        headers: dict[str, str],
+        json: dict[str, object],
+        timeout: float,
+    ) -> httpx.Response:
+        del headers, timeout
+        calls.append({"url": url, "payload": json})
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "model": "deepseek-v4-pro",
+                "choices": [{"message": {"content": contents[len(calls) - 1]}}],
+            },
+        )
+
+    monkeypatch.setattr("app.services.incident_review.httpx.post", fake_post)
+
+    result = client.review_incident(
+        incident={
+            "id": "incident-1",
+            "external_id": "ext-1",
+            "company_involved": "OpenAI",
+            "incident_topic": "Hallucinations",
+            "date_logged": "2026-05-01",
+            "headline": "Headline",
+            "reality_summary": "Summary",
+            "sources": [],
+        },
+        model="deepseek-v4-pro",
+    )
+
+    assert result.reviewed_model == "deepseek-v4-pro"
+    assert result.verdict == "approved"
+    assert len(calls) == 3
+    assert all(
+        call["payload"]["max_tokens"] == REVIEW_MAX_OUTPUT_TOKENS  # type: ignore[index]
+        for call in calls
+    )
+
+
+def test_async_review_client_retries_malformed_json_and_uses_higher_max_tokens(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    contents = [
+        "",
+        '{"verdict":"approved","score":0.96,"reasoning":"Strong evidence.',
+        (
+            '{"verdict":"approved","score":0.96,"reasoning":"Strong evidence.",'
+            '"source_quality_summary":"Multiple sources agree.",'
+            '"date_confirmed":true,"company_confirmed":true,'
+            '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
+            f'"incident_summary_en":"{_wordy("summary", count=40)}",'
+            f'"what_happened_en":"{_wordy("happened")}",'
+            f'"ai_failure_point_en":"{_wordy("failure")}",'
+            f'"why_it_matters_en":"{_wordy("matters")}",'
+            f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
+            '"categories":["Hallucinations"],'
+            '"suggested_severity_score":2,"severity_confidence":0.91,'
+            '"severity_reasoning":"Confirmed by multiple sources.",'
+            '"severity_flags":[],"needs_escalation":false}'
+        ),
+    ]
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            del kwargs
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(create=self.create)
+            )
+
+        async def create(self, **kwargs: object) -> SimpleNamespace:
+            calls.append(kwargs)
+            return SimpleNamespace(
+                model="deepseek-v4-flash",
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=contents[len(calls) - 1])
+                    )
+                ],
+            )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "openai",
+        SimpleNamespace(AsyncOpenAI=FakeAsyncOpenAI),
+    )
+    client = AsyncOpenAIIncidentReviewClient(
+        api_key="test-key",
+        base_url="https://api.deepseek.com/v1",
+    )
+
+    result = asyncio.run(
+        client.review_incident(
+            incident={
+                "id": "incident-1",
+                "external_id": "ext-1",
+                "company_involved": "OpenAI",
+                "incident_topic": "Hallucinations",
+                "date_logged": "2026-05-01",
+                "headline": "Headline",
+                "reality_summary": "Summary",
+                "sources": [],
+            },
+            model="deepseek-v4-flash",
+        )
+    )
+
+    assert result.reviewed_model == "deepseek-v4-flash"
+    assert result.verdict == "approved"
+    assert len(calls) == 3
+    assert all(call["max_tokens"] == REVIEW_MAX_OUTPUT_TOKENS for call in calls)
+
+
+def test_submit_batch_uses_higher_max_tokens_in_jsonl_payload(monkeypatch) -> None:
+    client = OpenAIIncidentReviewClient(
+        api_key="test-key",
+        base_url="https://api.deepseek.com/v1",
+    )
+    captured: dict[str, str] = {}
+
+    def fake_upload_batch_file(jsonl_body: str) -> str:
+        captured["jsonl_body"] = jsonl_body
+        return "file-123"
+
+    def fake_post_json(path: str, payload: dict[str, object]) -> dict[str, str]:
+        assert path == "/batches"
+        assert payload["input_file_id"] == "file-123"
+        return {"id": "batch-123"}
+
+    monkeypatch.setattr(client, "_upload_batch_file", fake_upload_batch_file)
+    monkeypatch.setattr(client, "_post_json", fake_post_json)
+
+    submission = client.submit_batch(
+        incidents=[
+            {
+                "id": "incident-1",
+                "external_id": "ext-1",
+                "company_involved": "OpenAI",
+                "incident_topic": "Hallucinations",
+                "date_logged": "2026-05-01",
+                "headline": "Headline",
+                "reality_summary": "Summary",
+                "sources": [],
+            }
+        ],
+        model="deepseek-v4-flash",
+    )
+
+    request_body = json.loads(captured["jsonl_body"].splitlines()[0])
+
+    assert submission.batch_id == "batch-123"
+    assert request_body["body"]["max_tokens"] == REVIEW_MAX_OUTPUT_TOKENS
 
 
 def test_submit_incident_review_batch_fetches_source_evidence_and_marks_batch() -> None:
@@ -326,6 +636,24 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
             headline_en="OpenAI filing included fake legal citations",
             reality_summary_en=(
                 "Court records and reporting confirm the filing incident."
+            ),
+            incident_summary_en=(
+                "A court filing incident exposed fabricated legal citations."
+            ),
+            what_happened_en=(
+                "Court submissions and coverage show that fabricated citations "
+                "were included in a federal filing."
+            ),
+            ai_failure_point_en=(
+                "The drafting workflow failed to verify cited cases before "
+                "including them in the filing."
+            ),
+            why_it_matters_en=(
+                "The incident affected a real legal proceeding and required "
+                "human correction."
+            ),
+            evidence_summary_en=(
+                "Court records and multiple reports confirm the error."
             ),
             categories=["Hallucinations"],
             suggested_severity_score=2,
@@ -392,6 +720,20 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
     assert approved_incident["headline_zh"] == (
         "ZH:OpenAI filing included fake legal citations"
     )
+    assert approved_incident["incident_summary_en"] == (
+        "A court filing incident exposed fabricated legal citations."
+    )
+    assert approved_incident["ai_failure_point_en"] == (
+        "The drafting workflow failed to verify cited cases before including "
+        "them in the filing."
+    )
+    assert approved_incident["incident_summary_zh"] == (
+        "ZH:A court filing incident exposed fabricated legal citations."
+    )
+    assert approved_incident["ai_failure_point_zh"] == (
+        "ZH:The drafting workflow failed to verify cited cases before "
+        "including them in the filing."
+    )
     assert approved_incident["legitimacy_reasoning_zh"] == (
         "ZH:Primary review found strong source support."
     )
@@ -417,13 +759,35 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
     assert queued_incident["severity_confidence"] == 0.89
     assert queued_incident["severity_decision_source"] is None
     assert translation_client.calls == [
-        (
-            "OpenAI",
-            "OpenAI filing included fake legal citations",
-            "Court records and reporting confirm the filing incident.",
-            "Primary review found strong source support.",
-            "3 fetched sources agree on the event.",
-        )
+        {
+            "company_involved_en": "OpenAI",
+            "headline_en": "OpenAI filing included fake legal citations",
+            "reality_summary_en": (
+                "Court records and reporting confirm the filing incident."
+            ),
+            "legitimacy_reasoning_en": (
+                "Primary review found strong source support."
+            ),
+            "source_validation_summary_en": "3 fetched sources agree on the event.",
+            "incident_summary_en": (
+                "A court filing incident exposed fabricated legal citations."
+            ),
+            "what_happened_en": (
+                "Court submissions and coverage show that fabricated citations "
+                "were included in a federal filing."
+            ),
+            "ai_failure_point_en": (
+                "The drafting workflow failed to verify cited cases before "
+                "including them in the filing."
+            ),
+            "why_it_matters_en": (
+                "The incident affected a real legal proceeding and required "
+                "human correction."
+            ),
+            "evidence_summary_en": (
+                "Court records and multiple reports confirm the error."
+            ),
+        }
     ]
 
 
@@ -492,6 +856,25 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
         reality_summary_en=(
             "Escalation confirmed the incident and the need for staff correction."
         ),
+        incident_summary_en=(
+            "Students received incorrect enrollment guidance that required "
+            "staff intervention."
+        ),
+        what_happened_en=(
+            "The chatbot gave students inaccurate guidance and staff had to "
+            "step in to correct it."
+        ),
+        ai_failure_point_en=(
+            "The assistant failed to ground enrollment advice in current school "
+            "policy."
+        ),
+        why_it_matters_en=(
+            "Students depended on the answer for enrollment decisions and staff "
+            "had to recover manually."
+        ),
+        evidence_summary_en=(
+            "District reporting and local coverage align on the incident."
+        ),
         categories=["Autonomous Systems", "Missed Timelines"],
         suggested_severity_score=3,
         severity_confidence=0.84,
@@ -527,6 +910,14 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
         "Autonomous Systems",
         "Missed Timelines",
     ]
+    assert target_incident["incident_summary_en"] == (
+        "Students received incorrect enrollment guidance that required staff "
+        "intervention."
+    )
+    assert target_incident["ai_failure_point_en"] == (
+        "The assistant failed to ground enrollment advice in current school "
+        "policy."
+    )
     assert target_incident["review_model"] == "gpt-5.2"
     assert target_incident["suggested_severity_score"] == 3
     assert target_incident["severity_decision_source"] is None

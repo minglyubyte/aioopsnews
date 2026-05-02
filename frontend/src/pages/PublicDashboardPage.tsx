@@ -135,6 +135,8 @@ const PUBLIC_COPY = {
     detailKicker: "Evidence",
     detailTitle: "Full context",
     detailLoading: "Loading incident details...",
+    aiFailurePointTitle: "AI failure point",
+    aiFailurePointUnavailable: "Not yet structured for this incident.",
     whatHappenedTitle: "What happened",
     whyItMattersTitle: "Why it matters",
     evidenceSummaryTitle: "Evidence summary",
@@ -246,6 +248,8 @@ const PUBLIC_COPY = {
     detailKicker: "证据",
     detailTitle: "完整背景",
     detailLoading: "正在加载事件详情...",
+    aiFailurePointTitle: "AI 失效点",
+    aiFailurePointUnavailable: "这起事件的 AI 失效点尚未整理出来。",
     whatHappenedTitle: "发生了什么",
     whyItMattersTitle: "为什么重要",
     evidenceSummaryTitle: "证据摘要",
@@ -348,6 +352,8 @@ const PUBLIC_COPY = {
     detailKicker: string;
     detailTitle: string;
     detailLoading: string;
+    aiFailurePointTitle: string;
+    aiFailurePointUnavailable: string;
     whatHappenedTitle: string;
     whyItMattersTitle: string;
     evidenceSummaryTitle: string;
@@ -1066,6 +1072,18 @@ export default function PublicDashboardPage() {
                       </p>
                     </section>
                   ) : null}
+                  <section className="public-detail-block">
+                    <p className="public-claim-kicker">
+                      {copy.aiFailurePointTitle}
+                    </p>
+                    <p className="body-copy">
+                      {localizedAnalysisText(
+                        incidentDetail.analysis,
+                        "ai_failure_point",
+                        readerLocale,
+                      ) ?? copy.aiFailurePointUnavailable}
+                    </p>
+                  </section>
                   {localizedAnalysisText(
                     incidentDetail.analysis,
                     "why_it_matters",
@@ -1218,6 +1236,15 @@ function localizedArchiveSummary(
 }
 
 function localizedDetailSummary(incident: IncidentDetail, locale: ReaderLocale) {
+  const incidentSummary = localizedAnalysisText(
+    incident.analysis,
+    "incident_summary",
+    locale,
+  );
+  if (incidentSummary) {
+    return incidentSummary;
+  }
+
   if (locale === "zh") {
     return (
       incident.reality_summary_zh ??
@@ -1231,7 +1258,12 @@ function localizedDetailSummary(incident: IncidentDetail, locale: ReaderLocale) 
 
 function localizedAnalysisText(
   analysis: IncidentAnalysis,
-  key: "what_happened" | "why_it_matters" | "evidence_summary",
+  key:
+    | "incident_summary"
+    | "what_happened"
+    | "ai_failure_point"
+    | "why_it_matters"
+    | "evidence_summary",
   locale: ReaderLocale,
 ) {
   const englishKey = `${key}_en` as keyof IncidentAnalysis;

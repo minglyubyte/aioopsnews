@@ -495,6 +495,16 @@ class PostgresIncidentRepository:
                     incident_logs.reality_summary_zh,
                     incident_logs.status,
                     incident_logs.translation_status,
+                    incident_logs.incident_summary_en,
+                    incident_logs.incident_summary_zh,
+                    incident_logs.what_happened_en,
+                    incident_logs.what_happened_zh,
+                    incident_logs.ai_failure_point_en,
+                    incident_logs.ai_failure_point_zh,
+                    incident_logs.why_it_matters_en,
+                    incident_logs.why_it_matters_zh,
+                    incident_logs.evidence_summary_en,
+                    incident_logs.evidence_summary_zh,
                     incident_logs.legitimacy_reasoning,
                     incident_logs.legitimacy_reasoning_zh,
                     incident_logs.source_validation_summary,
@@ -2451,22 +2461,52 @@ class PostgresIncidentRepository:
             "status": row["status"],
             "translation_status": row.get("translation_status"),
             "analysis": {
-                "what_happened_en": row.get("reality_summary_en")
+                "incident_summary_en": _sanitize_reader_text(
+                    row.get("incident_summary_en"),
+                )
+                or row.get("reality_summary_en")
                 or row["reality_summary"],
-                "what_happened_zh": _sanitize_reader_text(
+                "incident_summary_zh": _sanitize_reader_text(
+                    row.get("incident_summary_zh"),
+                )
+                or _sanitize_reader_text(
                     row.get("reality_summary_zh"),
                 ),
+                "what_happened_en": _sanitize_reader_text(
+                    row.get("what_happened_en"),
+                ),
+                "what_happened_zh": _sanitize_reader_text(
+                    row.get("what_happened_zh"),
+                ),
+                "ai_failure_point_en": _sanitize_reader_text(
+                    row.get("ai_failure_point_en"),
+                ),
+                "ai_failure_point_zh": _sanitize_reader_text(
+                    row.get("ai_failure_point_zh"),
+                ),
                 "why_it_matters_en": _sanitize_reader_text(
+                    row.get("why_it_matters_en"),
+                )
+                or _sanitize_reader_text(
                     row.get("legitimacy_reasoning"),
                 ),
                 "why_it_matters_zh": _sanitize_reader_text(
+                    row.get("why_it_matters_zh"),
+                )
+                or _sanitize_reader_text(
                     row.get("legitimacy_reasoning_zh"),
                 ),
                 "evidence_summary_en": _sanitize_reader_text(
+                    row.get("evidence_summary_en"),
+                )
+                or _sanitize_reader_text(
                     row.get("source_validation_summary"),
                 )
                 or _fallback_public_evidence_summary(sources, locale="en"),
                 "evidence_summary_zh": _sanitize_reader_text(
+                    row.get("evidence_summary_zh"),
+                )
+                or _sanitize_reader_text(
                     row.get("source_validation_summary_zh"),
                 )
                 or _fallback_public_evidence_summary(sources, locale="zh"),

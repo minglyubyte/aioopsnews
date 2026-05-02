@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 
 from app.services.incident_deduplication import DuplicateJudgeDecision
@@ -50,7 +51,9 @@ class FakeEscalationReviewClient:
     def __init__(
         self,
         *,
-        results_by_external_id: dict[str, IncidentReviewResult] | None = None,
+        results_by_external_id: dict[
+            str, IncidentReviewResult | Exception
+        ] | None = None,
     ) -> None:
         self.results_by_external_id = results_by_external_id or {}
         self.calls: list[tuple[str, str]] = []
@@ -63,12 +66,15 @@ class FakeEscalationReviewClient:
     ) -> IncidentReviewResult:
         external_id = str(incident["external_id"])
         self.calls.append((external_id, model))
-        return self.results_by_external_id[external_id]
+        response = self.results_by_external_id[external_id]
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class FakeTranslationClient:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str, str, str]] = []
+        self.calls: list[dict[str, str]] = []
 
     def translate(
         self,
@@ -78,15 +84,25 @@ class FakeTranslationClient:
         reality_summary_en: str,
         legitimacy_reasoning_en: str,
         source_validation_summary_en: str,
+        incident_summary_en: str = "",
+        what_happened_en: str = "",
+        ai_failure_point_en: str = "",
+        why_it_matters_en: str = "",
+        evidence_summary_en: str = "",
     ):
         self.calls.append(
-            (
-                company_involved_en,
-                headline_en,
-                reality_summary_en,
-                legitimacy_reasoning_en,
-                source_validation_summary_en,
-            )
+            {
+                "company_involved_en": company_involved_en,
+                "headline_en": headline_en,
+                "reality_summary_en": reality_summary_en,
+                "legitimacy_reasoning_en": legitimacy_reasoning_en,
+                "source_validation_summary_en": source_validation_summary_en,
+                "incident_summary_en": incident_summary_en,
+                "what_happened_en": what_happened_en,
+                "ai_failure_point_en": ai_failure_point_en,
+                "why_it_matters_en": why_it_matters_en,
+                "evidence_summary_en": evidence_summary_en,
+            }
         )
         from app.services.incident_translation import IncidentTranslation
 
@@ -96,6 +112,11 @@ class FakeTranslationClient:
             reality_summary_zh=f"ZH:{reality_summary_en}",
             legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
             source_validation_summary_zh=f"ZH:{source_validation_summary_en}",
+            incident_summary_zh=f"ZH:{incident_summary_en}",
+            what_happened_zh=f"ZH:{what_happened_en}",
+            ai_failure_point_zh=f"ZH:{ai_failure_point_en}",
+            why_it_matters_zh=f"ZH:{why_it_matters_en}",
+            evidence_summary_zh=f"ZH:{evidence_summary_en}",
             status="completed",
         )
 
@@ -148,6 +169,22 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
                     company_confirmed=True,
                     headline_en="OpenAI filing included fake legal citations",
                     reality_summary_en="Court records confirm the filing incident.",
+                    incident_summary_en=(
+                        "A court filing incident exposed fabricated citations."
+                    ),
+                    what_happened_en=(
+                        "The filing included fabricated citations and required "
+                        "correction."
+                    ),
+                    ai_failure_point_en=(
+                        "The drafting workflow failed to verify cited cases."
+                    ),
+                    why_it_matters_en=(
+                        "The issue affected a real legal filing."
+                    ),
+                    evidence_summary_en=(
+                        "Court records and reporting confirm the error."
+                    ),
                     categories=["Hallucinations"],
                     suggested_severity_score=2,
                     severity_confidence=0.93,
@@ -216,14 +253,31 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
         if incident["external_id"] == "inc-openai-001"
     )
     assert approved_incident["company_involved_zh"] == "ZH:OpenAI"
+    assert approved_incident["incident_summary_zh"] == (
+        "ZH:A court filing incident exposed fabricated citations."
+    )
     assert translation_client.calls == [
-        (
-            "OpenAI",
-            "OpenAI filing included fake legal citations",
-            "Court records confirm the filing incident.",
-            "Strong source support.",
-            "3 fetched sources agree on the event.",
-        )
+        {
+            "company_involved_en": "OpenAI",
+            "headline_en": "OpenAI filing included fake legal citations",
+            "reality_summary_en": "Court records confirm the filing incident.",
+            "legitimacy_reasoning_en": "Strong source support.",
+            "source_validation_summary_en": "3 fetched sources agree on the event.",
+            "incident_summary_en": (
+                "A court filing incident exposed fabricated citations."
+            ),
+            "what_happened_en": (
+                "The filing included fabricated citations and required "
+                "correction."
+            ),
+            "ai_failure_point_en": (
+                "The drafting workflow failed to verify cited cases."
+            ),
+            "why_it_matters_en": "The issue affected a real legal filing.",
+            "evidence_summary_en": (
+                "Court records and reporting confirm the error."
+            ),
+        }
     ]
     assert "batches_submitted" not in summary
     assert not (inbox_dir / "2023-a.csv").exists()
@@ -378,6 +432,101 @@ def test_run_incident_csv_workflow_reports_unrecoverable_review_failures(
     assert summary["reviews_failed"] == 1
     assert len(summary["review_failures"]) == 1
     assert summary["review_failures"][0]["external_id"] == "inc-school-002"
+    assert summary["approved"] == 1
+    assert school_incident["status"] == "pending_llm_review"
+
+
+def test_run_incident_csv_workflow_reports_escalation_parse_failures_without_crashing(
+    tmp_path,
+) -> None:
+    from app.workflows.incident_csv_workflow import run_incident_csv_workflow
+
+    repository = InMemoryIncidentRepository()
+    inbox_dir = tmp_path / "inbox"
+    archive_dir = tmp_path / "archive"
+    inbox_dir.mkdir()
+    (inbox_dir / "2023-a.csv").write_text(VALID_IMPORT_CSV, encoding="utf-8")
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-openai-001": [
+                IncidentReviewResult(
+                    incident_id="unused-openai",
+                    verdict="approved",
+                    score=0.96,
+                    reasoning="Strong source support.",
+                    source_quality_summary="3 fetched sources agree on the event.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="OpenAI filing included fake legal citations",
+                    reality_summary_en="Court records confirm the filing incident.",
+                    categories=["Hallucinations"],
+                    suggested_severity_score=2,
+                    severity_confidence=0.93,
+                    severity_reasoning="Limited but confirmed harm.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+            "inc-school-002": [
+                IncidentReviewResult(
+                    incident_id="unused-school",
+                    verdict="pending_review",
+                    score=0.58,
+                    reasoning="Primary review remains uncertain.",
+                    source_quality_summary="Conflicting source details.",
+                    date_confirmed=False,
+                    company_confirmed=True,
+                    headline_en="School chatbot gave inaccurate enrollment guidance",
+                    reality_summary_en="Primary review found unresolved ambiguity.",
+                    categories=["Autonomous Systems"],
+                    suggested_severity_score=3,
+                    severity_confidence=0.61,
+                    severity_reasoning="Evidence conflicts.",
+                    severity_flags=[],
+                    needs_escalation=True,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+        }
+    )
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(
+                results_by_external_id={
+                    "inc-school-002": json.JSONDecodeError(
+                        "Expecting value",
+                        "",
+                        0,
+                    )
+                }
+            ),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+        )
+    )
+
+    school_incident = next(
+        incident
+        for incident in repository.incidents.values()
+        if incident["external_id"] == "inc-school-002"
+    )
+
+    assert summary["reviews_attempted"] == 2
+    assert summary["reviews_completed"] == 1
+    assert summary["reviews_failed"] == 1
+    assert len(summary["review_failures"]) == 1
+    assert summary["review_failures"][0]["external_id"] == "inc-school-002"
+    assert "Expecting value" in summary["review_failures"][0]["error"]
     assert summary["approved"] == 1
     assert school_incident["status"] == "pending_llm_review"
 

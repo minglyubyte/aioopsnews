@@ -42,6 +42,10 @@ def create_app(
         escalation_review_model=settings.escalation_review_model,
         deepseek_api_key=settings.deepseek_api_key,
         deepseek_translation_model=settings.deepseek_translation_model,
+        review_max_output_tokens=settings.review_max_output_tokens,
+        review_response_parse_max_attempts=(
+            settings.review_response_parse_max_attempts
+        ),
     )
     app = FastAPI(title="AI Reality Check API", lifespan=_lifespan)
     app.state.settings = effective_settings

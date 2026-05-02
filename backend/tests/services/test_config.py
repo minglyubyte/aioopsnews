@@ -117,6 +117,8 @@ def test_get_settings_defaults_primary_review_to_deepseek(
     monkeypatch.delenv("PRIMARY_REVIEW_BASE_URL", raising=False)
     monkeypatch.delenv("PRIMARY_REVIEW_MODEL", raising=False)
     monkeypatch.delenv("ESCALATION_REVIEW_MODEL", raising=False)
+    monkeypatch.delenv("REVIEW_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
@@ -126,6 +128,8 @@ def test_get_settings_defaults_primary_review_to_deepseek(
     assert settings.escalation_review_model == "deepseek-v4-pro"
     assert settings.primary_review_base_url == "https://api.deepseek.com/v1"
     assert settings.primary_review_api_key is None
+    assert settings.review_max_output_tokens == 8000
+    assert settings.review_response_parse_max_attempts == 3
 
 
 def test_get_settings_uses_deepseek_key_for_default_primary_review_path(
@@ -227,6 +231,29 @@ def test_get_settings_allows_explicit_escalation_review_model_override(
     settings = get_settings()
 
     assert settings.escalation_review_model == "deepseek-v4-pro"
+
+
+def test_get_settings_allows_explicit_review_runtime_overrides(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    backend_dir = repo_root / "backend"
+    backend_dir.mkdir(parents=True)
+    (repo_root / ".env").write_text(
+        "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_reality_check\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(backend_dir)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("REVIEW_MAX_OUTPUT_TOKENS", "9000")
+    monkeypatch.setenv("REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS", "4")
+
+    settings = get_settings()
+
+    assert settings.review_max_output_tokens == 9000
+    assert settings.review_response_parse_max_attempts == 4
 
 
 def test_get_settings_does_not_reuse_openai_key_for_primary_review(

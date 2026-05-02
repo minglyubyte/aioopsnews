@@ -65,6 +65,8 @@ def test_workflow_script_logs_start_and_finish(
             primary_review_model="deepseek-v4-flash",
             escalation_review_model="deepseek-v4-pro",
             deepseek_api_key="test-deepseek-key",
+            review_max_output_tokens=8000,
+            review_response_parse_max_attempts=3,
         ),
     )
     monkeypatch.setattr(
@@ -129,12 +131,16 @@ def test_workflow_script_logs_start_and_finish(
         {
             "api_key": "test-primary-key",
             "base_url": "https://deepseek.example/v1",
+            "max_output_tokens": 8000,
+            "response_parse_max_attempts": 3,
         }
     ]
     assert escalation_client_calls == [
         {
             "api_key": "test-primary-key",
             "base_url": "https://deepseek.example/v1",
+            "max_output_tokens": 8000,
+            "response_parse_max_attempts": 3,
         }
     ]
     assert embedding_client_calls == [{"api_key": "test-openai-key"}]

@@ -62,3 +62,5 @@ def test_create_app_preserves_provider_neutral_primary_review_settings(
     assert app.state.settings.primary_review_base_url == "https://api.deepseek.com/v1"
     assert app.state.settings.primary_review_model == "deepseek-v4-flash"
     assert app.state.settings.escalation_review_model == "deepseek-v4-pro"
+    assert app.state.settings.review_max_output_tokens == 8000
+    assert app.state.settings.review_response_parse_max_attempts == 3

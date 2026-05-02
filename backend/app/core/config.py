@@ -17,6 +17,8 @@ class Settings:
     escalation_review_model: str = "deepseek-v4-pro"
     deepseek_api_key: str | None = None
     deepseek_translation_model: str = "deepseek-v4-flash"
+    review_max_output_tokens: int = 8000
+    review_response_parse_max_attempts: int = 3
 
 
 def _load_dotenv_defaults() -> None:
@@ -42,6 +44,13 @@ def _get_optional_env(name: str) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _get_int_env(name: str, default: int) -> int:
+    value = _get_optional_env(name)
+    if value is None:
+        return default
+    return int(value)
 
 
 def get_settings() -> Settings:
@@ -85,5 +94,10 @@ def get_settings() -> Settings:
         deepseek_translation_model=os.getenv(
             "DEEPSEEK_TRANSLATION_MODEL",
             "deepseek-v4-flash",
+        ),
+        review_max_output_tokens=_get_int_env("REVIEW_MAX_OUTPUT_TOKENS", 8000),
+        review_response_parse_max_attempts=_get_int_env(
+            "REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS",
+            3,
         ),
     )
