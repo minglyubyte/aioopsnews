@@ -171,6 +171,7 @@ def test_get_settings_does_not_reuse_openai_key_for_primary_review(
     )
 
     monkeypatch.chdir(backend_dir)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
     monkeypatch.delenv("PRIMARY_REVIEW_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)

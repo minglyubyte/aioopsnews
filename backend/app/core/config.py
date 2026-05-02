@@ -69,7 +69,7 @@ def get_settings() -> Settings:
         ),
         primary_review_api_key=os.getenv(
             "PRIMARY_REVIEW_API_KEY",
-            deepseek_api_key or openai_api_key,
+            deepseek_api_key,
         ),
         primary_review_base_url=os.getenv(
             "PRIMARY_REVIEW_BASE_URL",
