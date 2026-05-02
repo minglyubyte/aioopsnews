@@ -211,6 +211,33 @@ def test_get_settings_rejects_mixed_legacy_and_provider_neutral_primary_review_c
     assert "PRIMARY_REVIEW_BASE_URL" in str(exc_info.value)
 
 
+def test_get_settings_treats_blank_legacy_openai_primary_review_model_as_unset(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    backend_dir = repo_root / "backend"
+    backend_dir.mkdir(parents=True)
+    (repo_root / ".env").write_text(
+        "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_reality_check\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(backend_dir)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_MODEL", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_API_KEY", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_BASE_URL", raising=False)
+    monkeypatch.setenv("OPENAI_PRIMARY_REVIEW_MODEL", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+    settings = get_settings()
+
+    assert settings.primary_review_model == "deepseek-v4-flash"
+    assert settings.primary_review_api_key is None
+    assert settings.primary_review_base_url == "https://api.deepseek.com/v1"
+
+
 def test_get_settings_does_not_reuse_openai_key_for_primary_review(
     tmp_path: Path,
     monkeypatch,

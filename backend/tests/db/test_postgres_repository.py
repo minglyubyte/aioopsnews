@@ -25,6 +25,62 @@ class _StubConnection:
     def __init__(self) -> None:
         self.executed: list[str] = []
         self.calls: list[tuple[str, tuple[object, ...]]] = []
+        self.incident_row: dict[str, object] = {
+            "id": "incident-1",
+            "external_id": None,
+            "headline": "Updated headline",
+            "headline_en": "Updated headline",
+            "headline_zh": None,
+            "date_logged": "2026-04-30",
+            "company_involved": "OpenAI",
+            "company_involved_zh": "开放人工智能",
+            "incident_topic": None,
+            "claimant_name": None,
+            "categories": '["Hallucinations"]',
+            "severity_score": 3,
+            "suggested_severity_score": None,
+            "reality_summary": "Updated summary",
+            "reality_summary_en": "Updated summary",
+            "reality_summary_zh": None,
+            "status": "rejected",
+            "matched_claim_id": None,
+            "claim_match_confidence": None,
+            "review_notes": None,
+            "legitimacy_score": 0.2,
+            "legitimacy_label": "rejected",
+            "severity_confidence": 0.1,
+            "severity_reasoning": "Not enough evidence.",
+            "severity_flags": "[]",
+            "severity_model": "gpt-5.4-mini",
+            "severity_decision_source": None,
+            "legitimacy_reasoning": "Rejected.",
+            "legitimacy_reasoning_zh": None,
+            "source_validation_summary": "Weak sources.",
+            "source_validation_summary_zh": None,
+            "incident_summary_en": None,
+            "incident_summary_zh": None,
+            "what_happened_en": None,
+            "what_happened_zh": None,
+            "ai_failure_point_en": None,
+            "ai_failure_point_zh": None,
+            "why_it_matters_en": None,
+            "why_it_matters_zh": None,
+            "evidence_summary_en": None,
+            "evidence_summary_zh": None,
+            "translation_status": None,
+            "review_batch_id": "batch-1",
+            "review_model": "gpt-5.4-mini",
+            "duplicate_status": None,
+            "duplicate_of_incident_id": None,
+            "canonical_incident_id": None,
+            "claim_id": None,
+            "claim_claimant_name": None,
+            "claim_company_involved": None,
+            "original_claim": None,
+            "claim_date": None,
+            "claim_topic": None,
+            "claim_status": None,
+        }
 
     def __enter__(self) -> "_StubConnection":
         return self
@@ -38,6 +94,56 @@ class _StubConnection:
     def execute(self, query: str, *args, **kwargs) -> _StubResult:
         self.executed.append(query)
         self.calls.append((query, args))
+        if "update incident_logs" in query and "severity_suggested_at" in query:
+            params = args[0]
+            self.incident_row.update(
+                {
+                    "status": params[0],
+                    "headline": params[1],
+                    "headline_en": params[2],
+                    "reality_summary": params[3],
+                    "reality_summary_en": params[4],
+                    "categories": params[5],
+                    "severity_score": params[6],
+                    "suggested_severity_score": params[7],
+                    "severity_confidence": params[8],
+                    "severity_reasoning": params[9],
+                    "severity_flags": params[10],
+                    "severity_model": params[11],
+                    "severity_decision_source": params[12],
+                    "legitimacy_score": params[13],
+                    "legitimacy_label": params[14],
+                    "legitimacy_reasoning": params[15],
+                    "source_validation_summary": params[16],
+                    "incident_summary_en": params[17],
+                    "what_happened_en": params[18],
+                    "ai_failure_point_en": params[19],
+                    "why_it_matters_en": params[20],
+                    "evidence_summary_en": params[21],
+                    "review_model": params[22],
+                    "review_batch_id": params[23],
+                    "reviewed_at": params[24],
+                    "severity_suggested_at": params[25],
+                }
+            )
+        if "update incident_logs" in query and "translated_at = %s" in query:
+            params = args[0]
+            self.incident_row.update(
+                {
+                    "company_involved_zh": params[0],
+                    "headline_zh": params[1],
+                    "reality_summary_zh": params[2],
+                    "legitimacy_reasoning_zh": params[3],
+                    "source_validation_summary_zh": params[4],
+                    "incident_summary_zh": params[5],
+                    "what_happened_zh": params[6],
+                    "ai_failure_point_zh": params[7],
+                    "why_it_matters_zh": params[8],
+                    "evidence_summary_zh": params[9],
+                    "translation_status": params[10],
+                    "translated_at": params[11],
+                }
+            )
         if "select count(*) as count from incident_logs" in query:
             return _StubResult({"count": 1})
         if "select count(*) as total_count" in query:
@@ -97,55 +203,9 @@ class _StubConnection:
                 or "where incident_logs.id = %s" in query
             )
         ):
-            row = {
-                "id": "incident-1",
-                "external_id": None,
-                "headline": "Updated headline",
-                "headline_en": "Updated headline",
-                "headline_zh": None,
-                "date_logged": "2026-04-30",
-                "company_involved": "OpenAI",
-                "incident_topic": None,
-                "claimant_name": None,
-                "categories": '["Hallucinations"]',
-                "severity_score": 3,
-                "suggested_severity_score": None,
-                "reality_summary": "Updated summary",
-                "reality_summary_en": "Updated summary",
-                "reality_summary_zh": None,
-                "status": "rejected",
-                "matched_claim_id": None,
-                "claim_match_confidence": None,
-                "review_notes": None,
-                "legitimacy_score": 0.2,
-                "legitimacy_label": "rejected",
-                "severity_confidence": 0.1,
-                "severity_reasoning": "Not enough evidence.",
-                "severity_flags": "[]",
-                "severity_model": "gpt-5.4-mini",
-                "severity_decision_source": None,
-                "legitimacy_reasoning": "Rejected.",
-                "source_validation_summary": "Weak sources.",
-                "translation_status": None,
-                "review_batch_id": "batch-1",
-                "review_model": "gpt-5.4-mini",
-                "duplicate_status": None,
-                "duplicate_of_incident_id": None,
-                "canonical_incident_id": None,
-                "claim_id": None,
-                "claim_claimant_name": None,
-                "claim_company_involved": None,
-                "original_claim": None,
-                "claim_date": None,
-                "claim_topic": None,
-                "claim_status": None,
-            }
+            row = dict(self.incident_row)
             if "company_involved_zh" in query:
                 row["company_involved_zh"] = "开放人工智能"
-            if "legitimacy_reasoning_zh" in query:
-                row["legitimacy_reasoning_zh"] = None
-            if "source_validation_summary_zh" in query:
-                row["source_validation_summary_zh"] = None
             return _StubResult(row)
         if "from incident_sources" in query:
             return _StubResult(
@@ -262,7 +322,7 @@ def test_apply_incident_review_result_uses_python_decided_severity_score(
         "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
     )
 
-    repository.apply_incident_review_result(
+    incident = repository.apply_incident_review_result(
         incident_id="incident-1",
         status="rejected",
         legitimacy_score=0.2,
@@ -299,6 +359,15 @@ def test_apply_incident_review_result_uses_python_decided_severity_score(
     assert "is not null" not in update_query
     assert params[6] == 3
     assert params[7] is None
+    assert "incident_summary_en = %s" in update_query
+    assert params[17] == "Short incident summary."
+    assert params[21] == "Evidence summary."
+    assert incident is not None
+    assert incident["incident_summary_en"] == "Short incident summary."
+    assert incident["what_happened_en"] == "What happened."
+    assert incident["ai_failure_point_en"] == "Failure point."
+    assert incident["why_it_matters_en"] == "Why it matters."
+    assert incident["evidence_summary_en"] == "Evidence summary."
 
 
 def test_apply_admin_review_selects_translation_fields(monkeypatch) -> None:
@@ -390,6 +459,14 @@ def test_update_incident_translation_persists_company_name_translation(
     assert incident["company_involved_zh"] == "开放人工智能"
     assert params[0] == "开放人工智能"
     assert params[1] == "更新后的标题"
+    assert "incident_summary_zh = %s" in update_query
+    assert params[5] == "事件摘要"
+    assert params[9] == "证据摘要"
+    assert incident["incident_summary_zh"] == "事件摘要"
+    assert incident["what_happened_zh"] == "发生了什么"
+    assert incident["ai_failure_point_zh"] == "失败点"
+    assert incident["why_it_matters_zh"] == "重要性说明"
+    assert incident["evidence_summary_zh"] == "证据摘要"
 
 
 def test_list_public_incident_feed_serializes_company_name_translation(

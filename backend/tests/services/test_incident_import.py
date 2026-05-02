@@ -197,3 +197,16 @@ def test_in_memory_repository_accepts_forensic_review_and_translation_kwargs() -
 
     assert reviewed is not None
     assert translated is not None
+    assert repository.incidents["incident-1"]["incident_summary_en"] == "Summary."
+    assert repository.incidents["incident-1"]["what_happened_en"] == "What happened."
+    assert repository.incidents["incident-1"]["ai_failure_point_en"] == "Failure point."
+    assert repository.incidents["incident-1"]["why_it_matters_en"] == "Importance."
+    assert (
+        repository.incidents["incident-1"]["evidence_summary_en"]
+        == "Evidence summary."
+    )
+    assert repository.incidents["incident-1"]["incident_summary_zh"] == "摘要。"
+    assert repository.incidents["incident-1"]["what_happened_zh"] == "发生了什么。"
+    assert repository.incidents["incident-1"]["ai_failure_point_zh"] == "失败点。"
+    assert repository.incidents["incident-1"]["why_it_matters_zh"] == "重要性。"
+    assert repository.incidents["incident-1"]["evidence_summary_zh"] == "证据摘要。"

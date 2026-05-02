@@ -37,6 +37,14 @@ def _load_dotenv_defaults() -> None:
         break
 
 
+def _get_optional_env(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def get_settings() -> Settings:
     _load_dotenv_defaults()
 
@@ -44,12 +52,14 @@ def get_settings() -> Settings:
     if not database_url:
         raise ValueError("DATABASE_URL is required and must point to PostgreSQL")
 
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-    primary_review_model_env = os.getenv("PRIMARY_REVIEW_MODEL")
-    primary_review_api_key_env = os.getenv("PRIMARY_REVIEW_API_KEY")
-    primary_review_base_url_env = os.getenv("PRIMARY_REVIEW_BASE_URL")
-    legacy_openai_primary_review_model = os.getenv("OPENAI_PRIMARY_REVIEW_MODEL")
+    openai_api_key = _get_optional_env("OPENAI_API_KEY")
+    deepseek_api_key = _get_optional_env("DEEPSEEK_API_KEY")
+    primary_review_model_env = _get_optional_env("PRIMARY_REVIEW_MODEL")
+    primary_review_api_key_env = _get_optional_env("PRIMARY_REVIEW_API_KEY")
+    primary_review_base_url_env = _get_optional_env("PRIMARY_REVIEW_BASE_URL")
+    legacy_openai_primary_review_model = _get_optional_env(
+        "OPENAI_PRIMARY_REVIEW_MODEL"
+    )
     mixed_primary_review_env_vars = [
         key
         for key, value in (
