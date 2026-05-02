@@ -124,7 +124,7 @@ def test_get_settings_defaults_primary_review_to_deepseek(
 
     assert settings.primary_review_model == "deepseek-v4-flash"
     assert settings.openai_primary_review_model == "deepseek-v4-flash"
-    assert settings.primary_review_base_url == "https://api.deepseek.com"
+    assert settings.primary_review_base_url == "https://api.deepseek.com/v1"
     assert settings.primary_review_api_key is None
 
 

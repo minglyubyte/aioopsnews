@@ -14,7 +14,7 @@ class Settings:
     openai_escalation_review_model: str = "gpt-5.2"
     openai_embedding_model: str = "text-embedding-3-small"
     primary_review_api_key: str | None = None
-    primary_review_base_url: str = "https://api.deepseek.com"
+    primary_review_base_url: str = "https://api.deepseek.com/v1"
     primary_review_model: str = "deepseek-v4-flash"
     deepseek_api_key: str | None = None
     deepseek_translation_model: str = "deepseek-v4-flash"
@@ -73,7 +73,7 @@ def get_settings() -> Settings:
         ),
         primary_review_base_url=os.getenv(
             "PRIMARY_REVIEW_BASE_URL",
-            "https://api.deepseek.com",
+            "https://api.deepseek.com/v1",
         ),
         primary_review_model=primary_review_model,
         deepseek_api_key=deepseek_api_key,

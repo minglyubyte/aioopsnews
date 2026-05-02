@@ -156,7 +156,7 @@ def test_workflow_script_does_not_send_openai_key_to_deepseek_primary_client(
             database_url="postgresql://example/db",
             openai_api_key="test-openai-key",
             primary_review_api_key=None,
-            primary_review_base_url="https://api.deepseek.com",
+            primary_review_base_url="https://api.deepseek.com/v1",
             primary_review_model="deepseek-v4-flash",
             deepseek_api_key="test-deepseek-key",
         ),
@@ -235,6 +235,6 @@ def test_workflow_script_does_not_send_openai_key_to_deepseek_primary_client(
     assert review_client_calls == [
         {
             "api_key": "",
-            "base_url": "https://api.deepseek.com",
+            "base_url": "https://api.deepseek.com/v1",
         }
     ]
