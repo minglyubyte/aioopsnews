@@ -185,6 +185,11 @@ class IncidentRepository(Protocol):
         review_model: str,
         review_batch_id: str | None,
         reviewed_at: str,
+        incident_summary_en: str | None = None,
+        what_happened_en: str | None = None,
+        ai_failure_point_en: str | None = None,
+        why_it_matters_en: str | None = None,
+        evidence_summary_en: str | None = None,
     ) -> dict[str, Any] | None: ...
 
     def update_incident_translation(
@@ -198,4 +203,9 @@ class IncidentRepository(Protocol):
         source_validation_summary_zh: str,
         translation_status: str,
         translated_at: str,
+        incident_summary_zh: str | None = None,
+        what_happened_zh: str | None = None,
+        ai_failure_point_zh: str | None = None,
+        why_it_matters_zh: str | None = None,
+        evidence_summary_zh: str | None = None,
     ) -> dict[str, Any] | None: ...

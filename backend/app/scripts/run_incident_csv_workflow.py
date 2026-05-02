@@ -58,7 +58,8 @@ def main() -> int:
         )
         source_fetcher = HttpIncidentSourceFetcher()
         review_client = AsyncOpenAIIncidentReviewClient(
-            api_key=settings.openai_api_key or ""
+            api_key=settings.primary_review_api_key or "",
+            base_url=settings.primary_review_base_url,
         )
         escalation_client = OpenAIIncidentReviewClient(
             api_key=settings.openai_api_key or ""
@@ -85,7 +86,7 @@ def main() -> int:
                 translation_client=translation_client,
                 embedding_client=embedding_client,
                 duplicate_judge_client=duplicate_judge_client,
-                primary_model=settings.openai_primary_review_model,
+                primary_model=settings.primary_review_model,
                 escalation_model=settings.openai_escalation_review_model,
                 embedding_model=settings.openai_embedding_model,
                 dry_run=args.dry_run,

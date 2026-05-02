@@ -97,3 +97,62 @@ def test_get_settings_reads_postgres_database_url_from_dotenv(
         settings.database_url
         == "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
     )
+
+
+def test_get_settings_defaults_primary_review_to_deepseek(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    backend_dir = repo_root / "backend"
+    backend_dir.mkdir(parents=True)
+    (repo_root / ".env").write_text(
+        "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_reality_check\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(backend_dir)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_API_KEY", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_BASE_URL", raising=False)
+    monkeypatch.delenv("PRIMARY_REVIEW_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_PRIMARY_REVIEW_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    settings = get_settings()
+
+    assert settings.primary_review_model == "deepseek-v4-flash"
+    assert settings.openai_primary_review_model == "deepseek-v4-flash"
+    assert settings.primary_review_base_url == "https://api.deepseek.com"
+    assert settings.primary_review_api_key is None
+
+
+def test_get_settings_prefers_provider_neutral_primary_review_values(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    backend_dir = repo_root / "backend"
+    backend_dir.mkdir(parents=True)
+    (repo_root / ".env").write_text(
+        "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_reality_check\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(backend_dir)
+    monkeypatch.setenv("PRIMARY_REVIEW_API_KEY", "primary-key")
+    monkeypatch.setenv("PRIMARY_REVIEW_BASE_URL", "https://deepseek.example/v1")
+    monkeypatch.setenv("PRIMARY_REVIEW_MODEL", "deepseek-v4-flash")
+    monkeypatch.setenv("OPENAI_PRIMARY_REVIEW_MODEL", "gpt-5.4-mini")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+    settings = get_settings()
+
+    assert settings.primary_review_api_key == "primary-key"
+    assert settings.primary_review_base_url == "https://deepseek.example/v1"
+    assert settings.primary_review_model == "deepseek-v4-flash"
+    assert settings.openai_primary_review_model == "deepseek-v4-flash"
+    assert settings.deepseek_api_key == "deepseek-key"
+    assert settings.openai_api_key == "openai-key"

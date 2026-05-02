@@ -53,6 +53,16 @@ class IncidentRecord(BaseModel):
     legitimacy_reasoning_zh: str | None = None
     source_validation_summary: str | None = None
     source_validation_summary_zh: str | None = None
+    incident_summary_en: str | None = None
+    incident_summary_zh: str | None = None
+    what_happened_en: str | None = None
+    what_happened_zh: str | None = None
+    ai_failure_point_en: str | None = None
+    ai_failure_point_zh: str | None = None
+    why_it_matters_en: str | None = None
+    why_it_matters_zh: str | None = None
+    evidence_summary_en: str | None = None
+    evidence_summary_zh: str | None = None
     legitimacy_flag: str | None = None
     confidence_level: str | None = None
     import_notes: str | None = None

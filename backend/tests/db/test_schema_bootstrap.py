@@ -124,6 +124,30 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     assert "canonical_url text" in migration_sql
 
 
+def test_forensic_migration_adds_incident_log_review_fields() -> None:
+    migration_path = (
+        REPO_ROOT
+        / "infra"
+        / "supabase"
+        / "migrations"
+        / "20260501120000_incident_forensic_fields.sql"
+    )
+
+    migration_sql = migration_path.read_text().lower()
+
+    assert "alter table incident_logs" in migration_sql
+    assert "add column if not exists incident_summary_en text" in migration_sql
+    assert "add column if not exists incident_summary_zh text" in migration_sql
+    assert "add column if not exists what_happened_en text" in migration_sql
+    assert "add column if not exists what_happened_zh text" in migration_sql
+    assert "add column if not exists ai_failure_point_en text" in migration_sql
+    assert "add column if not exists ai_failure_point_zh text" in migration_sql
+    assert "add column if not exists why_it_matters_en text" in migration_sql
+    assert "add column if not exists why_it_matters_zh text" in migration_sql
+    assert "add column if not exists evidence_summary_en text" in migration_sql
+    assert "add column if not exists evidence_summary_zh text" in migration_sql
+
+
 def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     claim = ClaimRecord(
         id="claim-1",
@@ -169,6 +193,16 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         source_validation_summary_zh="已核实 3 个不同来源。",
         headline_en="Agent rollout causes bad customer escalations",
         headline_zh="智能体发布导致错误客户升级",
+        incident_summary_en="Support agents mishandled escalations after rollout.",
+        incident_summary_zh="发布后支持智能体错误处理了升级请求。",
+        what_happened_en="The launch produced repeated customer escalations and manual fallbacks.",
+        what_happened_zh="这次发布导致反复的客户升级和人工兜底。",
+        ai_failure_point_en="The routing agent misclassified urgent complaints as low priority.",
+        ai_failure_point_zh="路由智能体将紧急投诉误判为低优先级。",
+        why_it_matters_en="The issue affected real customers and increased manual support load.",
+        why_it_matters_zh="该问题影响了真实客户并增加了人工支持负担。",
+        evidence_summary_en="Three independent reports and an internal status page confirm the disruption.",
+        evidence_summary_zh="三份独立报道和内部状态页证实了这次故障。",
         translation_status="completed",
         import_notes="Imported from 2023 editorial batch.",
         review_batch_id="batch-123",
@@ -210,6 +244,20 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     assert incident.canonical_incident_id == "incident-0"
     assert incident.embedding_model == "text-embedding-3-small"
     assert incident.headline_zh == "智能体发布导致错误客户升级"
+    assert incident.incident_summary_en == "Support agents mishandled escalations after rollout."
+    assert incident.incident_summary_zh == "发布后支持智能体错误处理了升级请求。"
+    assert (
+        incident.what_happened_en
+        == "The launch produced repeated customer escalations and manual fallbacks."
+    )
+    assert incident.ai_failure_point_en == (
+        "The routing agent misclassified urgent complaints as low priority."
+    )
+    assert incident.why_it_matters_zh == "该问题影响了真实客户并增加了人工支持负担。"
+    assert (
+        incident.evidence_summary_en
+        == "Three independent reports and an internal status page confirm the disruption."
+    )
     assert incident.company_involved_zh == "OpenAI 中文"
     assert incident.legitimacy_reasoning_zh == "三条强有力的来源支持这起事件。"
     assert incident.source_validation_summary_zh == "已核实 3 个不同来源。"
