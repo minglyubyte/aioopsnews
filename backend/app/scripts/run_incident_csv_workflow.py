@@ -9,13 +9,13 @@ from pathlib import Path
 from app.core.config import get_settings
 from app.db.repository_factory import build_incident_repository
 from app.services.incident_deduplication import (
-    OpenAIIncidentDuplicateJudgeClient,
+    CompatibleIncidentDuplicateJudgeClient,
     OpenAIIncidentEmbeddingClient,
 )
 from app.services.incident_review import (
-    AsyncOpenAIIncidentReviewClient,
+    AsyncCompatibleIncidentReviewClient,
+    CompatibleIncidentReviewClient,
     HttpIncidentSourceFetcher,
-    OpenAIIncidentReviewClient,
 )
 from app.services.incident_translation import DeepSeekIncidentTranslationClient
 from app.workflows.incident_csv_workflow import run_incident_csv_workflow
@@ -26,7 +26,7 @@ LOGGER = logging.getLogger(__name__)
 def _require_non_dry_run_credentials(settings) -> None:
     missing: list[str] = []
     if not settings.primary_review_api_key:
-        missing.append("PRIMARY_REVIEW_API_KEY")
+        missing.append("PRIMARY_REVIEW_API_KEY or DEEPSEEK_API_KEY")
     if not settings.openai_api_key:
         missing.append("OPENAI_API_KEY")
     if not settings.deepseek_api_key:
@@ -38,10 +38,9 @@ def _require_non_dry_run_credentials(settings) -> None:
     raise ValueError(
         "Workflow credentials are missing for non-dry runs: "
         + ", ".join(missing)
-        + ". PRIMARY_REVIEW_API_KEY (or DEEPSEEK_API_KEY / legacy OpenAI "
-        "primary-review settings) is required for review, OPENAI_API_KEY is "
-        "required for escalation/embedding/duplicate checks, and "
-        "DEEPSEEK_API_KEY is required for translation."
+        + ". DeepSeek credentials are required for primary review, second-phase "
+        "review, duplicate checks, and translation. OPENAI_API_KEY is required "
+        "only for embeddings."
     )
 
 
@@ -89,18 +88,20 @@ def main() -> int:
             translation_client = object()
         else:
             source_fetcher = HttpIncidentSourceFetcher()
-            review_client = AsyncOpenAIIncidentReviewClient(
+            review_client = AsyncCompatibleIncidentReviewClient(
                 api_key=settings.primary_review_api_key,
                 base_url=settings.primary_review_base_url,
             )
-            escalation_client = OpenAIIncidentReviewClient(
-                api_key=settings.openai_api_key or ""
+            escalation_client = CompatibleIncidentReviewClient(
+                api_key=settings.primary_review_api_key,
+                base_url=settings.primary_review_base_url,
             )
             embedding_client = OpenAIIncidentEmbeddingClient(
                 api_key=settings.openai_api_key or ""
             )
-            duplicate_judge_client = OpenAIIncidentDuplicateJudgeClient(
-                api_key=settings.openai_api_key or ""
+            duplicate_judge_client = CompatibleIncidentDuplicateJudgeClient(
+                api_key=settings.primary_review_api_key,
+                base_url=settings.primary_review_base_url,
             )
             translation_client = DeepSeekIncidentTranslationClient(
                 api_key=settings.deepseek_api_key or "",
@@ -119,7 +120,7 @@ def main() -> int:
                 embedding_client=embedding_client,
                 duplicate_judge_client=duplicate_judge_client,
                 primary_model=settings.primary_review_model,
-                escalation_model=settings.openai_escalation_review_model,
+                escalation_model=settings.escalation_review_model,
                 embedding_model=settings.openai_embedding_model,
                 dry_run=args.dry_run,
             )

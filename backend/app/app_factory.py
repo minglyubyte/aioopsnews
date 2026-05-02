@@ -35,12 +35,11 @@ def create_app(
         database_url=database_url or settings.database_url,
         admin_api_token=admin_api_token or settings.admin_api_token,
         openai_api_key=settings.openai_api_key,
-        openai_primary_review_model=settings.openai_primary_review_model,
-        openai_escalation_review_model=settings.openai_escalation_review_model,
         openai_embedding_model=settings.openai_embedding_model,
         primary_review_api_key=settings.primary_review_api_key,
         primary_review_base_url=settings.primary_review_base_url,
         primary_review_model=settings.primary_review_model,
+        escalation_review_model=settings.escalation_review_model,
         deepseek_api_key=settings.deepseek_api_key,
         deepseek_translation_model=settings.deepseek_translation_model,
     )

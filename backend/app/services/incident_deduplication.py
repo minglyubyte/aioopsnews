@@ -113,6 +113,9 @@ class OpenAIIncidentDuplicateJudgeClient:
         )
 
 
+CompatibleIncidentDuplicateJudgeClient = OpenAIIncidentDuplicateJudgeClient
+
+
 def detect_and_merge_duplicate_incident(
     repository: IncidentRepository,
     *,

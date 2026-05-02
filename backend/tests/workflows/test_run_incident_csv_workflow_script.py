@@ -63,6 +63,7 @@ def test_workflow_script_logs_start_and_finish(
             primary_review_api_key="test-primary-key",
             primary_review_base_url="https://deepseek.example/v1",
             primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
             deepseek_api_key="test-deepseek-key",
         ),
     )
@@ -87,12 +88,12 @@ def test_workflow_script_logs_start_and_finish(
     )
     monkeypatch.setattr(
         workflow_script,
-        "AsyncOpenAIIncidentReviewClient",
+        "AsyncCompatibleIncidentReviewClient",
         lambda **kwargs: review_client_calls.append(kwargs) or object(),
     )
     monkeypatch.setattr(
         workflow_script,
-        "OpenAIIncidentReviewClient",
+        "CompatibleIncidentReviewClient",
         lambda **kwargs: escalation_client_calls.append(kwargs) or object(),
     )
     monkeypatch.setattr(
@@ -102,7 +103,7 @@ def test_workflow_script_logs_start_and_finish(
     )
     monkeypatch.setattr(
         workflow_script,
-        "OpenAIIncidentDuplicateJudgeClient",
+        "CompatibleIncidentDuplicateJudgeClient",
         lambda **kwargs: duplicate_judge_client_calls.append(kwargs) or object(),
     )
     monkeypatch.setattr(
@@ -130,9 +131,19 @@ def test_workflow_script_logs_start_and_finish(
             "base_url": "https://deepseek.example/v1",
         }
     ]
-    assert escalation_client_calls == [{"api_key": "test-openai-key"}]
+    assert escalation_client_calls == [
+        {
+            "api_key": "test-primary-key",
+            "base_url": "https://deepseek.example/v1",
+        }
+    ]
     assert embedding_client_calls == [{"api_key": "test-openai-key"}]
-    assert duplicate_judge_client_calls == [{"api_key": "test-openai-key"}]
+    assert duplicate_judge_client_calls == [
+        {
+            "api_key": "test-primary-key",
+            "base_url": "https://deepseek.example/v1",
+        }
+    ]
     assert translation_client_calls == [
         {
             "api_key": "test-deepseek-key",
@@ -140,6 +151,7 @@ def test_workflow_script_logs_start_and_finish(
         }
     ]
     assert workflow_calls[0]["primary_model"] == "deepseek-v4-flash"
+    assert workflow_calls[0]["escalation_model"] == "deepseek-v4-pro"
     stdout = capsys.readouterr().out
     assert json.loads(stdout) == summary
 
@@ -160,6 +172,7 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
             primary_review_api_key=None,
             primary_review_base_url="https://api.deepseek.com/v1",
             primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
             deepseek_api_key="test-deepseek-key",
         ),
     )
@@ -184,7 +197,7 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
     )
     monkeypatch.setattr(
         workflow_script,
-        "OpenAIIncidentReviewClient",
+        "CompatibleIncidentReviewClient",
         lambda **kwargs: object(),
     )
     monkeypatch.setattr(
@@ -194,7 +207,7 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
     )
     monkeypatch.setattr(
         workflow_script,
-        "OpenAIIncidentDuplicateJudgeClient",
+        "CompatibleIncidentDuplicateJudgeClient",
         lambda **kwargs: object(),
     )
     monkeypatch.setattr(
@@ -230,7 +243,7 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
 
     assert build_repository_calls == []
     assert repository.closed is False
-    assert "PRIMARY_REVIEW_API_KEY" in str(exc_info.value)
+    assert "PRIMARY_REVIEW_API_KEY or DEEPSEEK_API_KEY" in str(exc_info.value)
 
 
 def test_workflow_script_fails_fast_without_downstream_review_credentials(
@@ -249,6 +262,7 @@ def test_workflow_script_fails_fast_without_downstream_review_credentials(
             primary_review_api_key="test-primary-key",
             primary_review_base_url="https://api.deepseek.com/v1",
             primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
             deepseek_api_key=None,
         ),
     )
@@ -309,6 +323,7 @@ def test_workflow_script_allows_dry_run_without_primary_review_credentials(
             primary_review_api_key=None,
             primary_review_base_url="https://api.deepseek.com/v1",
             primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
             deepseek_api_key=None,
         ),
     )
@@ -328,7 +343,7 @@ def test_workflow_script_allows_dry_run_without_primary_review_credentials(
     )
     monkeypatch.setattr(
         workflow_script,
-        "AsyncOpenAIIncidentReviewClient",
+        "AsyncCompatibleIncidentReviewClient",
         lambda **kwargs: (_ for _ in ()).throw(
             AssertionError("primary review client should not be built for dry-run")
         ),

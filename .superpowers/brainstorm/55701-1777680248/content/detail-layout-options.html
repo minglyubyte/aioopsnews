@@ -1,0 +1,241 @@
+<style>
+  .layout-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .mini {
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fffdf9 0%, #f5efe7 100%);
+    padding: 1rem;
+    min-height: 26rem;
+    color: #17263a;
+  }
+
+  .mini-header {
+    display: grid;
+    gap: 0.45rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .mini-kicker {
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #725f49;
+  }
+
+  .mini-title {
+    font-size: 1.15rem;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+
+  .mini-meta,
+  .mini-tags,
+  .mini-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .mini-pill {
+    padding: 0.3rem 0.55rem;
+    border-radius: 999px;
+    background: #e8dfd1;
+    font-size: 0.76rem;
+  }
+
+  .mini-block {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.8rem;
+    padding: 0.85rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(23, 38, 58, 0.08);
+  }
+
+  .mini-block strong {
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #725f49;
+  }
+
+  .mini-block p,
+  .mini-block li {
+    margin: 0;
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .mini-block ul {
+    margin: 0;
+    padding-left: 1rem;
+  }
+
+  .mini-timeline {
+    border-left: 2px solid #cdb89d;
+    padding-left: 0.8rem;
+  }
+
+  .mini-sources {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .mini-source {
+    padding: 0.6rem 0.7rem;
+    border-radius: 12px;
+    background: rgba(23, 38, 58, 0.05);
+    font-size: 0.78rem;
+  }
+
+  .mini-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: fit-content;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+    background: #17263a;
+    color: #fff8ef;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .split-mini {
+    display: grid;
+    gap: 0.8rem;
+  }
+
+  @media (min-width: 1100px) {
+    .layout-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+</style>
+
+<h2>Incident Detail Layout Options</h2>
+<p class="subtitle">
+  All three keep the forensic breakdown structure. The question here is how dense and investigative the main reading experience should feel.
+</p>
+
+<div class="cards layout-grid">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>A. Balanced forensic story</h3>
+      <p>Recommended. Reads like an investigative brief without feeling overly technical.</p>
+    </div>
+    <div class="mini">
+      <div class="mini-header">
+        <div class="mini-kicker">Incident dossier</div>
+        <div class="mini-title">Cruise AV dragged pedestrian after underbody detection failure</div>
+        <div class="mini-meta">
+          <span class="mini-pill">Cruise</span>
+          <span class="mini-pill">Severity 5</span>
+          <span class="mini-pill">Oct 2, 2023</span>
+        </div>
+        <div class="mini-badge">Primary model: DeepSeek Flash V4</div>
+      </div>
+      <div class="mini-block">
+        <strong>What happened</strong>
+        <p>One sharp paragraph followed by 3 concrete bullets on sequence and harm.</p>
+      </div>
+      <div class="mini-block">
+        <strong>Failure point in the AI stack</strong>
+        <div class="mini-stack">
+          <span class="mini-pill">Perception</span>
+          <span class="mini-pill">Classification</span>
+          <span class="mini-pill">Fallback logic</span>
+        </div>
+        <p>System-level failure first, then model-level miss if evidence supports it.</p>
+      </div>
+      <div class="mini-block">
+        <strong>Why it matters</strong>
+        <p>User harm, operational impact, and why this is not just a PR issue.</p>
+      </div>
+      <div class="mini-block">
+        <strong>Evidence summary</strong>
+        <p>Kept compact. Source quality, agreement, and caveats.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>B. Timeline-led investigation</h3>
+      <p>Most explicit about sequence. Strong if you want the user to feel the incident unfold step by step.</p>
+    </div>
+    <div class="mini">
+      <div class="mini-header">
+        <div class="mini-kicker">Incident dossier</div>
+        <div class="mini-title">Cruise AV dragged pedestrian after underbody detection failure</div>
+        <div class="mini-meta">
+          <span class="mini-pill">Cruise</span>
+          <span class="mini-pill">Severity 5</span>
+          <span class="mini-pill">Oct 2, 2023</span>
+        </div>
+      </div>
+      <div class="mini-block mini-timeline">
+        <strong>Incident timeline</strong>
+        <ul>
+          <li>Initial collision leaves pedestrian under vehicle.</li>
+          <li>Autonomous system attempts maneuver instead of full safe stop.</li>
+          <li>Vehicle drags pedestrian and escalates injury.</li>
+        </ul>
+      </div>
+      <div class="mini-block">
+        <strong>Failure point in the AI stack</strong>
+        <p>Explains exactly where the system lost track of the person and why fallback behavior failed.</p>
+      </div>
+      <div class="mini-block">
+        <strong>User harm and business impact</strong>
+        <p>Turns consequences into concrete outcomes: injury, suspension, trust collapse.</p>
+      </div>
+      <div class="mini-block">
+        <strong>Evidence summary</strong>
+        <p>Short and source-backed.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-body">
+      <h3>C. Analyst workstation</h3>
+      <p>Most detailed and technical. Best for power users, but visually denser and less editorial.</p>
+    </div>
+    <div class="mini">
+      <div class="mini-header">
+        <div class="mini-kicker">Incident dossier</div>
+        <div class="mini-title">Cruise AV dragged pedestrian after underbody detection failure</div>
+      </div>
+      <div class="split-mini">
+        <div class="mini-block">
+          <strong>Story</strong>
+          <p>Headline, summary, timeline, impact.</p>
+        </div>
+        <div class="mini-block">
+          <strong>AI failure analysis</strong>
+          <ul>
+            <li>System layer affected</li>
+            <li>Likely model miss</li>
+            <li>Failure propagation</li>
+            <li>Safeguard that should have caught it</li>
+          </ul>
+        </div>
+        <div class="mini-block">
+          <strong>Reporting trail</strong>
+          <div class="mini-sources">
+            <div class="mini-source">Source 1</div>
+            <div class="mini-source">Source 2</div>
+            <div class="mini-source">Source 3</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

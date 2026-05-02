@@ -111,7 +111,7 @@ def test_detect_and_merge_duplicate_incident_records_top_three_embedding_candida
         embedding_client=FakeEmbeddingClient(embeddings),
         duplicate_judge_client=FakeDuplicateJudgeClient(decision_by_pair),
         embedding_model="text-embedding-3-small",
-        duplicate_judge_model="gpt-5.2",
+        duplicate_judge_model="deepseek-v4-pro",
         retrieval_limit=3,
     )
 
@@ -174,7 +174,7 @@ def test_detect_and_merge_duplicate_incident_absorbs_sources_and_notes_into_cano
         embedding_client=FakeEmbeddingClient(embeddings),
         duplicate_judge_client=FakeDuplicateJudgeClient(decision_by_pair),
         embedding_model="text-embedding-3-small",
-        duplicate_judge_model="gpt-5.2",
+        duplicate_judge_model="deepseek-v4-pro",
         retrieval_limit=3,
     )
 

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+
+import httpx
 
 from app.core.incident_taxonomy import INCIDENT_CATEGORY_TAXONOMY
 from app.services.incident_deduplication import DuplicateJudgeDecision
 from app.services.incident_import import import_incidents_csv_text
 from app.services.incident_review import (
     FetchedIncidentSource,
+    HttpIncidentSourceFetcher,
     IncidentReviewResult,
+    _build_review_messages,
     _build_review_response_format,
     _extract_evidence_text,
     _parse_review_result,
@@ -143,6 +148,43 @@ def test_extract_evidence_text_strips_nul_bytes() -> None:
     assert evidence == "Alpha Beta Gamma"
 
 
+def test_http_incident_source_fetcher_retries_403_with_browser_headers(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, str]] = []
+
+    def fake_get(url: str, **kwargs: object):  # type: ignore[no-untyped-def]
+        headers = dict(kwargs["headers"])  # type: ignore[index]
+        calls.append(headers)
+        request = httpx.Request("GET", url, headers=headers)
+        if len(calls) == 1:
+            return httpx.Response(
+                403,
+                request=request,
+                text="Forbidden",
+            )
+        return httpx.Response(
+            200,
+            request=request,
+            text="<html><body>NHTSA crash reporting page</body></html>",
+        )
+
+    monkeypatch.setattr("app.services.incident_review.httpx.get", fake_get)
+
+    result = HttpIncidentSourceFetcher().fetch(
+        "https://www.nhtsa.gov/laws-regulations/standing-general-order-crash-reporting"
+    )
+
+    assert result.fetch_status == "fetched"
+    assert result.http_status == 200
+    assert result.evidence_text is not None
+    assert "NHTSA crash reporting page" in result.evidence_text
+    assert len(calls) == 2
+    assert calls[0]["User-Agent"] == "AIRealityCheckBot/1.0"
+    assert "Mozilla/5.0" in calls[1]["User-Agent"]
+    assert calls[1]["Accept-Language"] == "en-US,en;q=0.9"
+
+
 def test_parse_review_result_accepts_qualitative_severity_confidence() -> None:
     result = _parse_review_result(
         incident_id="incident-1",
@@ -164,20 +206,33 @@ def test_parse_review_result_accepts_qualitative_severity_confidence() -> None:
     assert result.needs_escalation is False
 
 
-def test_build_review_response_format_requires_taxonomy_categories() -> None:
+def test_build_review_response_format_uses_json_object_mode() -> None:
     response_format = _build_review_response_format()
 
-    assert response_format["type"] == "json_schema"
-    assert response_format["json_schema"]["strict"] is True
-    schema = response_format["json_schema"]["schema"]
-    assert "categories" in schema["required"]
-    assert "needs_escalation" in schema["required"]
-    assert schema["properties"]["categories"]["minItems"] == 1
-    assert schema["properties"]["needs_escalation"]["type"] == "boolean"
-    assert schema["properties"]["categories"]["items"]["enum"] == list(
-        INCIDENT_CATEGORY_TAXONOMY
+    assert response_format == {"type": "json_object"}
+
+
+def test_build_review_messages_include_json_guidance_example() -> None:
+    messages = _build_review_messages(
+        {
+            "id": "incident-1",
+            "external_id": "ext-1",
+            "company_involved": "OpenAI",
+            "incident_topic": "Hallucinations",
+            "date_logged": "2026-05-01",
+            "headline": "Headline",
+            "reality_summary": "Summary",
+            "sources": [],
+        }
     )
-    assert schema["additionalProperties"] is False
+
+    system_prompt = messages[0]["content"].lower()
+    user_payload = json.loads(messages[1]["content"])
+
+    assert "json" in system_prompt
+    assert '"verdict"' in messages[0]["content"]
+    assert '"needs_escalation"' in messages[0]["content"]
+    assert user_payload["approved_categories"] == list(INCIDENT_CATEGORY_TAXONOMY)
 
 
 def test_parse_review_result_marks_unknown_categories_for_escalation() -> None:

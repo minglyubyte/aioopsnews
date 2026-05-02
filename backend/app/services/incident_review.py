@@ -43,6 +43,19 @@ QUALITATIVE_SEVERITY_CONFIDENCE_SCORES = {
     "high": 0.9,
     "very high": 0.98,
 }
+DEFAULT_SOURCE_FETCH_HEADERS = {"User-Agent": "AIRealityCheckBot/1.0"}
+BROWSER_SOURCE_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/136.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 @dataclass(frozen=True)
@@ -168,12 +181,12 @@ class HttpIncidentSourceFetcher:
 
     def fetch(self, source_url: str) -> FetchedIncidentSource:
         try:
-            response = httpx.get(
-                source_url,
-                follow_redirects=True,
-                timeout=self._timeout_seconds,
-                headers={"User-Agent": "AIRealityCheckBot/1.0"},
-            )
+            response = self._get(source_url, headers=DEFAULT_SOURCE_FETCH_HEADERS)
+            if response.status_code == 403:
+                response = self._get(
+                    source_url,
+                    headers=BROWSER_SOURCE_FETCH_HEADERS,
+                )
         except httpx.HTTPError as exc:
             return FetchedIncidentSource(
                 source_url=source_url,
@@ -195,6 +208,19 @@ class HttpIncidentSourceFetcher:
             fetch_error=None if response.is_success else response.reason_phrase,
         )
 
+    def _get(
+        self,
+        source_url: str,
+        *,
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        return httpx.get(
+            source_url,
+            follow_redirects=True,
+            timeout=self._timeout_seconds,
+            headers=headers,
+        )
+
 
 class OpenAIIncidentReviewClient:
     def __init__(
@@ -207,6 +233,7 @@ class OpenAIIncidentReviewClient:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._headers = {"Authorization": f"Bearer {api_key}"}
+        self._response_format = _build_review_response_format(base_url=self._base_url)
 
     def submit_batch(
         self,
@@ -222,8 +249,9 @@ class OpenAIIncidentReviewClient:
                     "url": "/v1/chat/completions",
                     "body": {
                         "model": model,
-                        "response_format": _build_review_response_format(),
+                        "response_format": self._response_format,
                         "messages": _build_review_messages(incident),
+                        "max_tokens": 1200,
                     },
                 }
             )
@@ -297,8 +325,9 @@ class OpenAIIncidentReviewClient:
             "/chat/completions",
             {
                 "model": model,
-                "response_format": _build_review_response_format(),
+                "response_format": self._response_format,
                 "messages": _build_review_messages(incident),
+                "max_tokens": 1200,
             },
         )
         return _parse_review_result(
@@ -359,9 +388,11 @@ class AsyncOpenAIIncidentReviewClient:
                 "The openai package is required for async incident review."
             ) from exc
 
+        self._base_url = base_url.rstrip("/")
+        self._response_format = _build_review_response_format(base_url=self._base_url)
         self._client = AsyncOpenAI(
             api_key=api_key,
-            base_url=base_url,
+            base_url=self._base_url,
             timeout=timeout_seconds,
         )
 
@@ -373,17 +404,22 @@ class AsyncOpenAIIncidentReviewClient:
     ) -> IncidentReviewResult:
         payload = await self._client.chat.completions.create(
             model=model,
-            response_format=_build_review_response_format(),
+            response_format=self._response_format,
             messages=_build_review_messages(incident),
+            max_tokens=1200,
         )
         content = payload.choices[0].message.content
         if not isinstance(content, str):
-            raise RuntimeError("Expected structured review content from OpenAI")
+            raise RuntimeError("Expected structured review content from the review provider")
         return _parse_review_result(
             incident_id=incident["id"],
             model=payload.model,
             content=content,
         )
+
+
+CompatibleIncidentReviewClient = OpenAIIncidentReviewClient
+AsyncCompatibleIncidentReviewClient = AsyncOpenAIIncidentReviewClient
 
 
 def submit_incident_review_batch(
@@ -656,12 +692,20 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
             "role": "system",
             "content": (
                 "You are an editorial reviewer for an AI incident database. "
-                "Return JSON only with keys: verdict, score, reasoning, "
-                "source_quality_summary, date_confirmed, company_confirmed, "
-                "headline_en, reality_summary_en, categories, "
-                "suggested_severity_score, "
-                "severity_confidence, severity_reasoning, severity_flags, "
-                "needs_escalation. "
+                "Return valid JSON only. "
+                "Use exactly this JSON shape: "
+                '{"verdict":"approved|rejected|pending_review",'
+                '"score":0.0,"reasoning":"...",'
+                '"source_quality_summary":"...",'
+                '"date_confirmed":true,"company_confirmed":true,'
+                '"headline_en":"...",'
+                '"reality_summary_en":"...",'
+                '"categories":["Hallucinations"],'
+                '"suggested_severity_score":3,'
+                '"severity_confidence":0.8,'
+                '"severity_reasoning":"...",'
+                '"severity_flags":["..."],'
+                '"needs_escalation":false}. '
                 "Return severity_confidence as a number between 0 and 1, "
                 "not a word or label. Choose one or more categories from the "
                 "approved taxonomy only. "
@@ -716,71 +760,9 @@ def _build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _build_review_response_format() -> dict[str, Any]:
-    return {
-        "type": "json_schema",
-        "json_schema": {
-            "name": "incident_review_result",
-            "strict": True,
-            "schema": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "verdict": {
-                        "type": "string",
-                        "enum": ["approved", "rejected", "pending_review"],
-                    },
-                    "score": {"type": "number", "minimum": 0, "maximum": 1},
-                    "reasoning": {"type": "string"},
-                    "source_quality_summary": {"type": "string"},
-                    "date_confirmed": {"type": "boolean"},
-                    "company_confirmed": {"type": "boolean"},
-                    "headline_en": {"type": "string"},
-                    "reality_summary_en": {"type": "string"},
-                    "categories": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                            "type": "string",
-                            "enum": list(INCIDENT_CATEGORY_TAXONOMY),
-                        },
-                    },
-                    "suggested_severity_score": {
-                        "type": ["integer", "null"],
-                        "minimum": 1,
-                        "maximum": 5,
-                    },
-                    "severity_confidence": {
-                        "type": ["number", "null"],
-                        "minimum": 0,
-                        "maximum": 1,
-                    },
-                    "severity_reasoning": {"type": ["string", "null"]},
-                    "severity_flags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "needs_escalation": {"type": "boolean"},
-                },
-                "required": [
-                    "verdict",
-                    "score",
-                    "reasoning",
-                    "source_quality_summary",
-                    "date_confirmed",
-                    "company_confirmed",
-                    "headline_en",
-                    "reality_summary_en",
-                    "categories",
-                    "suggested_severity_score",
-                    "severity_confidence",
-                    "severity_reasoning",
-                    "severity_flags",
-                    "needs_escalation",
-                ],
-            },
-        },
-    }
+def _build_review_response_format(*, base_url: str | None = None) -> dict[str, Any]:
+    del base_url
+    return {"type": "json_object"}
 
 
 def _parse_review_result(

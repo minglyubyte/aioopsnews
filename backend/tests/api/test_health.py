@@ -39,12 +39,11 @@ def test_create_app_preserves_provider_neutral_primary_review_settings(
             database_url="postgresql://example/db",
             admin_api_token="admin-token",
             openai_api_key="openai-key",
-            openai_primary_review_model="deepseek-v4-flash",
-            openai_escalation_review_model="gpt-5.2",
             openai_embedding_model="text-embedding-3-small",
             primary_review_api_key="primary-key",
             primary_review_base_url="https://api.deepseek.com/v1",
             primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
             deepseek_api_key="deepseek-key",
             deepseek_translation_model="deepseek-v4-flash",
         ),
@@ -62,3 +61,4 @@ def test_create_app_preserves_provider_neutral_primary_review_settings(
     assert app.state.settings.primary_review_api_key == "primary-key"
     assert app.state.settings.primary_review_base_url == "https://api.deepseek.com/v1"
     assert app.state.settings.primary_review_model == "deepseek-v4-flash"
+    assert app.state.settings.escalation_review_model == "deepseek-v4-pro"

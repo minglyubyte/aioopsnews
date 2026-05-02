@@ -10,12 +10,11 @@ class Settings:
     database_url: str
     admin_api_token: str = "dev-admin-token"
     openai_api_key: str | None = None
-    openai_primary_review_model: str = "deepseek-v4-flash"
-    openai_escalation_review_model: str = "gpt-5.2"
     openai_embedding_model: str = "text-embedding-3-small"
     primary_review_api_key: str | None = None
     primary_review_base_url: str = "https://api.deepseek.com/v1"
     primary_review_model: str = "deepseek-v4-flash"
+    escalation_review_model: str = "deepseek-v4-pro"
     deepseek_api_key: str | None = None
     deepseek_translation_model: str = "deepseek-v4-flash"
 
@@ -53,48 +52,19 @@ def get_settings() -> Settings:
         raise ValueError("DATABASE_URL is required and must point to PostgreSQL")
 
     openai_api_key = _get_optional_env("OPENAI_API_KEY")
-    deepseek_api_key = _get_optional_env("DEEPSEEK_API_KEY")
+    deepseek_api_key_env = _get_optional_env("DEEPSEEK_API_KEY")
     primary_review_model_env = _get_optional_env("PRIMARY_REVIEW_MODEL")
     primary_review_api_key_env = _get_optional_env("PRIMARY_REVIEW_API_KEY")
     primary_review_base_url_env = _get_optional_env("PRIMARY_REVIEW_BASE_URL")
-    legacy_openai_primary_review_model = _get_optional_env(
-        "OPENAI_PRIMARY_REVIEW_MODEL"
+    primary_review_model = primary_review_model_env or "deepseek-v4-flash"
+    primary_review_api_key = primary_review_api_key_env or deepseek_api_key_env
+    primary_review_base_url = (
+        primary_review_base_url_env or "https://api.deepseek.com/v1"
     )
-    mixed_primary_review_env_vars = [
-        key
-        for key, value in (
-            ("PRIMARY_REVIEW_MODEL", primary_review_model_env),
-            ("PRIMARY_REVIEW_API_KEY", primary_review_api_key_env),
-            ("PRIMARY_REVIEW_BASE_URL", primary_review_base_url_env),
-        )
-        if value is not None
-    ]
-    if (
-        legacy_openai_primary_review_model is not None
-        and mixed_primary_review_env_vars
-    ):
-        joined_vars = ", ".join(mixed_primary_review_env_vars)
-        raise ValueError(
-            "Mixed legacy and provider-neutral primary review config is not "
-            "supported. Remove OPENAI_PRIMARY_REVIEW_MODEL or the new "
-            f"PRIMARY_REVIEW_* override(s): {joined_vars}."
-        )
-    use_legacy_openai_primary_review = (
-        primary_review_model_env is None
-        and primary_review_api_key_env is None
-        and primary_review_base_url_env is None
-        and legacy_openai_primary_review_model is not None
+    escalation_review_model = (
+        _get_optional_env("ESCALATION_REVIEW_MODEL") or "deepseek-v4-pro"
     )
-    if use_legacy_openai_primary_review:
-        primary_review_model = legacy_openai_primary_review_model
-        primary_review_api_key = openai_api_key
-        primary_review_base_url = "https://api.openai.com/v1"
-    else:
-        primary_review_model = primary_review_model_env or "deepseek-v4-flash"
-        primary_review_api_key = primary_review_api_key_env or deepseek_api_key
-        primary_review_base_url = (
-            primary_review_base_url_env or "https://api.deepseek.com/v1"
-        )
+    deepseek_api_key = deepseek_api_key_env or primary_review_api_key_env
 
     return Settings(
         database_url=database_url,
@@ -103,11 +73,6 @@ def get_settings() -> Settings:
             "dev-admin-token",
         ),
         openai_api_key=openai_api_key,
-        openai_primary_review_model=primary_review_model,
-        openai_escalation_review_model=os.getenv(
-            "OPENAI_ESCALATION_REVIEW_MODEL",
-            "gpt-5.2",
-        ),
         openai_embedding_model=os.getenv(
             "OPENAI_EMBEDDING_MODEL",
             "text-embedding-3-small",
@@ -115,6 +80,7 @@ def get_settings() -> Settings:
         primary_review_api_key=primary_review_api_key,
         primary_review_base_url=primary_review_base_url,
         primary_review_model=primary_review_model,
+        escalation_review_model=escalation_review_model,
         deepseek_api_key=deepseek_api_key,
         deepseek_translation_model=os.getenv(
             "DEEPSEEK_TRANSLATION_MODEL",
