@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useCountUp } from "../lib/useCountUp";
+import { useInView } from "../lib/useInView";
 
 import {
   fetchIncidentDetail,
@@ -75,6 +77,18 @@ export default function PublicDashboardPage() {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const lastSliceFilterKeyRef = useRef(buildSliceFilterKey(readerFilters));
+
+  // ── InView refs for entrance animations ──────────────────────────
+  const [heroRef, heroInView] = useInView<HTMLElement>();
+  const [metricsRef, metricsInView] = useInView<HTMLDivElement>();
+  const [signalsRef, signalsInView] = useInView<HTMLElement>();
+  const [monthlyCardRef, monthlyCardInView] = useInView<HTMLElement>();
+  const [categoryCardRef, categoryCardInView] = useInView<HTMLElement>();
+  const [archiveListRef, archiveListInView] = useInView<HTMLDivElement>();
+  const [spotlightRef, spotlightInView] = useInView<HTMLElement>();
+  const [insightsRef, insightsInView] = useInView<HTMLElement>();
+  const [detailRef, detailInView] = useInView<HTMLElement>();
+  const [sourceListRef, sourceListInView] = useInView<HTMLDivElement>();
 
   const incidents = feed.items;
   const selectedIncident =
@@ -279,7 +293,11 @@ export default function PublicDashboardPage() {
   return (
     <main className="public-dashboard" data-theme={readerTheme}>
       <div className="public-frame">
-        <section className="public-panel public-hero">
+        <section
+          className="public-panel public-hero"
+          data-inview={heroInView ? "true" : "false"}
+          ref={heroRef}
+        >
           <div className="public-hero-header">
             <div>
               <p className="eyebrow public-kicker">{copy.brand}</p>
@@ -334,26 +352,38 @@ export default function PublicDashboardPage() {
           </div>
           <p className="lede">{copy.lede}</p>
           <ul className="public-hero-list">
-            {copy.heroExamples.map((example) => (
-              <li className="body-copy public-hero-list-item" key={example}>
+            {copy.heroExamples.map((example, idx) => (
+              <li
+                className="body-copy public-hero-list-item"
+                key={example}
+                style={{ "--hero-item-index": idx } as React.CSSProperties}
+              >
                 {example}
               </li>
             ))}
           </ul>
           <p className="body-copy public-hero-copy">{copy.heroCopy}</p>
 
-          <div className="public-metrics">
-            {heroMetrics.map((metric) => (
-              <article className="public-metric" key={metric.label}>
-                <span className="public-metric-label">{metric.label}</span>
-                <strong className="public-metric-value">{metric.value}</strong>
-                <span className="public-metric-note">{metric.note}</span>
-              </article>
+          <div
+            className="public-metrics"
+            data-inview={metricsInView ? "true" : "false"}
+            ref={metricsRef}
+          >
+            {heroMetrics.map((metric, idx) => (
+              <MetricCard
+                inView={metricsInView}
+                index={idx}
+                key={metric.label}
+                metric={metric}
+              />
             ))}
           </div>
 
           {isFiltersLoading ? (
-            <p className="body-copy public-status">{copy.filtersLoading}</p>
+            <div className="public-status" aria-busy="true">
+              <div className="public-skeleton public-skeleton-block is-medium" />
+              <div className="public-skeleton public-skeleton-block is-short" />
+            </div>
           ) : null}
           {filtersError ? (
             <p className="public-error" role="status">
@@ -362,7 +392,12 @@ export default function PublicDashboardPage() {
           ) : null}
         </section>
 
-        <section className="public-panel public-signals" aria-live="polite">
+        <section
+          className="public-panel public-signals"
+          aria-live="polite"
+          data-inview={signalsInView ? "true" : "false"}
+          ref={signalsRef}
+        >
           <div className="public-signals-header">
             <div>
               <p className="public-kicker">{copy.signalsKicker}</p>
@@ -372,7 +407,11 @@ export default function PublicDashboardPage() {
           </div>
 
           <div className="public-signals-grid">
-            <article className="public-signal-card">
+            <article
+              className="public-signal-card"
+              data-inview={monthlyCardInView ? "true" : "false"}
+              ref={monthlyCardRef}
+            >
               <p className="public-kicker">{copy.currentFeedSizeKicker}</p>
               <h3>{copy.currentFeedSizeTitle(incidents.length)}</h3>
               {monthlySignals.length > 0 ? (
@@ -380,7 +419,7 @@ export default function PublicDashboardPage() {
                   className="public-signal-list"
                   aria-label={copy.monthlySignalAria}
                 >
-                  {monthlySignals.map((signal) => (
+                  {monthlySignals.map((signal, barIdx) => (
                     <li className="public-signal-row" key={signal.monthKey}>
                       <div className="public-signal-meta">
                         <span>{signal.label}</span>
@@ -391,7 +430,8 @@ export default function PublicDashboardPage() {
                           className="public-signal-bar"
                           style={{
                             width: `${Math.max((signal.count / maxMonthlyCount) * 100, 18)}%`,
-                          }}
+                            "--bar-index": barIdx,
+                          } as React.CSSProperties}
                         />
                       </div>
                     </li>
@@ -402,7 +442,11 @@ export default function PublicDashboardPage() {
               )}
             </article>
 
-            <article className="public-signal-card">
+            <article
+              className="public-signal-card"
+              data-inview={categoryCardInView ? "true" : "false"}
+              ref={categoryCardRef}
+            >
               <p className="public-kicker">{copy.categoryDistributionKicker}</p>
               <h3>{copy.categoryDistributionTitle}</h3>
               {categorySignals.length > 0 ? (
@@ -549,21 +593,38 @@ export default function PublicDashboardPage() {
               aria-label={copy.archiveRegion}
               className="public-panel public-feed-panel"
               role="region"
+              data-inview={archiveListInView ? "true" : "false"}
+              ref={archiveListRef}
             >
               <div className="section-header">
                 <p className="public-kicker">{copy.archiveKicker}</p>
                 <h2>{copy.archiveTitle}</h2>
               </div>
-              {isFeedLoading ? <p>{copy.archiveLoading}</p> : null}
+              {isFeedLoading ? (
+                <div aria-busy="true" aria-label={copy.archiveLoading}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div className="public-skeleton-card" key={i} style={{ marginBottom: "1rem" }}>
+                      <div className="public-skeleton public-skeleton-block is-short" />
+                      <div className="public-skeleton public-skeleton-block is-tall" />
+                      <div className="public-skeleton public-skeleton-block is-medium" />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {!isFeedLoading && !feedError ? (
-                <div className="public-archive-list">
-                  {incidents.map((incident) => {
+                <div
+                  className="public-archive-list"
+                  data-inview={archiveListInView ? "true" : "false"}
+                  ref={archiveListRef}
+                >
+                  {incidents.map((incident, cardIdx) => {
                     const isSelected = incident.id === selectedIncident?.id;
 
                     return (
                       <article
                         className={`public-archive-card${isSelected ? " is-selected" : ""}`}
                         key={incident.id}
+                        style={{ "--card-index": cardIdx } as React.CSSProperties}
                       >
                         <div className="incident-meta">
                           <span>{localizedCompanyName(incident, readerLocale)}</span>
@@ -645,22 +706,41 @@ export default function PublicDashboardPage() {
           </section>
 
           <aside className="public-sidebar">
-            <section className="public-panel public-spotlight" aria-live="polite">
+            <section
+              className="public-panel public-spotlight"
+              aria-live="polite"
+              data-inview={spotlightInView ? "true" : "false"}
+              ref={spotlightRef}
+            >
               <div className="section-header">
                 <p className="public-kicker">{copy.spotlightKicker}</p>
                 <h2>{copy.spotlightTitle}</h2>
               </div>
-              {isFeedLoading ? <p>{copy.spotlightLoading}</p> : null}
+              {isFeedLoading ? (
+                <div aria-busy="true">
+                  <div className="public-skeleton public-skeleton-block is-medium" />
+                  <div className="public-skeleton public-skeleton-block" />
+                  <div className="public-skeleton public-skeleton-block is-short" />
+                </div>
+              ) : null}
               {feedError ? <p>{copy.feedError}</p> : null}
               {!isFeedLoading && !feedError && sliceSummary.total_matches > 0 ? (
-                <article className="public-panel-compact public-spotlight-insights">
+                <article
+                  className="public-panel-compact public-spotlight-insights"
+                  data-inview={insightsInView ? "true" : "false"}
+                  ref={insightsRef}
+                >
                   <p className="public-claim-kicker">{copy.highlightInsightsTitle}</p>
                   <p className="body-copy public-spotlight-copy">
                     {copy.highlightInsightsBody}
                   </p>
                   <div className="public-highlight-list">
-                    {highlightInsights.map((insight) => (
-                      <section className="public-highlight-item" key={insight.label}>
+                    {highlightInsights.map((insight, insightIdx) => (
+                      <section
+                        className="public-highlight-item"
+                        key={insight.label}
+                        style={{ "--insight-index": insightIdx } as React.CSSProperties}
+                      >
                         <span className="public-highlight-label">{insight.label}</span>
                         <strong className="public-highlight-value">
                           {insight.value}
@@ -680,12 +760,24 @@ export default function PublicDashboardPage() {
           </aside>
         </section>
 
-        <section className="public-panel public-detail-section" aria-live="polite">
+        <section
+          className="public-panel public-detail-section"
+          aria-live="polite"
+          data-inview={detailInView ? "true" : "false"}
+          ref={detailRef}
+        >
           <div className="section-header">
             <p className="public-kicker">{copy.detailKicker}</p>
             <h2>{copy.detailTitle}</h2>
           </div>
-          {isDetailLoading ? <p>{copy.detailLoading}</p> : null}
+          {isDetailLoading ? (
+            <div aria-busy="true" style={{ display: "grid", gap: "1rem" }}>
+              <div className="public-skeleton public-skeleton-block is-medium" />
+              <div className="public-skeleton public-skeleton-block is-tall" />
+              <div className="public-skeleton public-skeleton-block" />
+              <div className="public-skeleton public-skeleton-block is-medium" />
+            </div>
+          ) : null}
           {detailError ? <p>{copy.detailError}</p> : null}
           {!isDetailLoading && !detailError && incidentDetail ? (
             <div className="public-detail-grid">
@@ -794,15 +886,27 @@ export default function PublicDashboardPage() {
                 ) : null}
               </article>
 
-              <aside className="public-panel public-source-panel">
+              <aside 
+                className="public-panel public-source-panel"
+                data-inview={sourceListInView ? "true" : "false"}
+                ref={sourceListRef}
+              >
                 <p className="public-kicker">{copy.reportingTrailKicker}</p>
                 <h3>{copy.sourcesTitle}</h3>
-                <div className="public-source-list">
+                <div
+                  className="public-source-list"
+                  data-inview={sourceListInView ? "true" : "false"}
+                  ref={sourceListRef}
+                >
                   {incidentDetail.sources.length === 0 ? (
                     <p className="body-copy">{copy.noSources}</p>
                   ) : (
-                    incidentDetail.sources.map((source) => (
-                      <article className="public-source-item" key={source.id}>
+                    incidentDetail.sources.map((source, srcIdx) => (
+                      <article
+                        className="public-source-item"
+                        key={source.id}
+                        style={{ "--source-index": srcIdx } as React.CSSProperties}
+                      >
                         <p className="public-source-publisher">
                           {source.publisher ?? source.source_type}
                         </p>
@@ -825,7 +929,33 @@ export default function PublicDashboardPage() {
   );
 }
 
+// ── MetricCard: animated counter sub-component ─────────────────────
+
+function MetricCard({
+  metric,
+  inView,
+  index,
+}: {
+  metric: { label: string; value: string; note: string };
+  inView: boolean;
+  index: number;
+}) {
+  const animatedValue = useCountUp(metric.value, inView);
+
+  return (
+    <article
+      className="public-metric"
+      style={{ "--metric-index": index } as React.CSSProperties}
+    >
+      <span className="public-metric-label">{metric.label}</span>
+      <strong className="public-metric-value">{animatedValue}</strong>
+      <span className="public-metric-note">{metric.note}</span>
+    </article>
+  );
+}
+
 function localizedHeadline(incident: PublicIncidentBase, locale: ReaderLocale) {
+
   if (locale === "zh") {
     return incident.headline_zh ?? incident.headline_en ?? incident.headline;
   }

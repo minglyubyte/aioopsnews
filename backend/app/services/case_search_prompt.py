@@ -100,31 +100,30 @@ Field definitions:
   - Blank is acceptable and preferred if uncertain
 
 - source_links:
-  - At least 3 distinct valid URLs per row
+  - CRITICAL: Every URL in source_links MUST be a first-hand / primary source
+  - At least 2 distinct primary-source URLs per row (more is better)
   - Separate URLs with: " | "
   - Every URL must begin with http:// or https://
-  - Prefer direct article/document URLs, not homepages
-  - Source types:
-    - Primary sources:
-      - official government or regulator pages
-      - court filings, sanction orders, dockets, complaints, judgments, tribunal decisions
-      - company disclosures, incident reports, outage notices, official blog disclosures
-      - agency actions, settlements, consent orders, enforcement notices
-      - official university, school, hospital, police, or public-body statements
-      - direct academic papers or official research publications when the incident is research-driven
-    - Second-hand sources:
-      - major reporting
-      - reputable trade publications
-      - law blogs, research blogs, analysis writeups, incident trackers, and commentary
-      - any article summarizing or quoting a primary source rather than being the primary record itself
-  - require at least 3 distinct URLs total
-  - require at least 1 primary source whenever a defensible primary source should exist
-  - If no primary source is reasonably available, second-hand-only rows may remain in scope only if they are strongly sourced, marked REVIEW, and the notes field explicitly says the stronger primary source was not found
-  - Generic homepages, search pages, or index pages should not count as the required primary source when a direct filing, report, or article URL exists
+  - Use only direct article/document URLs, never homepages
+  - What counts as a primary source:
+    - official government or regulator pages
+    - court filings, sanction orders, dockets, complaints, judgments, tribunal decisions
+    - company disclosures, incident reports, outage notices, official blog posts, press releases
+    - agency actions, settlements, consent orders, enforcement notices
+    - official university, school, hospital, police, or public-body statements
+    - direct academic papers or official research publications when the incident is research-driven
+    - NHTSA records, recall notices, DMV collision reports, EEOC filings
+    - original investigative journalism that broke the story with primary evidence (not rewrites or aggregations)
+  - BANNED sources (never include these as source_links):
+    - https://incidentdatabase.ai/ or any URL under incidentdatabase.ai
+    - Any incident aggregator database, tracker, or index site that merely catalogues incidents reported elsewhere
+    - Second-hand rewrites, opinion pieces, blog commentary, or analysis articles that only summarize a primary source
+    - Generic homepages, search result pages, or broad topic index pages
+  - Second-hand reporting, news rewrites, or commentary articles do NOT count as primary sources and must NOT be included
+  - If you cannot find at least 2 verifiable primary-source URLs for an incident, do NOT include that incident — omit the row entirely
   - Avoid duplicated URLs
   - Avoid broken links
-  - When possible include at least one primary source
-  - Replace generic homepages with direct links whenever possible
+  - Replace generic homepages with direct document links whenever possible
 
 - legitimacy_flag:
   - Must be one of:
@@ -132,9 +131,9 @@ Field definitions:
     - REVIEW
     - REJECT
   - Meanings:
-    - ACCEPT = strong evidence this is a legitimate AI incident worth tracking
-    - REVIEW = likely relevant but has ambiguity, weak sourcing, date uncertainty, framing concerns, or lacks a primary source where one should exist
-    - REJECT = probably not suitable, not actually an AI incident, too weakly sourced, duplicate, or misleading
+    - ACCEPT = strong evidence with at least 2 verifiable primary sources confirming this is a legitimate AI incident
+    - REVIEW = likely relevant but has date uncertainty, framing concerns, or primary sources are borderline (e.g. official blog post vs formal report)
+    - REJECT = probably not suitable, not actually an AI incident, cannot find 2 primary sources, duplicate, or misleading
 
 - confidence_level:
   - Must be one of:
@@ -145,8 +144,8 @@ Field definitions:
 
 - notes:
   - Short editorial note
-  - Mention uncertainty, missing stronger primary source, duplicate risk, date ambiguity, or why the row is especially strong
-  - If a row relies only on second-hand sourcing, explicitly say that a stronger primary source was not found
+  - Mention uncertainty, duplicate risk, date ambiguity, or why the row is especially strong
+  - Note the type of primary sources used (e.g. "court filing + NHTSA record", "company disclosure + regulator notice")
   - Can be blank, but prefer helpful notes when there is any ambiguity
 
 Research quality rules:
@@ -187,7 +186,8 @@ Validation rules:
 - No duplicate rows describing the same event
 - All required columns must be present
 - incident_date must be valid YYYY-MM-DD
-- source_links must contain at least 3 distinct valid URLs
+- source_links must contain at least 2 distinct valid primary-source URLs (no aggregators, no second-hand rewrites)
+- source_links must NOT contain any URL from incidentdatabase.ai
 - legitimacy_flag must be exactly ACCEPT, REVIEW, or REJECT
 - confidence_level must be exactly low, medium, or high
 - Escape CSV correctly:
@@ -196,19 +196,21 @@ Validation rules:
   - preserve quotes correctly
 
 Editorial guidance for scoring:
-- Use ACCEPT/high for incidents with strong primary evidence or multiple highly reliable sources
-- Use ACCEPT/medium for likely real incidents with decent support but some ambiguity
-- Use REVIEW/high or REVIEW/medium for incidents that seem relevant but need editor judgment
-- Use REVIEW when the source stack is strong overall but only second-hand sources were found and a defensible primary source could not be located
-- Use REJECT when the event is too weak, too speculative, duplicate, misleading, or not actually an AI incident
+- Use ACCEPT/high for incidents backed by 2+ strong primary sources (court filings, regulator records, official disclosures)
+- Use ACCEPT/medium for likely real incidents with 2 primary sources but some date or framing ambiguity
+- Use REVIEW/high or REVIEW/medium for incidents that seem relevant but primary sources are borderline
+- Use REJECT when the event is too weak, too speculative, duplicate, misleading, cannot meet the 2-primary-source minimum, or not actually an AI incident
 
-Important sourcing preferences:
-- Prefer direct court filings, regulator notices, EEOC actions, NHTSA records, recall notices, company disclosures, academic papers, or official incident records when available
-- For legal hallucination incidents, prefer direct court materials first, then legal analysis with primary references
-- For healthcare denial, hiring bias, and government incidents, prefer complaints, settlements, agency actions, enforcement notices, or institutional statements first
-- For autonomous vehicle incidents, prefer regulator records, collision reports, recall notices, DMV or NHTSA records, and strong reporting
-- For deepfake, platform, and education incidents, prefer direct institutional evidence where available, otherwise strong reporting with REVIEW
-- Avoid using homepages, generic search results, or broad topic indexes when a direct incident-specific URL exists
+Primary source requirements by category:
+- Legal hallucination: direct court filings, dockets, judicial opinions, bar association records
+- Healthcare denial / hiring bias / government: complaints, settlements, agency actions, EEOC filings, enforcement notices, institutional statements
+- Autonomous vehicles: NHTSA records, recall notices, DMV collision reports, regulator enforcement actions
+- Deepfakes / synthetic media: law enforcement reports, platform takedown records, official institutional statements
+- Privacy / data leakage: regulator enforcement actions, company breach disclosures, data protection authority decisions
+- Education / public sector: official university or school district statements, government audit reports, inspector general reports
+- Copyright / publishing: court filings, Copyright Office records, licensing disputes with direct documentation
+- NEVER use incidentdatabase.ai, AI Incident Database, or any third-party incident aggregator as a source
+- NEVER use homepages, generic search results, or broad topic indexes as sources
 
 Target quality:
 - Best outcome is a clean, serious 120-150 row 2023 incident corpus
@@ -217,12 +219,15 @@ Target quality:
 
 Before final output, silently self-check:
 - Is each row a distinct 2023 incident?
-- Does each row have 3 or more real URLs?
-- Are any homepage links still present where a direct article link should be used?
+- Does each row have at least 2 primary-source URLs?
+- Are ALL URLs genuine first-hand primary sources (not rewrites, not aggregators, not commentary)?
+- Have I accidentally included any incidentdatabase.ai URL?
+- Are any homepage links still present where a direct document link should be used?
 - Are any dates too uncertain without a note?
 - Are any incident descriptions too vague?
 - Are legitimacy_flag and confidence_level too generous?
 - Is the file genuinely 2023-only?
+- Would every source URL survive editorial fact-checking as a verifiable primary record?
 
 Final instruction:
 Return exactly one fenced csv block and nothing else.
