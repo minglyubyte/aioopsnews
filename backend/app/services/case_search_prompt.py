@@ -228,6 +228,7 @@ Before final output, silently self-check:
 - Are legitimacy_flag and confidence_level too generous?
 - Is the file genuinely 2023-only?
 - Would every source URL survive editorial fact-checking as a verifiable primary record?
+- Are you highly confident that every source URL is currently live and would return an HTTP 200 OK status?
 
 Final instruction:
 Return exactly one fenced csv block and nothing else.

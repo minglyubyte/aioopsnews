@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.api.incidents import IncidentSourceResponse
+from app.api.incidents import IncidentSourceResponse, IncidentAnalysisResponse
 from app.core.config import Settings
 from app.services.incident_translation import translate_incident_copy
 
@@ -59,6 +59,7 @@ class AdminIncidentResponse(BaseModel):
     canonical_incident_id: str | None = None
     duplicate_candidates: list[dict[str, object]] = Field(default_factory=list)
     sources: list[IncidentSourceResponse]
+    analysis: IncidentAnalysisResponse | None = None
 
 
 class AdminIncidentQueueResponse(BaseModel):
@@ -136,12 +137,13 @@ def patch_admin_incident(
             company_involved_en=updated_incident["company_involved"],
             headline_en=updated_incident["headline"],
             reality_summary_en=updated_incident["reality_summary"],
-            legitimacy_reasoning_en=updated_incident.get("legitimacy_reasoning")
-            or "",
-            source_validation_summary_en=updated_incident.get(
-                "source_validation_summary"
-            )
-            or "",
+            legitimacy_reasoning_en=updated_incident.get("legitimacy_reasoning") or "",
+            source_validation_summary_en=updated_incident.get("source_validation_summary") or "",
+            incident_summary_en=updated_incident.get("incident_summary_en") or "",
+            what_happened_en=updated_incident.get("what_happened_en") or "",
+            ai_failure_point_en=updated_incident.get("ai_failure_point_en") or "",
+            why_it_matters_en=updated_incident.get("why_it_matters_en") or "",
+            evidence_summary_en=updated_incident.get("evidence_summary_en") or "",
             client=translation_client,
         )
         translated_incident = repository.update_incident_translation(
@@ -153,6 +155,11 @@ def patch_admin_incident(
             source_validation_summary_zh=translation.source_validation_summary_zh,
             translation_status=translation.status,
             translated_at="2026-04-30T12:00:00",
+            incident_summary_zh=translation.incident_summary_zh,
+            what_happened_zh=translation.what_happened_zh,
+            ai_failure_point_zh=translation.ai_failure_point_zh,
+            why_it_matters_zh=translation.why_it_matters_zh,
+            evidence_summary_zh=translation.evidence_summary_zh,
         )
         if translated_incident is not None:
             updated_incident = translated_incident

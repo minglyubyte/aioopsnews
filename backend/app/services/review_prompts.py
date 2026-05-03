@@ -8,23 +8,27 @@ from the orchestration layer (batch submission, decision logic, escalation).
 from __future__ import annotations
 
 import json
+import textwrap
 from typing import Any
 
 from app.core.incident_taxonomy import (
     INCIDENT_CATEGORY_TAXONOMY,
     normalize_incident_categories,
 )
+from app.core.config import get_settings
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-REVIEW_MAX_OUTPUT_TOKENS = 8000
-REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS = 3
+_settings = get_settings()
+
+REVIEW_MAX_OUTPUT_TOKENS = _settings.review_max_output_tokens
+REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS = _settings.review_response_parse_max_attempts
 FORENSIC_MIN_WORD_COUNTS = {
-    "what_happened_en": 100,
-    "ai_failure_point_en": 100,
-    "why_it_matters_en": 100,
+    "what_happened_en": _settings.forensic_min_word_count_what_happened,
+    "ai_failure_point_en": _settings.forensic_min_word_count_ai_failure_point,
+    "why_it_matters_en": _settings.forensic_min_word_count_why_it_matters,
 }
 QUALITATIVE_SEVERITY_CONFIDENCE_SCORES = {
     "very low": 0.1,
@@ -49,50 +53,56 @@ def build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
     return [
         {
             "role": "system",
-            "content": (
-                "You are an editorial reviewer for an AI incident database. "
-                "Return valid JSON only. "
-                "Use exactly this JSON shape: "
-                '{"verdict":"approved|rejected|pending_review",'
-                '"score":0.0,"reasoning":"...",'
-                '"source_quality_summary":"...",'
-                '"date_confirmed":true,"company_confirmed":true,'
-                '"headline_en":"...",'
-                '"reality_summary_en":"...",'
-                '"incident_summary_en":"...",'
-                '"what_happened_en":"...",'
-                '"ai_failure_point_en":"...",'
-                '"why_it_matters_en":"...",'
-                '"evidence_summary_en":"...",'
-                '"categories":["Hallucinations"],'
-                '"suggested_severity_score":3,'
-                '"severity_confidence":0.8,'
-                '"severity_reasoning":"...",'
-                '"severity_flags":["..."],'
-                '"needs_escalation":false}. '
-                "Return severity_confidence as a number between 0 and 1, "
-                "not a word or label. Choose one or more categories from the "
-                "approved taxonomy only. "
-                "Write what_happened_en, ai_failure_point_en, and "
-                "why_it_matters_en as substantive narrative sections of at "
-                "least 100 words each. "
-                "Set needs_escalation to true when source quality is weak, "
-                "date or company attribution remains unresolved, severity is "
-                "materially unclear, the evidence conflicts, or you believe "
-                "human review or a stronger second pass is required. "
-                "Use this impact-first severity rubric: 1=minor, quickly "
-                "reversible, no meaningful external harm; 2=real but limited "
-                "impact, localized and reversible; 3=clear operational or "
-                "business impact requiring rollback or manual intervention; "
-                "4=major real-world or sensitive-domain harm involving privacy, "
-                "legal, regulatory, financial, or broad safety consequences; "
-                "5=catastrophic irreversible harm or major systemic safety "
-                "failure. Safety-critical incidents start at 4 unless clearly "
-                "minor. Serious injury or death is 5. Broad privacy breach, "
-                "major legal or regulatory action, or major financial harm is "
-                "at least 4. Near misses in safety-critical systems may raise "
-                "severity by one level, but do not replace actual harm."
-            ),
+            "content": textwrap.dedent(f"""\
+                You are an editorial reviewer for an AI incident database.
+                
+                # INSTRUCTIONS
+                - Evaluate the provided incident and determine if it is a legitimate AI failure.
+                - Choose one or more categories from the approved taxonomy only.
+                - Write substantive narrative sections for the forensic fields.
+                
+                # FORENSIC NARRATIVE REQUIREMENTS
+                - `what_happened_en`: at least {FORENSIC_MIN_WORD_COUNTS['what_happened_en']} words
+                - `ai_failure_point_en`: at least {FORENSIC_MIN_WORD_COUNTS['ai_failure_point_en']} words
+                - `why_it_matters_en`: at least {FORENSIC_MIN_WORD_COUNTS['why_it_matters_en']} words
+                
+                # EVALUATION RULES
+                - `score`: A float between 0.0 and 1.0 indicating your confidence that the incident is a legitimate, real-world AI failure (0.0=fake/spam/unrelated, 1.0=definitely legitimate).
+                - `needs_escalation`: Set to `true` when source quality is weak, date or company attribution remains unresolved, severity is materially unclear, evidence conflicts, or you believe human review or a stronger second pass is required.
+                - `severity_confidence`: A float between 0.0 and 1.0 (not a word or label).
+                
+                # SEVERITY RUBRIC (Impact-First)
+                1 = Minor, quickly reversible, no meaningful external harm.
+                2 = Real but limited impact, localized and reversible.
+                3 = Clear operational or business impact requiring rollback or manual intervention.
+                4 = Major real-world or sensitive-domain harm involving privacy, legal, regulatory, financial, or broad safety consequences. (Safety-critical incidents start at 4 unless clearly minor. Broad privacy breach, major legal/regulatory action, or major financial harm is at least 4.)
+                5 = Catastrophic irreversible harm or major systemic safety failure. (Serious injury or death is 5.)
+                *Note: Near misses in safety-critical systems may raise severity by one level, but do not replace actual harm.*
+                
+                # OUTPUT FORMAT
+                Return valid JSON only. Use EXACTLY this JSON shape:
+                {{
+                    "verdict": "approved|rejected|pending_review",
+                    "score": 0.0,
+                    "reasoning": "...",
+                    "source_quality_summary": "...",
+                    "date_confirmed": true,
+                    "company_confirmed": true,
+                    "headline_en": "...",
+                    "reality_summary_en": "...",
+                    "incident_summary_en": "...",
+                    "what_happened_en": "...",
+                    "ai_failure_point_en": "...",
+                    "why_it_matters_en": "...",
+                    "evidence_summary_en": "...",
+                    "categories": ["Hallucinations"],
+                    "suggested_severity_score": 3,
+                    "severity_confidence": 0.8,
+                    "severity_reasoning": "...",
+                    "severity_flags": ["..."],
+                    "needs_escalation": false
+                }}
+            """),
         },
         {
             "role": "user",
