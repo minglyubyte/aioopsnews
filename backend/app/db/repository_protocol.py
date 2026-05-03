@@ -3,6 +3,12 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from app.models.claim import ClaimRecord
+from app.models.incident_dict import (
+    DuplicateCandidateDict,
+    IncidentDict,
+    PublicArchiveItemDict,
+    PublicDetailDict,
+)
 from app.scrapers.rss import RSSArticle
 from app.services.incident_query import IncidentQueryFilters
 
@@ -13,22 +19,22 @@ class IncidentRepository(Protocol):
     def list_public_incidents(
         self,
         filters: IncidentQueryFilters,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[PublicArchiveItemDict]: ...
 
     def list_public_incident_feed(
         self,
         filters: IncidentQueryFilters,
     ) -> dict[str, Any]: ...
 
-    def get_public_incident(self, incident_id: str) -> dict[str, Any] | None: ...
+    def get_public_incident(self, incident_id: str) -> PublicDetailDict | None: ...
 
     def get_filter_values(self) -> dict[str, object]: ...
 
-    def list_review_queue(self) -> list[dict[str, Any]]: ...
+    def list_review_queue(self) -> list[IncidentDict]: ...
 
-    def list_incidents_pending_llm_review(self) -> list[dict[str, Any]]: ...
+    def list_incidents_pending_llm_review(self) -> list[IncidentDict]: ...
 
-    def get_incident(self, incident_id: str) -> dict[str, Any] | None: ...
+    def get_incident(self, incident_id: str) -> IncidentDict | None: ...
 
     def list_duplicate_search_pool(
         self,
@@ -36,7 +42,7 @@ class IncidentRepository(Protocol):
         incident_id: str,
         date_logged: str,
         date_window_days: int,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[IncidentDict]: ...
 
     def ingest_rss_article(
         self,
@@ -45,7 +51,7 @@ class IncidentRepository(Protocol):
         ingestion_run_id: str,
     ) -> bool: ...
 
-    def list_pending_incidents(self) -> list[dict[str, Any]]: ...
+    def list_pending_incidents(self) -> list[IncidentDict]: ...
 
     def list_claims(self) -> list[ClaimRecord]: ...
 
@@ -76,7 +82,7 @@ class IncidentRepository(Protocol):
         matched_claim_id: str | None,
         claim_match_confidence: float | None,
         review_notes: str,
-    ) -> dict[str, Any] | None: ...
+    ) -> IncidentDict | None: ...
 
     def upsert_claim_import_row(
         self,
@@ -141,7 +147,7 @@ class IncidentRepository(Protocol):
         self,
         *,
         incident_id: str,
-        candidates: list[dict[str, Any]],
+        candidates: list[DuplicateCandidateDict],
     ) -> None: ...
 
     def merge_duplicate_incident(
@@ -190,7 +196,7 @@ class IncidentRepository(Protocol):
         ai_failure_point_en: str | None = None,
         why_it_matters_en: str | None = None,
         evidence_summary_en: str | None = None,
-    ) -> dict[str, Any] | None: ...
+    ) -> IncidentDict | None: ...
 
     def update_incident_translation(
         self,
@@ -208,4 +214,4 @@ class IncidentRepository(Protocol):
         ai_failure_point_zh: str | None = None,
         why_it_matters_zh: str | None = None,
         evidence_summary_zh: str | None = None,
-    ) -> dict[str, Any] | None: ...
+    ) -> IncidentDict | None: ...

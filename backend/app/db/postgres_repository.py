@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.db._serializers import (
+    build_public_claim_payload,
+    group_sources_by_incident,
+    parse_text_array as _parse_text_array,
+    sanitize_reader_text as _sanitize_reader_text,
+    serialize_duplicate_candidate_row,
+    serialize_duplicate_search_row,
+    serialize_internal_incident,
+    serialize_llm_pending_row,
+    serialize_public_archive_row,
+    serialize_public_detail_row,
+    serialize_review_queue_row,
+    serialize_review_result_row,
+    serialize_translation_result_row,
+    _fallback_public_evidence_summary,
+)
 from app.models.claim import ClaimRecord
 from app.scrapers.rss import RSSArticle
 from app.services.claim_matcher import PUBLIC_CLAIM_MATCH_THRESHOLD
@@ -20,287 +36,7 @@ try:
 except ModuleNotFoundError:
     ConnectionPool = None
 
-_POSTGRES_SCHEMA = """
-create table if not exists claims (
-    id text primary key,
-    claimant_name text not null,
-    company_involved text not null,
-    original_claim text not null,
-    claim_date text not null,
-    claim_topic text not null,
-    status text not null,
-    notes text,
-    created_at timestamptz default current_timestamp,
-    updated_at timestamptz default current_timestamp
-);
-
-alter table claims
-    add column if not exists notes text;
-
-create table if not exists claim_sources (
-    id text primary key,
-    claim_id text not null references claims(id) on delete cascade,
-    source_url text not null,
-    source_kind text not null,
-    display_order integer not null default 0,
-    created_at timestamptz default current_timestamp
-);
-
-create table if not exists incident_logs (
-    id text primary key,
-    external_id text,
-    headline text not null,
-    headline_en text,
-    headline_zh text,
-    date_logged text not null,
-    company_involved text not null,
-    company_involved_zh text,
-    incident_topic text,
-    claimant_name text,
-    categories text not null,
-    severity_score integer not null,
-    suggested_severity_score integer,
-    reality_summary text not null,
-    reality_summary_en text,
-    reality_summary_zh text,
-    status text not null,
-    ingestion_run_id text,
-    confidence_score double precision,
-    severity_confidence double precision,
-    severity_reasoning text,
-    severity_flags text,
-    severity_model text,
-    severity_decision_source text,
-    review_notes text,
-    matched_claim_id text references claims(id),
-    claim_match_confidence double precision,
-    legitimacy_score double precision,
-    legitimacy_label text,
-    legitimacy_reasoning text,
-    legitimacy_reasoning_zh text,
-    source_validation_summary text,
-    source_validation_summary_zh text,
-    incident_summary_en text,
-    incident_summary_zh text,
-    what_happened_en text,
-    what_happened_zh text,
-    ai_failure_point_en text,
-    ai_failure_point_zh text,
-    why_it_matters_en text,
-    why_it_matters_zh text,
-    evidence_summary_en text,
-    evidence_summary_zh text,
-    legitimacy_flag text,
-    confidence_level text,
-    import_notes text,
-    translation_status text,
-    review_batch_id text,
-    review_model text,
-    duplicate_status text,
-    duplicate_of_incident_id text references incident_logs(id),
-    canonical_incident_id text references incident_logs(id),
-    embedding_model text,
-    embedding_vector text,
-    reviewed_at timestamptz,
-    severity_suggested_at timestamptz,
-    translated_at timestamptz,
-    created_at timestamptz default current_timestamp,
-    updated_at timestamptz default current_timestamp
-);
-
-alter table incident_logs
-    add column if not exists external_id text;
-
-alter table incident_logs
-    add column if not exists suggested_severity_score integer;
-
-alter table incident_logs
-    add column if not exists severity_confidence double precision;
-
-alter table incident_logs
-    add column if not exists severity_reasoning text;
-
-alter table incident_logs
-    add column if not exists severity_flags text;
-
-alter table incident_logs
-    add column if not exists severity_model text;
-
-alter table incident_logs
-    add column if not exists severity_decision_source text;
-
-alter table incident_logs
-    add column if not exists headline_en text;
-
-alter table incident_logs
-    add column if not exists headline_zh text;
-
-alter table incident_logs
-    add column if not exists company_involved_zh text;
-
-alter table incident_logs
-    add column if not exists incident_topic text;
-
-alter table incident_logs
-    add column if not exists reality_summary_en text;
-
-alter table incident_logs
-    add column if not exists reality_summary_zh text;
-
-alter table incident_logs
-    add column if not exists legitimacy_score double precision;
-
-alter table incident_logs
-    add column if not exists legitimacy_label text;
-
-alter table incident_logs
-    add column if not exists legitimacy_reasoning text;
-
-alter table incident_logs
-    add column if not exists legitimacy_reasoning_zh text;
-
-alter table incident_logs
-    add column if not exists source_validation_summary text;
-
-alter table incident_logs
-    add column if not exists source_validation_summary_zh text;
-
-alter table incident_logs
-    add column if not exists incident_summary_en text;
-
-alter table incident_logs
-    add column if not exists incident_summary_zh text;
-
-alter table incident_logs
-    add column if not exists what_happened_en text;
-
-alter table incident_logs
-    add column if not exists what_happened_zh text;
-
-alter table incident_logs
-    add column if not exists ai_failure_point_en text;
-
-alter table incident_logs
-    add column if not exists ai_failure_point_zh text;
-
-alter table incident_logs
-    add column if not exists why_it_matters_en text;
-
-alter table incident_logs
-    add column if not exists why_it_matters_zh text;
-
-alter table incident_logs
-    add column if not exists evidence_summary_en text;
-
-alter table incident_logs
-    add column if not exists evidence_summary_zh text;
-
-alter table incident_logs
-    add column if not exists legitimacy_flag text;
-
-alter table incident_logs
-    add column if not exists confidence_level text;
-
-alter table incident_logs
-    add column if not exists import_notes text;
-
-alter table incident_logs
-    add column if not exists translation_status text;
-
-alter table incident_logs
-    add column if not exists review_batch_id text;
-
-alter table incident_logs
-    add column if not exists review_model text;
-
-alter table incident_logs
-    add column if not exists duplicate_status text;
-
-alter table incident_logs
-    add column if not exists duplicate_of_incident_id text references incident_logs(id);
-
-alter table incident_logs
-    add column if not exists canonical_incident_id text references incident_logs(id);
-
-alter table incident_logs
-    add column if not exists embedding_model text;
-
-alter table incident_logs
-    add column if not exists embedding_vector text;
-
-alter table incident_logs
-    add column if not exists reviewed_at timestamptz;
-
-alter table incident_logs
-    add column if not exists severity_suggested_at timestamptz;
-
-alter table incident_logs
-    add column if not exists translated_at timestamptz;
-
-create table if not exists incident_sources (
-    id text primary key,
-    incident_id text not null references incident_logs(id) on delete cascade,
-    source_url text not null,
-    canonical_url text,
-    source_type text not null,
-    publisher text,
-    title text,
-    published_at text,
-    fetch_status text,
-    http_status integer,
-    evidence_text text,
-    fetch_error text,
-    fetched_at timestamptz,
-    is_primary integer not null default 0,
-    created_at timestamptz default current_timestamp
-);
-
-alter table incident_sources
-    add column if not exists canonical_url text;
-
-alter table incident_sources
-    add column if not exists fetch_status text;
-
-alter table incident_sources
-    add column if not exists http_status integer;
-
-alter table incident_sources
-    add column if not exists evidence_text text;
-
-alter table incident_sources
-    add column if not exists fetch_error text;
-
-alter table incident_sources
-    add column if not exists fetched_at timestamptz;
-
-create table if not exists incident_duplicate_candidates (
-    id text primary key,
-    incident_id text not null references incident_logs(id) on delete cascade,
-    candidate_incident_id text not null references incident_logs(id) on delete cascade,
-    embedding_score double precision not null,
-    llm_verdict text not null,
-    confidence double precision not null,
-    reasoning text,
-    status text not null,
-    created_at timestamptz default current_timestamp
-);
-
-create unique index if not exists claim_sources_claim_url_unique_idx
-    on claim_sources (claim_id, source_url);
-
-create index if not exists claim_sources_claim_id_idx
-    on claim_sources (claim_id);
-
-create index if not exists claim_sources_source_kind_idx
-    on claim_sources (source_kind);
-
-create unique index if not exists incident_logs_external_id_unique_idx
-    on incident_logs (external_id)
-    where external_id is not null;
-
-create unique index if not exists incident_duplicate_candidates_unique_idx
-    on incident_duplicate_candidates (incident_id, candidate_incident_id);
-"""
+_POSTGRES_SCHEMA = (Path(__file__).parent / "_schema.sql").read_text()
 
 class PostgresIncidentRepository:
     def __init__(self, database_url: str) -> None:
@@ -352,7 +88,7 @@ class PostgresIncidentRepository:
             ).fetchall()
 
         return [
-            self._serialize_public_archive_row(row)
+            serialize_public_archive_row(row)
             for row in incident_rows
         ]
 
@@ -442,7 +178,7 @@ class PostgresIncidentRepository:
         total_pages = max((total_count + filters.page_size - 1) // filters.page_size, 1)
         return {
             "items": [
-                self._serialize_public_archive_row(row)
+                serialize_public_archive_row(row)
                 for row in incident_rows
             ],
             "page": filters.page,
@@ -545,10 +281,11 @@ class PostgresIncidentRepository:
                 (incident_id,),
             ).fetchall()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
-        return self._serialize_public_detail_row(
+        sources_by_incident = group_sources_by_incident(source_rows)
+        return serialize_public_detail_row(
             incident_row,
             sources_by_incident[incident_id],
+            match_threshold=PUBLIC_CLAIM_MATCH_THRESHOLD,
         )
 
     def list_review_queue(self) -> list[dict[str, Any]]:
@@ -619,46 +356,14 @@ class PostgresIncidentRepository:
                 """
             ).fetchall()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
+        sources_by_incident = group_sources_by_incident(source_rows)
 
         return [
-            {
-                "id": row["id"],
-                "headline": row["headline"],
-                "headline_en": row["headline_en"],
-                "headline_zh": row["headline_zh"],
-                "date_logged": row["date_logged"],
-                "company_involved": row["company_involved"],
-                "incident_topic": row["incident_topic"],
-                "claimant_name": row["claimant_name"],
-                "categories": json.loads(row["categories"]),
-                "severity_score": row["severity_score"],
-                "suggested_severity_score": row["suggested_severity_score"],
-                "reality_summary": row["reality_summary"],
-                "reality_summary_en": row["reality_summary_en"],
-                "reality_summary_zh": row["reality_summary_zh"],
-                "status": row["status"],
-                "matched_claim_id": row["matched_claim_id"],
-                "claim_match_confidence": row["claim_match_confidence"],
-                "review_notes": row["review_notes"],
-                "legitimacy_score": row["legitimacy_score"],
-                "legitimacy_label": row["legitimacy_label"],
-                "severity_confidence": row["severity_confidence"],
-                "severity_reasoning": row["severity_reasoning"],
-                "severity_flags": _parse_text_array(row["severity_flags"]),
-                "severity_model": row["severity_model"],
-                "severity_decision_source": row["severity_decision_source"],
-                "legitimacy_reasoning": row["legitimacy_reasoning"],
-                "source_validation_summary": row["source_validation_summary"],
-                "translation_status": row["translation_status"],
-                "review_batch_id": row["review_batch_id"],
-                "review_model": row["review_model"],
-                "duplicate_status": row["duplicate_status"],
-                "duplicate_of_incident_id": row["duplicate_of_incident_id"],
-                "canonical_incident_id": row["canonical_incident_id"],
-                "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
-                "sources": sources_by_incident[row["id"]],
-            }
+            serialize_review_queue_row(
+                row,
+                sources=sources_by_incident[row["id"]],
+                duplicate_candidates=self._list_duplicate_candidates(row["id"]),
+            )
             for row in incident_rows
         ]
 
@@ -725,46 +430,12 @@ class PostgresIncidentRepository:
                 """
             ).fetchall()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
+        sources_by_incident = group_sources_by_incident(source_rows)
         return [
-            {
-                "id": row["id"],
-                "external_id": row["external_id"],
-                "headline": row["headline"],
-                "headline_en": row["headline_en"],
-                "headline_zh": row["headline_zh"],
-                "date_logged": row["date_logged"],
-                "company_involved": row["company_involved"],
-                "incident_topic": row["incident_topic"],
-                "claimant_name": row["claimant_name"],
-                "categories": json.loads(row["categories"]),
-                "severity_score": row["severity_score"],
-                "suggested_severity_score": row["suggested_severity_score"],
-                "reality_summary": row["reality_summary"],
-                "reality_summary_en": row["reality_summary_en"],
-                "reality_summary_zh": row["reality_summary_zh"],
-                "status": row["status"],
-                "review_notes": row["review_notes"],
-                "severity_confidence": row["severity_confidence"],
-                "severity_reasoning": row["severity_reasoning"],
-                "severity_flags": _parse_text_array(row["severity_flags"]),
-                "severity_model": row["severity_model"],
-                "severity_decision_source": row["severity_decision_source"],
-                "legitimacy_flag": row["legitimacy_flag"],
-                "confidence_level": row["confidence_level"],
-                "import_notes": row["import_notes"],
-                "review_batch_id": row["review_batch_id"],
-                "review_model": row["review_model"],
-                "translation_status": row["translation_status"],
-                "sources": sources_by_incident[row["id"]],
-                "duplicate_status": row["duplicate_status"],
-                "duplicate_of_incident_id": row["duplicate_of_incident_id"],
-                "canonical_incident_id": row["canonical_incident_id"],
-                "embedding_model": row["embedding_model"],
-                "embedding_vector": json.loads(row["embedding_vector"])
-                if row.get("embedding_vector")
-                else None,
-            }
+            serialize_llm_pending_row(
+                row,
+                sources=sources_by_incident[row["id"]],
+            )
             for row in incident_rows
         ]
 
@@ -839,50 +510,12 @@ class PostgresIncidentRepository:
                 (incident_id,),
             ).fetchall()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
-        return {
-            "id": incident_row["id"],
-            "external_id": incident_row["external_id"],
-            "headline": incident_row["headline"],
-            "headline_en": incident_row["headline_en"],
-            "headline_zh": incident_row["headline_zh"],
-            "date_logged": incident_row["date_logged"],
-            "company_involved": incident_row["company_involved"],
-            "incident_topic": incident_row["incident_topic"],
-            "claimant_name": incident_row["claimant_name"],
-            "categories": json.loads(incident_row["categories"]),
-            "severity_score": incident_row["severity_score"],
-            "suggested_severity_score": incident_row["suggested_severity_score"],
-            "reality_summary": incident_row["reality_summary"],
-            "reality_summary_en": incident_row["reality_summary_en"],
-            "reality_summary_zh": incident_row["reality_summary_zh"],
-            "status": incident_row["status"],
-            "review_notes": incident_row["review_notes"],
-            "legitimacy_score": incident_row["legitimacy_score"],
-            "legitimacy_label": incident_row["legitimacy_label"],
-            "severity_confidence": incident_row["severity_confidence"],
-            "severity_reasoning": incident_row["severity_reasoning"],
-            "severity_flags": _parse_text_array(incident_row["severity_flags"]),
-            "severity_model": incident_row["severity_model"],
-            "severity_decision_source": incident_row["severity_decision_source"],
-            "legitimacy_reasoning": incident_row["legitimacy_reasoning"],
-            "source_validation_summary": incident_row["source_validation_summary"],
-            "legitimacy_flag": incident_row["legitimacy_flag"],
-            "confidence_level": incident_row["confidence_level"],
-            "import_notes": incident_row["import_notes"],
-            "translation_status": incident_row["translation_status"],
-            "review_batch_id": incident_row["review_batch_id"],
-            "review_model": incident_row["review_model"],
-            "duplicate_status": incident_row["duplicate_status"],
-            "duplicate_of_incident_id": incident_row["duplicate_of_incident_id"],
-            "canonical_incident_id": incident_row["canonical_incident_id"],
-            "embedding_model": incident_row["embedding_model"],
-            "embedding_vector": json.loads(incident_row["embedding_vector"])
-            if incident_row.get("embedding_vector")
-            else None,
-            "duplicate_candidates": self._list_duplicate_candidates(incident_id),
-            "sources": sources_by_incident[incident_id],
-        }
+        sources_by_incident = group_sources_by_incident(source_rows)
+        return serialize_internal_incident(
+            incident_row,
+            sources=sources_by_incident[incident_id],
+            duplicate_candidates=self._list_duplicate_candidates(incident_id),
+        )
 
     def list_duplicate_search_pool(
         self,
@@ -961,44 +594,12 @@ class PostgresIncidentRepository:
                 (incident_id, "duplicate_confirmed", date_logged, date_window_days),
             ).fetchall()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
+        sources_by_incident = group_sources_by_incident(source_rows)
         return [
-            {
-                "id": row["id"],
-                "external_id": row["external_id"],
-                "headline": row["headline"],
-                "headline_en": row["headline_en"],
-                "headline_zh": row["headline_zh"],
-                "date_logged": row["date_logged"],
-                "company_involved": row["company_involved"],
-                "incident_topic": row["incident_topic"],
-                "claimant_name": row["claimant_name"],
-                "categories": json.loads(row["categories"]),
-                "severity_score": row["severity_score"],
-                "reality_summary": row["reality_summary"],
-                "reality_summary_en": row["reality_summary_en"],
-                "reality_summary_zh": row["reality_summary_zh"],
-                "status": row["status"],
-                "review_notes": row["review_notes"],
-                "legitimacy_score": row["legitimacy_score"],
-                "legitimacy_label": row["legitimacy_label"],
-                "legitimacy_reasoning": row["legitimacy_reasoning"],
-                "source_validation_summary": row["source_validation_summary"],
-                "legitimacy_flag": row["legitimacy_flag"],
-                "confidence_level": row["confidence_level"],
-                "import_notes": row["import_notes"],
-                "translation_status": row["translation_status"],
-                "review_batch_id": row["review_batch_id"],
-                "review_model": row["review_model"],
-                "duplicate_status": row["duplicate_status"],
-                "duplicate_of_incident_id": row["duplicate_of_incident_id"],
-                "canonical_incident_id": row["canonical_incident_id"],
-                "embedding_model": row["embedding_model"],
-                "embedding_vector": json.loads(row["embedding_vector"])
-                if row.get("embedding_vector")
-                else None,
-                "sources": sources_by_incident[row["id"]],
-            }
+            serialize_duplicate_search_row(
+                row,
+                sources=sources_by_incident[row["id"]],
+            )
             for row in incident_rows
         ]
 
@@ -1382,49 +983,14 @@ class PostgresIncidentRepository:
             ).fetchall()
             connection.commit()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
+        sources_by_incident = group_sources_by_incident(source_rows)
         row = incident_row
         assert row is not None
-        return {
-            "id": row["id"],
-            "headline": row["headline"],
-            "headline_en": row["headline_en"],
-            "headline_zh": row["headline_zh"],
-            "date_logged": row["date_logged"],
-            "company_involved": row["company_involved"],
-            "company_involved_zh": row["company_involved_zh"],
-            "incident_topic": row["incident_topic"],
-            "claimant_name": row["claimant_name"],
-            "categories": json.loads(row["categories"]),
-            "severity_score": row["severity_score"],
-            "suggested_severity_score": row["suggested_severity_score"],
-            "reality_summary": row["reality_summary"],
-            "reality_summary_en": row["reality_summary_en"],
-            "reality_summary_zh": row["reality_summary_zh"],
-            "status": row["status"],
-            "matched_claim_id": row["matched_claim_id"],
-            "claim_match_confidence": row["claim_match_confidence"],
-            "review_notes": row["review_notes"],
-            "legitimacy_score": row["legitimacy_score"],
-            "legitimacy_label": row["legitimacy_label"],
-            "severity_confidence": row["severity_confidence"],
-            "severity_reasoning": row["severity_reasoning"],
-            "severity_flags": _parse_text_array(row["severity_flags"]),
-            "severity_model": row["severity_model"],
-            "severity_decision_source": row["severity_decision_source"],
-            "legitimacy_reasoning": row["legitimacy_reasoning"],
-            "legitimacy_reasoning_zh": row["legitimacy_reasoning_zh"],
-            "source_validation_summary": row["source_validation_summary"],
-            "source_validation_summary_zh": row["source_validation_summary_zh"],
-            "translation_status": row["translation_status"],
-            "review_batch_id": row["review_batch_id"],
-            "review_model": row["review_model"],
-            "duplicate_status": row["duplicate_status"],
-            "duplicate_of_incident_id": row["duplicate_of_incident_id"],
-            "canonical_incident_id": row["canonical_incident_id"],
-            "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
-            "sources": sources_by_incident[row["id"]],
-        }
+        return serialize_review_queue_row(
+            row,
+            sources=sources_by_incident[row["id"]],
+            duplicate_candidates=self._list_duplicate_candidates(row["id"]),
+        )
 
     def upsert_claim_import_row(
         self,
@@ -2135,51 +1701,14 @@ class PostgresIncidentRepository:
             ).fetchall()
             connection.commit()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
+        sources_by_incident = group_sources_by_incident(source_rows)
         row = incident_row
         assert row is not None
-        return {
-            "id": row["id"],
-            "headline": row["headline"],
-            "headline_en": row["headline_en"],
-            "headline_zh": row["headline_zh"],
-            "date_logged": row["date_logged"],
-            "company_involved": row["company_involved"],
-            "incident_topic": row["incident_topic"],
-            "claimant_name": row["claimant_name"],
-            "categories": json.loads(row["categories"]),
-            "severity_score": row["severity_score"],
-            "suggested_severity_score": row["suggested_severity_score"],
-            "reality_summary": row["reality_summary"],
-            "reality_summary_en": row["reality_summary_en"],
-            "reality_summary_zh": row["reality_summary_zh"],
-            "status": row["status"],
-            "matched_claim_id": row["matched_claim_id"],
-            "claim_match_confidence": row["claim_match_confidence"],
-            "review_notes": row["review_notes"],
-            "legitimacy_score": row["legitimacy_score"],
-            "legitimacy_label": row["legitimacy_label"],
-            "severity_confidence": row["severity_confidence"],
-            "severity_reasoning": row["severity_reasoning"],
-            "severity_flags": _parse_text_array(row["severity_flags"]),
-            "severity_model": row["severity_model"],
-            "severity_decision_source": row["severity_decision_source"],
-            "legitimacy_reasoning": row["legitimacy_reasoning"],
-            "source_validation_summary": row["source_validation_summary"],
-            "incident_summary_en": row.get("incident_summary_en"),
-            "what_happened_en": row.get("what_happened_en"),
-            "ai_failure_point_en": row.get("ai_failure_point_en"),
-            "why_it_matters_en": row.get("why_it_matters_en"),
-            "evidence_summary_en": row.get("evidence_summary_en"),
-            "translation_status": row["translation_status"],
-            "review_batch_id": row["review_batch_id"],
-            "review_model": row["review_model"],
-            "duplicate_status": row["duplicate_status"],
-            "duplicate_of_incident_id": row["duplicate_of_incident_id"],
-            "canonical_incident_id": row["canonical_incident_id"],
-            "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
-            "sources": sources_by_incident[row["id"]],
-        }
+        return serialize_review_result_row(
+            row,
+            sources=sources_by_incident[row["id"]],
+            duplicate_candidates=self._list_duplicate_candidates(row["id"]),
+        )
 
     def update_incident_translation(
         self,
@@ -2309,80 +1838,14 @@ class PostgresIncidentRepository:
             ).fetchall()
             connection.commit()
 
-        sources_by_incident = self._group_sources_by_incident(source_rows)
+        sources_by_incident = group_sources_by_incident(source_rows)
         row = incident_row
         assert row is not None
-        return {
-            "id": row["id"],
-            "headline": row["headline"],
-            "headline_en": row["headline_en"],
-            "headline_zh": row["headline_zh"],
-            "date_logged": row["date_logged"],
-            "company_involved": row["company_involved"],
-            "company_involved_zh": row["company_involved_zh"],
-            "incident_topic": row["incident_topic"],
-            "claimant_name": row["claimant_name"],
-            "categories": json.loads(row["categories"]),
-            "severity_score": row["severity_score"],
-            "suggested_severity_score": row["suggested_severity_score"],
-            "reality_summary": row["reality_summary"],
-            "reality_summary_en": row["reality_summary_en"],
-            "reality_summary_zh": row["reality_summary_zh"],
-            "status": row["status"],
-            "matched_claim_id": row["matched_claim_id"],
-            "claim_match_confidence": row["claim_match_confidence"],
-            "review_notes": row["review_notes"],
-            "legitimacy_score": row["legitimacy_score"],
-            "legitimacy_label": row["legitimacy_label"],
-            "severity_confidence": row["severity_confidence"],
-            "severity_reasoning": row["severity_reasoning"],
-            "severity_flags": _parse_text_array(row["severity_flags"]),
-            "severity_model": row["severity_model"],
-            "severity_decision_source": row["severity_decision_source"],
-            "legitimacy_reasoning": row["legitimacy_reasoning"],
-            "source_validation_summary": row["source_validation_summary"],
-            "incident_summary_en": row.get("incident_summary_en"),
-            "incident_summary_zh": row.get("incident_summary_zh"),
-            "what_happened_en": row.get("what_happened_en"),
-            "what_happened_zh": row.get("what_happened_zh"),
-            "ai_failure_point_en": row.get("ai_failure_point_en"),
-            "ai_failure_point_zh": row.get("ai_failure_point_zh"),
-            "why_it_matters_en": row.get("why_it_matters_en"),
-            "why_it_matters_zh": row.get("why_it_matters_zh"),
-            "evidence_summary_en": row.get("evidence_summary_en"),
-            "evidence_summary_zh": row.get("evidence_summary_zh"),
-            "translation_status": row["translation_status"],
-            "review_batch_id": row["review_batch_id"],
-            "review_model": row["review_model"],
-            "duplicate_status": row["duplicate_status"],
-            "duplicate_of_incident_id": row["duplicate_of_incident_id"],
-            "canonical_incident_id": row["canonical_incident_id"],
-            "duplicate_candidates": self._list_duplicate_candidates(row["id"]),
-            "sources": sources_by_incident[row["id"]],
-        }
-
-    def _group_sources_by_incident(
-        self,
-        source_rows: list[dict[str, Any]],
-    ) -> dict[str, list[dict[str, Any]]]:
-        sources_by_incident: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in source_rows:
-            sources_by_incident[row["incident_id"]].append(
-                {
-                    "id": row["id"],
-                    "source_url": row["source_url"],
-                    "canonical_url": row.get("canonical_url"),
-                    "source_type": row["source_type"],
-                    "publisher": row["publisher"],
-                    "title": row["title"],
-                    "fetch_status": row.get("fetch_status"),
-                    "http_status": row.get("http_status"),
-                    "evidence_text": row.get("evidence_text"),
-                    "fetch_error": row.get("fetch_error"),
-                }
-            )
-
-        return sources_by_incident
+        return serialize_translation_result_row(
+            row,
+            sources=sources_by_incident[row["id"]],
+            duplicate_candidates=self._list_duplicate_candidates(row["id"]),
+        )
 
     def _list_duplicate_candidates(self, incident_id: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -2402,118 +1865,9 @@ class PostgresIncidentRepository:
                 (incident_id,),
             ).fetchall()
         return [
-            {
-                "candidate_incident_id": row["candidate_incident_id"],
-                "embedding_score": row["embedding_score"],
-                "llm_verdict": row["llm_verdict"],
-                "confidence": row["confidence"],
-                "reasoning": row["reasoning"],
-                "status": row["status"],
-            }
+            serialize_duplicate_candidate_row(row)
             for row in rows
         ]
-
-    def _serialize_public_archive_row(
-        self,
-        row: dict[str, Any],
-    ) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "headline": row["headline"],
-            "headline_en": row.get("headline_en") or row["headline"],
-            "headline_zh": row.get("headline_zh"),
-            "date_logged": row["date_logged"],
-            "company_involved": row["company_involved"],
-            "company_involved_zh": row.get("company_involved_zh"),
-            "incident_topic": row.get("incident_topic"),
-            "claimant_name": row["claimant_name"],
-            "categories": json.loads(row["categories"]),
-            "severity_score": row["severity_score"],
-            "archive_summary": row["reality_summary"],
-            "archive_summary_en": row.get("reality_summary_en")
-            or row["reality_summary"],
-            "archive_summary_zh": row.get("reality_summary_zh"),
-            "status": row["status"],
-            "translation_status": row.get("translation_status"),
-        }
-
-    def _serialize_public_detail_row(
-        self,
-        row: dict[str, Any],
-        sources: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        return {
-            "id": row["id"],
-            "headline": row["headline"],
-            "headline_en": row.get("headline_en") or row["headline"],
-            "headline_zh": row.get("headline_zh"),
-            "date_logged": row["date_logged"],
-            "company_involved": row["company_involved"],
-            "company_involved_zh": row.get("company_involved_zh"),
-            "incident_topic": row.get("incident_topic"),
-            "claimant_name": row["claimant_name"],
-            "categories": json.loads(row["categories"]),
-            "severity_score": row["severity_score"],
-            "reality_summary": row["reality_summary"],
-            "reality_summary_en": row.get("reality_summary_en")
-            or row["reality_summary"],
-            "reality_summary_zh": row.get("reality_summary_zh"),
-            "status": row["status"],
-            "translation_status": row.get("translation_status"),
-            "analysis": {
-                "incident_summary_en": _sanitize_reader_text(
-                    row.get("incident_summary_en"),
-                )
-                or row.get("reality_summary_en")
-                or row["reality_summary"],
-                "incident_summary_zh": _sanitize_reader_text(
-                    row.get("incident_summary_zh"),
-                )
-                or _sanitize_reader_text(
-                    row.get("reality_summary_zh"),
-                ),
-                "what_happened_en": _sanitize_reader_text(
-                    row.get("what_happened_en"),
-                ),
-                "what_happened_zh": _sanitize_reader_text(
-                    row.get("what_happened_zh"),
-                ),
-                "ai_failure_point_en": _sanitize_reader_text(
-                    row.get("ai_failure_point_en"),
-                ),
-                "ai_failure_point_zh": _sanitize_reader_text(
-                    row.get("ai_failure_point_zh"),
-                ),
-                "why_it_matters_en": _sanitize_reader_text(
-                    row.get("why_it_matters_en"),
-                )
-                or _sanitize_reader_text(
-                    row.get("legitimacy_reasoning"),
-                ),
-                "why_it_matters_zh": _sanitize_reader_text(
-                    row.get("why_it_matters_zh"),
-                )
-                or _sanitize_reader_text(
-                    row.get("legitimacy_reasoning_zh"),
-                ),
-                "evidence_summary_en": _sanitize_reader_text(
-                    row.get("evidence_summary_en"),
-                )
-                or _sanitize_reader_text(
-                    row.get("source_validation_summary"),
-                )
-                or _fallback_public_evidence_summary(sources, locale="en"),
-                "evidence_summary_zh": _sanitize_reader_text(
-                    row.get("evidence_summary_zh"),
-                )
-                or _sanitize_reader_text(
-                    row.get("source_validation_summary_zh"),
-                )
-                or _fallback_public_evidence_summary(sources, locale="zh"),
-            },
-            "matched_claim": _build_public_claim_payload(row),
-            "sources": sources,
-        }
 
     def _connect(self):
         return self._pool.connection()
@@ -2579,65 +1933,3 @@ class PostgresIncidentRepository:
     ) -> None:
         for row in rows:
             connection.execute(query, row)
-
-
-def _build_public_claim_payload(row: dict[str, Any]) -> dict[str, Any] | None:
-    if row["claim_id"] is None:
-        return None
-    if row["claim_status"] != "approved":
-        return None
-    if row["claim_match_confidence"] is None:
-        return None
-    if row["claim_match_confidence"] < PUBLIC_CLAIM_MATCH_THRESHOLD:
-        return None
-
-    return {
-        "id": row["claim_id"],
-        "claimant_name": row["claim_claimant_name"],
-        "company_involved": row["claim_company_involved"],
-        "original_claim": row["original_claim"],
-        "claim_date": row["claim_date"],
-        "claim_topic": row["claim_topic"],
-        "match_confidence": row["claim_match_confidence"],
-    }
-
-
-def _parse_text_array(value: str | None) -> list[str]:
-    if not value:
-        return []
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed if str(item)]
-
-
-def _sanitize_reader_text(value: Any) -> str | None:
-    if value is None:
-        return None
-
-    text = str(value).strip()
-    return text or None
-
-
-def _fallback_public_evidence_summary(
-    sources: list[dict[str, Any]],
-    *,
-    locale: str,
-) -> str | None:
-    source_count = len(sources)
-    if source_count == 0:
-        return None
-
-    if locale == "zh":
-        if source_count == 1:
-            return "已通过 1 个已链接来源核实。"
-
-        return f"已通过 {source_count} 个已链接来源核实。"
-
-    if source_count == 1:
-        return "Supported by 1 linked source."
-
-    return f"Supported by {source_count} linked sources."
