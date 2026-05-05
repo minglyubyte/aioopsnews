@@ -922,6 +922,14 @@
   margin: 0;
 }
 
+.public-track-empty {
+  border: 1px dashed color-mix(in srgb, var(--public-border) 76%, transparent);
+  border-radius: 8px;
+  color: var(--public-muted);
+  margin: 0;
+  padding: 1rem;
+}
+
 .public-evidence-block {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));

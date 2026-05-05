@@ -310,6 +310,37 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps empty track sections visible", async () => {
+    const verifiedIncident = buildArchiveIncident({
+      id: "incident-verified-only",
+      headline: "DMV collision report documents autonomous vehicle crash",
+      headline_en: "DMV collision report documents autonomous vehicle crash",
+      publication_track: "verified_accident",
+      evidence_tier: "official_documented",
+      source_family: "autonomous_vehicle",
+    });
+
+    mockedFetchIncidentFeed.mockResolvedValue(
+      buildFeedResponse([verifiedIncident]),
+    );
+    mockedFetchIncidentDetail.mockResolvedValue(
+      buildIncidentDetail(verifiedIncident),
+    );
+
+    render(<PublicDashboardPage />);
+
+    const watchSection = (
+      await screen.findByRole("heading", { name: "AI Accident Watch" })
+    ).closest("section");
+
+    expect(watchSection).not.toBeNull();
+    expect(
+      within(watchSection as HTMLElement).getByText(
+        "No watch items in this slice yet.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders slice-level highlights, localized archive cards, and source-backed detail", async () => {
     const latestIncident = buildArchiveIncident({
       id: "incident-1",

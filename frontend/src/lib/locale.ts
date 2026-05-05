@@ -101,9 +101,12 @@ export const PUBLIC_COPY = {
     verifiedSectionTitle: "Verified AI Accidents",
     verifiedSectionBody:
       "Source-backed case files from official, court, regulator, company, or fixed high-provenance records.",
+    verifiedSectionEmpty:
+      "No verified accident case files in this slice yet.",
     watchSectionTitle: "AI Accident Watch",
     watchSectionBody:
       "Developing reports and credible signals that are readable, useful, and clearly not fully confirmed.",
+    watchSectionEmpty: "No watch items in this slice yet.",
     noIncidentsForSlice: "No incidents match this slice yet.",
     detailActionLabel: (headline: string) => `Open full context for ${headline}`,
     sourceBackedDetailActionLabel: (headline: string) =>
@@ -225,9 +228,11 @@ export const PUBLIC_COPY = {
     verifiedSectionTitle: "已验证 AI 事故",
     verifiedSectionBody:
       "来自官方、法院、监管、公司或固定高可信记录的来源支撑档案。",
+    verifiedSectionEmpty: "这个筛选范围里还没有已验证事故档案。",
     watchSectionTitle: "AI 事故观察",
     watchSectionBody:
       "仍在发展中的报道和可信信号，保持可读，同时清楚标注尚未完全确认。",
+    watchSectionEmpty: "这个筛选范围里还没有观察条目。",
     highlightInsightsTitle: "筛选摘要",
     highlightInsightsBody:
       "这个面板总结当前筛选后的公开档案，让读者先看清整体轮廓，再决定打开哪一条事件。",
@@ -346,8 +351,10 @@ export const PUBLIC_COPY = {
     highlightInsightsBody: string;
     verifiedSectionTitle: string;
     verifiedSectionBody: string;
+    verifiedSectionEmpty: string;
     watchSectionTitle: string;
     watchSectionBody: string;
+    watchSectionEmpty: string;
     noIncidentsForSlice: string;
     detailActionLabel: (headline: string) => string;
     sourceBackedDetailActionLabel: (headline: string) => string;

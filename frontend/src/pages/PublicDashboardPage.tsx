@@ -723,8 +723,14 @@ export default function PublicDashboardPage() {
                       <h3>{copy.verifiedSectionTitle}</h3>
                       <p className="body-copy">{copy.verifiedSectionBody}</p>
                     </div>
-                    {verifiedIncidents.map((incident, cardIdx) =>
-                      renderArchiveCard(incident, cardIdx),
+                    {verifiedIncidents.length > 0 ? (
+                      verifiedIncidents.map((incident, cardIdx) =>
+                        renderArchiveCard(incident, cardIdx),
+                      )
+                    ) : (
+                      <p className="public-track-empty">
+                        {copy.verifiedSectionEmpty}
+                      </p>
                     )}
                   </section>
                   <section className="public-track-section">
@@ -732,11 +738,17 @@ export default function PublicDashboardPage() {
                       <h3>{copy.watchSectionTitle}</h3>
                       <p className="body-copy">{copy.watchSectionBody}</p>
                     </div>
-                    {watchIncidents.map((incident, cardIdx) =>
-                      renderArchiveCard(
-                        incident,
-                        verifiedIncidents.length + cardIdx,
-                      ),
+                    {watchIncidents.length > 0 ? (
+                      watchIncidents.map((incident, cardIdx) =>
+                        renderArchiveCard(
+                          incident,
+                          verifiedIncidents.length + cardIdx,
+                        ),
+                      )
+                    ) : (
+                      <p className="public-track-empty">
+                        {copy.watchSectionEmpty}
+                      </p>
                     )}
                   </section>
                 </div>

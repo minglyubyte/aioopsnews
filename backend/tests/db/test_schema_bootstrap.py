@@ -159,6 +159,28 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
         assert column_definition in migration_sql
 
 
+def test_dual_track_migration_backfills_dmv_waymo_fixture() -> None:
+    migration_path = (
+        REPO_ROOT
+        / "infra"
+        / "supabase"
+        / "migrations"
+        / "20260505120000_dual_track_incident_metadata.sql"
+    )
+
+    migration_sql = migration_path.read_text().lower()
+
+    assert (
+        "source_registry_key = coalesce(source_registry_key, 'ca_dmv_av_collisions')"
+        in migration_sql
+    )
+    assert (
+        "publication_track = coalesce(publication_track, 'verified_accident')"
+        in migration_sql
+    )
+    assert "source_url ilike '%dmv.ca.gov%'" in migration_sql
+
+
 def test_forensic_migration_adds_incident_log_review_fields() -> None:
     migration_path = (
         REPO_ROOT
