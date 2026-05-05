@@ -6,6 +6,12 @@ from copy import deepcopy
 from datetime import date
 from typing import Any
 
+from app.core.incident_metadata import (
+    DEFAULT_EVIDENCE_TIER,
+    DEFAULT_PUBLICATION_TRACK,
+    DEFAULT_SOURCE_FAMILY,
+    DEFAULT_VERIFICATION_SUMMARY,
+)
 from app.models.claim import ClaimRecord
 from app.scrapers.rss import RSSArticle
 from app.services.claim_matcher import PUBLIC_CLAIM_MATCH_THRESHOLD
@@ -145,6 +151,12 @@ class InMemoryIncidentRepository:
             }
         )
         companies = sorted({incident["company_involved"] for incident in incidents})
+        publication_tracks = sorted(
+            {incident["publication_track"] for incident in incidents}
+        )
+        source_families = sorted(
+            {incident["source_family"] for incident in incidents}
+        )
         company_labels_zh = {
             company: next(
                 (
@@ -177,6 +189,8 @@ class InMemoryIncidentRepository:
             "claimants": claimants,
             "companies": companies,
             "company_labels_zh": company_labels_zh,
+            "publication_tracks": publication_tracks,
+            "source_families": source_families,
             "years": years,
             "months_by_year": months_by_year,
         }
@@ -253,6 +267,13 @@ class InMemoryIncidentRepository:
             "confidence_level": None,
             "import_notes": None,
             "translation_status": "not_requested",
+            "publication_track": DEFAULT_PUBLICATION_TRACK,
+            "evidence_tier": "reported_unconfirmed",
+            "source_family": DEFAULT_SOURCE_FAMILY,
+            "verification_summary": (
+                "RSS discovery found reporting that needs source verification "
+                "before publication."
+            ),
             "review_batch_id": None,
             "review_model": None,
             "reviewed_at": None,
@@ -269,6 +290,9 @@ class InMemoryIncidentRepository:
                     "http_status": None,
                     "evidence_text": None,
                     "fetch_error": None,
+                    "source_origin": "search_discovery",
+                    "source_registry_key": article.source_key,
+                    "raw_source_payload": {"source_key": article.source_key},
                 }
             ],
         }
@@ -492,6 +516,13 @@ class InMemoryIncidentRepository:
         headline_zh: str | None,
         reality_summary_zh: str | None,
         translation_status: str,
+        publication_track: str | None = None,
+        evidence_tier: str | None = None,
+        source_family: str | None = None,
+        verification_summary: str | None = None,
+        source_origin: str | None = None,
+        source_registry_key: str | None = None,
+        raw_source_payloads: list[dict[str, object] | None] | None = None,
     ) -> None:
         existing_incident_id = next(
             (
@@ -509,6 +540,9 @@ class InMemoryIncidentRepository:
 
         sources: list[dict[str, Any]] = []
         for display_order, url in enumerate(source_links):
+            raw_source_payload = None
+            if raw_source_payloads and display_order < len(raw_source_payloads):
+                raw_source_payload = raw_source_payloads[display_order]
             self._source_sequence += 1
             sources.append(
                 {
@@ -522,6 +556,9 @@ class InMemoryIncidentRepository:
                     "http_status": None,
                     "evidence_text": None,
                     "fetch_error": None,
+                    "source_origin": source_origin or "manual_import",
+                    "source_registry_key": source_registry_key,
+                    "raw_source_payload": raw_source_payload,
                     "is_primary": display_order == 0,
                 }
             )
@@ -562,6 +599,11 @@ class InMemoryIncidentRepository:
             "confidence_level": confidence_level,
             "import_notes": import_notes,
             "translation_status": translation_status,
+            "publication_track": publication_track or DEFAULT_PUBLICATION_TRACK,
+            "evidence_tier": evidence_tier or DEFAULT_EVIDENCE_TIER,
+            "source_family": source_family or DEFAULT_SOURCE_FAMILY,
+            "verification_summary": verification_summary
+            or DEFAULT_VERIFICATION_SUMMARY,
             "review_batch_id": None,
             "review_model": None,
             "reviewed_at": None,
@@ -705,6 +747,10 @@ class InMemoryIncidentRepository:
         ai_failure_point_en: str | None = None,
         why_it_matters_en: str | None = None,
         evidence_summary_en: str | None = None,
+        publication_track: str | None = None,
+        evidence_tier: str | None = None,
+        source_family: str | None = None,
+        verification_summary: str | None = None,
     ) -> dict[str, Any] | None:
         incident = self.incidents.get(incident_id)
         if incident is None:
@@ -734,6 +780,14 @@ class InMemoryIncidentRepository:
                 "ai_failure_point_en": ai_failure_point_en,
                 "why_it_matters_en": why_it_matters_en,
                 "evidence_summary_en": evidence_summary_en,
+                "publication_track": publication_track
+                or incident.get("publication_track", DEFAULT_PUBLICATION_TRACK),
+                "evidence_tier": evidence_tier
+                or incident.get("evidence_tier", DEFAULT_EVIDENCE_TIER),
+                "source_family": source_family
+                or incident.get("source_family", DEFAULT_SOURCE_FAMILY),
+                "verification_summary": verification_summary
+                or incident.get("verification_summary", DEFAULT_VERIFICATION_SUMMARY),
                 "review_model": review_model,
                 "review_batch_id": review_batch_id,
                 "reviewed_at": reviewed_at,
@@ -803,6 +857,16 @@ class InMemoryIncidentRepository:
             "archive_summary_zh": incident.get("reality_summary_zh"),
             "status": incident["status"],
             "translation_status": incident.get("translation_status"),
+            "publication_track": incident.get(
+                "publication_track",
+                DEFAULT_PUBLICATION_TRACK,
+            ),
+            "evidence_tier": incident.get("evidence_tier", DEFAULT_EVIDENCE_TIER),
+            "source_family": incident.get("source_family", DEFAULT_SOURCE_FAMILY),
+            "verification_summary": incident.get(
+                "verification_summary",
+                DEFAULT_VERIFICATION_SUMMARY,
+            ),
         }
 
     def _serialize_public_detail_incident(
@@ -829,6 +893,16 @@ class InMemoryIncidentRepository:
             "reality_summary_zh": incident.get("reality_summary_zh"),
             "status": incident["status"],
             "translation_status": incident.get("translation_status"),
+            "publication_track": incident.get(
+                "publication_track",
+                DEFAULT_PUBLICATION_TRACK,
+            ),
+            "evidence_tier": incident.get("evidence_tier", DEFAULT_EVIDENCE_TIER),
+            "source_family": incident.get("source_family", DEFAULT_SOURCE_FAMILY),
+            "verification_summary": incident.get(
+                "verification_summary",
+                DEFAULT_VERIFICATION_SUMMARY,
+            ),
             "analysis": {
                 "incident_summary_en": _sanitize_reader_text(
                     incident.get("incident_summary_en")
@@ -940,6 +1014,16 @@ class InMemoryIncidentRepository:
             "evidence_summary_en": incident.get("evidence_summary_en"),
             "evidence_summary_zh": incident.get("evidence_summary_zh"),
             "translation_status": incident.get("translation_status"),
+            "publication_track": incident.get(
+                "publication_track",
+                DEFAULT_PUBLICATION_TRACK,
+            ),
+            "evidence_tier": incident.get("evidence_tier", DEFAULT_EVIDENCE_TIER),
+            "source_family": incident.get("source_family", DEFAULT_SOURCE_FAMILY),
+            "verification_summary": incident.get(
+                "verification_summary",
+                DEFAULT_VERIFICATION_SUMMARY,
+            ),
             "review_batch_id": incident.get("review_batch_id"),
             "review_model": incident.get("review_model"),
             "duplicate_status": incident.get("duplicate_status"),
@@ -990,6 +1074,20 @@ class InMemoryIncidentRepository:
                 incident
                 for incident in incidents
                 if incident["severity_score"] <= filters.severity_max
+            ]
+        if filters.publication_track:
+            incidents = [
+                incident
+                for incident in incidents
+                if incident.get("publication_track", DEFAULT_PUBLICATION_TRACK)
+                == filters.publication_track
+            ]
+        if filters.source_family:
+            incidents = [
+                incident
+                for incident in incidents
+                if incident.get("source_family", DEFAULT_SOURCE_FAMILY)
+                == filters.source_family
             ]
         if filters.year is not None:
             incidents = [

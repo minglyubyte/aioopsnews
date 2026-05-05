@@ -271,6 +271,52 @@ def test_build_review_messages_include_json_guidance_example() -> None:
     assert user_payload["approved_categories"] == list(INCIDENT_CATEGORY_TAXONOMY)
 
 
+def test_build_review_messages_distinguish_verified_and_watch_tracks() -> None:
+    messages = _build_review_messages(
+        {
+            "id": "incident-1",
+            "external_id": "ext-1",
+            "company_involved": "OpenAI",
+            "incident_topic": "Hallucinations",
+            "date_logged": "2026-05-01",
+            "headline": "Headline",
+            "reality_summary": "Summary",
+            "publication_track": "accident_watch",
+            "evidence_tier": "reported_unconfirmed",
+            "source_family": "legal_hallucination",
+            "verification_summary": (
+                "Reported by media; court record not linked yet."
+            ),
+            "sources": [
+                {
+                    "source_url": "https://example.com/story",
+                    "canonical_url": None,
+                    "fetch_status": "fetched",
+                    "http_status": 200,
+                    "evidence_text": "News report text.",
+                    "source_origin": "search_discovery",
+                    "source_registry_key": "google_search",
+                }
+            ],
+        }
+    )
+
+    system_prompt = messages[0]["content"].lower()
+    user_payload = json.loads(messages[1]["content"])
+
+    assert "verified_accident" in system_prompt
+    assert "accident_watch" in system_prompt
+    assert "watch items must not be upgraded to verified" in system_prompt
+    assert user_payload["publication_track"] == "accident_watch"
+    assert user_payload["evidence_tier"] == "reported_unconfirmed"
+    assert user_payload["source_family"] == "legal_hallucination"
+    assert user_payload["verification_summary"] == (
+        "Reported by media; court record not linked yet."
+    )
+    assert user_payload["sources"][0]["source_origin"] == "search_discovery"
+    assert user_payload["sources"][0]["source_registry_key"] == "google_search"
+
+
 def test_parse_review_result_reads_structured_forensic_fields() -> None:
     result = _parse_review_result(
         incident_id="incident-1",

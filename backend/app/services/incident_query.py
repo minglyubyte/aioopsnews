@@ -11,6 +11,8 @@ class IncidentQueryFilters:
     claimant: str | None = None
     severity_min: int | None = None
     severity_max: int | None = None
+    publication_track: str | None = None
+    source_family: str | None = None
     year: int | None = None
     month: int | None = None
     page: int = 1

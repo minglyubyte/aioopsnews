@@ -47,6 +47,12 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "reality_summary_zh": None,
                 "status": "approved",
                 "translation_status": "not_requested",
+                "publication_track": "accident_watch",
+                "evidence_tier": "developing",
+                "source_family": "model_governance",
+                "verification_summary": (
+                    "Legacy-style watch item awaiting evidence classification."
+                ),
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
@@ -88,6 +94,13 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "ai_failure_point_zh": "该助手未能将私密支持上下文与回复生成上下文隔离开。",
                 "status": "approved",
                 "translation_status": "completed",
+                "publication_track": "accident_watch",
+                "evidence_tier": "reported_unconfirmed",
+                "source_family": "customer_support",
+                "verification_summary": (
+                    "Reporting describes the privacy leak; no regulator notice is "
+                    "linked yet."
+                ),
                 "matched_claim_id": "claim-1",
                 "claim_match_confidence": 0.88,
                 "review_notes": "editor reviewed",
@@ -105,6 +118,11 @@ def _build_repository() -> InMemoryIncidentRepository:
                         "id": "source-1",
                         "source_url": "https://example.com/privacy",
                         "source_type": "primary",
+                        "source_origin": "search_discovery",
+                        "source_registry_key": "google_search",
+                        "raw_source_payload": {
+                            "query": "AI support bot privacy leak"
+                        },
                         "publisher": "Example News",
                         "title": (
                             "Database-backed feed shows a reviewed privacy incident"
@@ -132,6 +150,12 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "reality_summary_zh": None,
                 "status": "approved",
                 "translation_status": "not_requested",
+                "publication_track": "verified_accident",
+                "evidence_tier": "official_documented",
+                "source_family": "autonomous_vehicle",
+                "verification_summary": (
+                    "A fixed verified source documents the operational rollback."
+                ),
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
@@ -146,6 +170,11 @@ def _build_repository() -> InMemoryIncidentRepository:
                         "id": "source-2",
                         "source_url": "https://example.com/robotics",
                         "source_type": "primary",
+                        "source_origin": "fixed_verified_source",
+                        "source_registry_key": "ca_dmv_av_collisions",
+                        "raw_source_payload": {
+                            "report_number": "OL-316-robotics"
+                        },
                         "publisher": "City Ledger",
                         "title": "Warehouse robot rollback follows navigation failures",
                     }
@@ -177,6 +206,10 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "reality_summary_zh": None,
                 "status": "approved",
                 "translation_status": "not_requested",
+                "publication_track": "accident_watch",
+                "evidence_tier": "reported_unconfirmed",
+                "source_family": "model_governance",
+                "verification_summary": "Older imported item with watch-level evidence.",
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
@@ -230,6 +263,12 @@ def test_get_incidents_reads_from_repository_records() -> None:
         "A reviewed database record leaked internal notes into replies."
     )
     assert payload["items"][1]["translation_status"] == "completed"
+    assert payload["items"][1]["publication_track"] == "accident_watch"
+    assert payload["items"][1]["evidence_tier"] == "reported_unconfirmed"
+    assert payload["items"][1]["source_family"] == "customer_support"
+    assert payload["items"][1]["verification_summary"] == (
+        "Reporting describes the privacy leak; no regulator notice is linked yet."
+    )
     assert payload["page"] == 1
     assert payload["page_size"] == 20
     assert payload["total_count"] == 4
@@ -292,6 +331,35 @@ def test_get_incidents_supports_filters_and_pagination() -> None:
     assert paged_payload["has_previous_page"] is True
 
 
+def test_get_incidents_supports_publication_track_and_source_family_filters() -> None:
+    repository = _build_repository()
+    client = TestClient(create_app(incident_repository=repository))
+
+    verified_response = client.get(
+        "/incidents",
+        params={
+            "publication_track": "verified_accident",
+            "source_family": "autonomous_vehicle",
+        },
+    )
+    watch_response = client.get(
+        "/incidents",
+        params={
+            "publication_track": "accident_watch",
+            "source_family": "customer_support",
+        },
+    )
+
+    assert verified_response.status_code == 200
+    assert [item["headline"] for item in verified_response.json()["items"]] == [
+        "Warehouse robot rollback follows navigation failures",
+    ]
+    assert watch_response.status_code == 200
+    assert [item["headline"] for item in watch_response.json()["items"]] == [
+        "Database-backed feed shows a reviewed privacy incident",
+    ]
+
+
 def test_get_incidents_supports_year_and_month_archives() -> None:
     repository = _build_repository()
     client = TestClient(create_app(incident_repository=repository))
@@ -340,6 +408,12 @@ def test_get_incident_detail_returns_public_record_with_analysis_and_sources() -
     )
     assert detail_response.json()["headline_zh"] == "数据库支持的隐私事件已完成审核"
     assert detail_response.json()["company_involved_zh"] == "未来栈"
+    assert detail_response.json()["publication_track"] == "accident_watch"
+    assert detail_response.json()["evidence_tier"] == "reported_unconfirmed"
+    assert detail_response.json()["source_family"] == "customer_support"
+    assert detail_response.json()["verification_summary"] == (
+        "Reporting describes the privacy leak; no regulator notice is linked yet."
+    )
     assert detail_response.json()["analysis"] == {
         "incident_summary_en": (
             "A customer-support automation release exposed internal billing "
@@ -382,6 +456,9 @@ def test_get_incident_detail_returns_public_record_with_analysis_and_sources() -
             "id": "source-1",
             "source_url": "https://example.com/privacy",
             "source_type": "primary",
+            "source_origin": "search_discovery",
+            "source_registry_key": "google_search",
+            "raw_source_payload": {"query": "AI support bot privacy leak"},
             "publisher": "Example News",
             "title": "Database-backed feed shows a reviewed privacy incident",
         }
@@ -410,6 +487,12 @@ def test_get_filters_reads_distinct_values_from_repository() -> None:
             "MayOps": None,
             "RoboOps": None,
         },
+        "publication_tracks": ["accident_watch", "verified_accident"],
+        "source_families": [
+            "autonomous_vehicle",
+            "customer_support",
+            "model_governance",
+        ],
         "years": [2026, 2025],
         "months_by_year": {
             "2026": [5, 4],

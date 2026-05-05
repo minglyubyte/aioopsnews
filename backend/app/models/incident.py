@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.incident_metadata import EvidenceTier, PublicationTrack, SourceFamily
+
 IncidentStatus = Literal[
     "pending_llm_review",
     "pending_llm_escalation",
@@ -63,6 +65,10 @@ class IncidentRecord(BaseModel):
     why_it_matters_zh: str | None = None
     evidence_summary_en: str | None = None
     evidence_summary_zh: str | None = None
+    publication_track: PublicationTrack = "accident_watch"
+    evidence_tier: EvidenceTier = "developing"
+    source_family: SourceFamily = "other"
+    verification_summary: str | None = None
     legitimacy_flag: str | None = None
     confidence_level: str | None = None
     import_notes: str | None = None

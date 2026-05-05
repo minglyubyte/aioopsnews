@@ -9,6 +9,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.services.review_prompts import (
+    FORENSIC_MIN_WORD_COUNTS,
     REVIEW_MAX_OUTPUT_TOKENS,
     REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS,
     ReviewResponseParseError,
@@ -94,6 +95,10 @@ class IncidentReviewResult:
     severity_confidence: float | None = None
     severity_reasoning: str | None = None
     severity_flags: list[str] | None = None
+    publication_track: str | None = None
+    evidence_tier: str | None = None
+    source_family: str | None = None
+    verification_summary: str | None = None
     needs_escalation: bool = False
     reviewed_model: str = ""
 
@@ -930,6 +935,10 @@ def _apply_review_decision(
         ai_failure_point_en=final_result.ai_failure_point_en,
         why_it_matters_en=final_result.why_it_matters_en,
         evidence_summary_en=final_result.evidence_summary_en,
+        publication_track=final_result.publication_track,
+        evidence_tier=final_result.evidence_tier,
+        source_family=final_result.source_family,
+        verification_summary=final_result.verification_summary,
         categories=final_result.categories or list(incident.get("categories", [])),
         severity_score=final_severity_score,
         suggested_severity_score=final_result.suggested_severity_score,
@@ -953,6 +962,20 @@ def _apply_review_decision(
             "ai_failure_point_en": final_result.ai_failure_point_en,
             "why_it_matters_en": final_result.why_it_matters_en,
             "evidence_summary_en": final_result.evidence_summary_en,
+            "publication_track": (
+                final_result.publication_track
+                or incident.get("publication_track")
+            ),
+            "evidence_tier": (
+                final_result.evidence_tier or incident.get("evidence_tier")
+            ),
+            "source_family": (
+                final_result.source_family or incident.get("source_family")
+            ),
+            "verification_summary": (
+                final_result.verification_summary
+                or incident.get("verification_summary")
+            ),
             "categories": final_result.categories
             or list(incident.get("categories", [])),
             "legitimacy_score": final_result.score,

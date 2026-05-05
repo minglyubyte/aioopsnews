@@ -80,10 +80,10 @@ def parse_incidents_csv_text(csv_text: str) -> list[ParsedIncidentImportRow]:
             row["source_links"],
             line_number=line_number,
         )
-        if len(source_links) < 2:
+        if len(source_links) < 3:
             raise IncidentImportValidationError(
                 "Invalid incident import at line "
-                f"{line_number}: source_links must contain at least 2 "
+                f"{line_number}: source_links must contain at least 3 "
                 "distinct valid URLs"
             )
 

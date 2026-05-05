@@ -58,6 +58,9 @@ def build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 
                 # INSTRUCTIONS
                 - Evaluate the provided incident and determine if it is a legitimate AI failure.
+                - Treat `publication_track` as an editorial input:
+                  - `verified_accident` means fixed official, court, regulator, company, or high-provenance source adapters found the incident; still verify AI relevance, dedupe risk, and severity before approval.
+                  - `accident_watch` means credible reporting or search discovery found a developing signal; watch items must not be upgraded to verified unless the sources include fixed official, court, regulator, or company evidence.
                 - Choose one or more categories from the approved taxonomy only.
                 - Write substantive narrative sections for the forensic fields.
                 
@@ -95,6 +98,10 @@ def build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                     "ai_failure_point_en": "...",
                     "why_it_matters_en": "...",
                     "evidence_summary_en": "...",
+                    "publication_track": "verified_accident|accident_watch",
+                    "evidence_tier": "official_documented|court_or_regulator|company_confirmed|reported_unconfirmed|developing",
+                    "source_family": "autonomous_vehicle|legal_hallucination|coding_failure|security_privacy|customer_support|healthcare_benefits|education_public_sector|model_governance|other",
+                    "verification_summary": "...",
                     "categories": ["Hallucinations"],
                     "suggested_severity_score": 3,
                     "severity_confidence": 0.8,
@@ -116,6 +123,10 @@ def build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                     "incident_date": incident["date_logged"],
                     "headline": incident["headline"],
                     "reality_summary": incident["reality_summary"],
+                    "publication_track": incident.get("publication_track"),
+                    "evidence_tier": incident.get("evidence_tier"),
+                    "source_family": incident.get("source_family"),
+                    "verification_summary": incident.get("verification_summary"),
                     "editorial_input": {
                         "legitimacy_flag": incident.get("legitimacy_flag"),
                         "confidence_level": incident.get("confidence_level"),
@@ -128,6 +139,10 @@ def build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                             "fetch_status": source.get("fetch_status"),
                             "http_status": source.get("http_status"),
                             "evidence_text": source.get("evidence_text"),
+                            "source_origin": source.get("source_origin"),
+                            "source_registry_key": source.get(
+                                "source_registry_key"
+                            ),
                         }
                         for source in incident.get("sources", [])
                     ],
@@ -199,6 +214,10 @@ def parse_review_result(
         ai_failure_point_en=ai_failure_point_en,
         why_it_matters_en=why_it_matters_en,
         evidence_summary_en=evidence_summary_en,
+        publication_track=payload.get("publication_track"),
+        evidence_tier=payload.get("evidence_tier"),
+        source_family=payload.get("source_family"),
+        verification_summary=payload.get("verification_summary"),
         categories=categories,
         suggested_severity_score=(
             int(payload["suggested_severity_score"])

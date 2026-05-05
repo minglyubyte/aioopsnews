@@ -17,6 +17,9 @@ class IncidentSourceResponse(BaseModel):
     id: str
     source_url: str
     source_type: str
+    source_origin: str | None = None
+    source_registry_key: str | None = None
+    raw_source_payload: dict[str, object] | None = None
     publisher: str | None = None
     title: str | None = None
 
@@ -45,6 +48,10 @@ class PublicIncidentBaseResponse(BaseModel):
     severity_score: int
     status: str
     translation_status: str | None = None
+    publication_track: str
+    evidence_tier: str
+    source_family: str
+    verification_summary: str
 
 
 class IncidentArchiveItemResponse(PublicIncidentBaseResponse):
@@ -91,6 +98,8 @@ class IncidentFilterResponse(BaseModel):
     claimants: list[str]
     companies: list[str]
     company_labels_zh: dict[str, str | None]
+    publication_tracks: list[str]
+    source_families: list[str]
     years: list[int]
     months_by_year: dict[str, list[int]]
 
@@ -106,6 +115,8 @@ def get_incidents(
     claimant: str | None = None,
     severity_min: int | None = Query(default=None, ge=1, le=5),
     severity_max: int | None = Query(default=None, ge=1, le=5),
+    publication_track: str | None = None,
+    source_family: str | None = None,
     year: int | None = Query(default=None, ge=1900, le=3000),
     month: int | None = Query(default=None, ge=1, le=12),
     page: int = Query(default=1, ge=1),
@@ -124,6 +135,8 @@ def get_incidents(
                 claimant=claimant,
                 severity_min=severity_min,
                 severity_max=severity_max,
+                publication_track=publication_track,
+                source_family=source_family,
                 year=year,
                 month=month,
                 page=page,

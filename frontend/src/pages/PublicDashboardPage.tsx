@@ -91,6 +91,12 @@ export default function PublicDashboardPage() {
   const [sourceListRef, sourceListInView] = useInView<HTMLDivElement>();
 
   const incidents = feed.items;
+  const verifiedIncidents = incidents.filter(
+    (incident) => incident.publication_track === "verified_accident",
+  );
+  const watchIncidents = incidents.filter(
+    (incident) => incident.publication_track !== "verified_accident",
+  );
   const selectedIncident =
     incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
   const sliceSummary = feed.slice_summary;
@@ -258,6 +264,56 @@ export default function PublicDashboardPage() {
     }));
   }
 
+  function renderArchiveCard(
+    incident: IncidentArchiveItem,
+    cardIdx: number,
+  ) {
+    const isSelected = incident.id === selectedIncident?.id;
+
+    return (
+      <article
+        className={`public-archive-card${isSelected ? " is-selected" : ""}`}
+        key={incident.id}
+        style={{ "--card-index": cardIdx } as React.CSSProperties}
+      >
+        <div className="incident-meta">
+          <span>{localizedCompanyName(incident, readerLocale)}</span>
+          <span>{severityLabel(incident.severity_score, readerLocale)}</span>
+          <span>{formatDate(incident.date_logged, readerLocale)}</span>
+        </div>
+        <div className="public-evidence-badges">
+          <span className="tag">{trackLabel(incident.publication_track)}</span>
+          <span className="tag">{evidenceTierLabel(incident.evidence_tier)}</span>
+          <span className="tag">{sourceFamilyLabel(incident.source_family)}</span>
+        </div>
+        <h3>{localizedHeadline(incident, readerLocale)}</h3>
+        <p className="body-copy public-archive-summary">
+          {buildSnippet(localizedArchiveSummary(incident, readerLocale))}
+        </p>
+        <p className="body-copy public-verification-summary">
+          {incident.verification_summary}
+        </p>
+        <div className="tag-row">
+          {incident.categories.map((category) => (
+            <span className="tag" key={category}>
+              {localizePublicCategory(category, readerLocale)}
+            </span>
+          ))}
+        </div>
+        <button
+          aria-pressed={isSelected}
+          className="secondary-action public-detail-button"
+          type="button"
+          onClick={() => showIncidentDetail(incident.id)}
+        >
+          {copy.detailActionLabel(
+            localizedHeadline(incident, readerLocale),
+          )}
+        </button>
+      </article>
+    );
+  }
+
   function handleYearChange(value: string) {
     const year = value ? Number(value) : undefined;
 
@@ -302,6 +358,7 @@ export default function PublicDashboardPage() {
             <div>
               <p className="eyebrow public-kicker">{copy.brand}</p>
               <h1>{copy.brand}</h1>
+              <p className="body-copy public-positioning">{copy.positioning}</p>
             </div>
             <div className="public-utility-cluster">
               <div
@@ -546,6 +603,50 @@ export default function PublicDashboardPage() {
               </label>
 
               <label className="field public-toolbar-field">
+                <span>{copy.filterByTrack}</span>
+                <select
+                  aria-label={copy.filterByTrack}
+                  disabled={isFiltersLoading}
+                  value={readerFilters.publicationTrack ?? ""}
+                  onChange={(event) =>
+                    updateFilter(
+                      "publicationTrack",
+                      event.target.value || undefined,
+                    )
+                  }
+                >
+                  <option value="">{copy.allTracks}</option>
+                  {(filters?.publication_tracks ?? []).map((track) => (
+                    <option key={track} value={track}>
+                      {trackLabel(track)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field public-toolbar-field">
+                <span>{copy.filterBySourceFamily}</span>
+                <select
+                  aria-label={copy.filterBySourceFamily}
+                  disabled={isFiltersLoading}
+                  value={readerFilters.sourceFamily ?? ""}
+                  onChange={(event) =>
+                    updateFilter(
+                      "sourceFamily",
+                      event.target.value || undefined,
+                    )
+                  }
+                >
+                  <option value="">{copy.allSourceFamilies}</option>
+                  {(filters?.source_families ?? []).map((sourceFamily) => (
+                    <option key={sourceFamily} value={sourceFamily}>
+                      {sourceFamilyLabel(sourceFamily)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field public-toolbar-field">
                 <span>{copy.filterByYear}</span>
                 <select
                   aria-label={copy.filterByYear}
@@ -617,46 +718,27 @@ export default function PublicDashboardPage() {
                   data-inview={archiveListInView ? "true" : "false"}
                   ref={archiveListRef}
                 >
-                  {incidents.map((incident, cardIdx) => {
-                    const isSelected = incident.id === selectedIncident?.id;
-
-                    return (
-                      <article
-                        className={`public-archive-card${isSelected ? " is-selected" : ""}`}
-                        key={incident.id}
-                        style={{ "--card-index": cardIdx } as React.CSSProperties}
-                      >
-                        <div className="incident-meta">
-                          <span>{localizedCompanyName(incident, readerLocale)}</span>
-                          <span>{severityLabel(incident.severity_score, readerLocale)}</span>
-                          <span>{formatDate(incident.date_logged, readerLocale)}</span>
-                        </div>
-                        <h3>{localizedHeadline(incident, readerLocale)}</h3>
-                        <p className="body-copy public-archive-summary">
-                          {buildSnippet(
-                            localizedArchiveSummary(incident, readerLocale),
-                          )}
-                        </p>
-                        <div className="tag-row">
-                          {incident.categories.map((category) => (
-                            <span className="tag" key={category}>
-                              {localizePublicCategory(category, readerLocale)}
-                            </span>
-                          ))}
-                        </div>
-                        <button
-                          aria-pressed={isSelected}
-                          className="secondary-action public-detail-button"
-                          type="button"
-                          onClick={() => showIncidentDetail(incident.id)}
-                        >
-                          {copy.detailActionLabel(
-                            localizedHeadline(incident, readerLocale),
-                          )}
-                        </button>
-                      </article>
-                    );
-                  })}
+                  <section className="public-track-section">
+                    <div className="public-track-header">
+                      <h3>{copy.verifiedSectionTitle}</h3>
+                      <p className="body-copy">{copy.verifiedSectionBody}</p>
+                    </div>
+                    {verifiedIncidents.map((incident, cardIdx) =>
+                      renderArchiveCard(incident, cardIdx),
+                    )}
+                  </section>
+                  <section className="public-track-section">
+                    <div className="public-track-header">
+                      <h3>{copy.watchSectionTitle}</h3>
+                      <p className="body-copy">{copy.watchSectionBody}</p>
+                    </div>
+                    {watchIncidents.map((incident, cardIdx) =>
+                      renderArchiveCard(
+                        incident,
+                        verifiedIncidents.length + cardIdx,
+                      ),
+                    )}
+                  </section>
                 </div>
               ) : null}
               {!isFeedLoading && !feedError && incidents.length === 0 ? (
@@ -798,6 +880,20 @@ export default function PublicDashboardPage() {
                     </span>
                   ))}
                 </div>
+                <section className="public-evidence-block">
+                  <div>
+                    <h3>{copy.whatIsConfirmedTitle}</h3>
+                    <p className="body-copy">
+                      {incidentDetail.verification_summary}
+                    </p>
+                  </div>
+                  <div>
+                    <h3>{copy.whatRemainsUncertainTitle}</h3>
+                    <p className="body-copy">
+                      {uncertaintySummary(incidentDetail)}
+                    </p>
+                  </div>
+                </section>
                 <div className="public-detail-analysis">
                   {localizedAnalysisText(
                     incidentDetail.analysis,
@@ -892,7 +988,7 @@ export default function PublicDashboardPage() {
                 ref={sourceListRef}
               >
                 <p className="public-kicker">{copy.reportingTrailKicker}</p>
-                <h3>{copy.sourcesTitle}</h3>
+                <h3>{copy.primarySourceTrailTitle}</h3>
                 <div
                   className="public-source-list"
                   data-inview={sourceListInView ? "true" : "false"}
@@ -1061,6 +1157,42 @@ function localizedAnalysisText(
   }
 
   return analysis[englishKey] ?? analysis[baseKey] ?? null;
+}
+
+function trackLabel(track: string) {
+  if (track === "verified_accident") {
+    return "Verified accident";
+  }
+  if (track === "accident_watch") {
+    return "Accident watch";
+  }
+  return humanizeSnakeCase(track);
+}
+
+function evidenceTierLabel(evidenceTier: string) {
+  return humanizeSnakeCase(evidenceTier);
+}
+
+function sourceFamilyLabel(sourceFamily: string) {
+  return humanizeSnakeCase(sourceFamily);
+}
+
+function uncertaintySummary(incident: IncidentDetail) {
+  if (incident.publication_track === "verified_accident") {
+    return (
+      "Editorial review still checks AI relevance, duplicate risk, and severity."
+    );
+  }
+
+  return (
+    "This remains a watch item until an official, court, regulator, company, "
+    + "or fixed verified source confirms the incident."
+  );
+}
+
+function humanizeSnakeCase(value: string) {
+  const spaced = value.replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 function buildSnippet(summary: string | null | undefined) {

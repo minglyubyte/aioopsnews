@@ -121,6 +121,13 @@ class IncidentRepository(Protocol):
         headline_zh: str | None,
         reality_summary_zh: str | None,
         translation_status: str,
+        publication_track: str | None = None,
+        evidence_tier: str | None = None,
+        source_family: str | None = None,
+        verification_summary: str | None = None,
+        source_origin: str | None = None,
+        source_registry_key: str | None = None,
+        raw_source_payloads: list[dict[str, object] | None] | None = None,
     ) -> None: ...
 
     def update_incident_source_evidence(
@@ -196,6 +203,10 @@ class IncidentRepository(Protocol):
         ai_failure_point_en: str | None = None,
         why_it_matters_en: str | None = None,
         evidence_summary_en: str | None = None,
+        publication_track: str | None = None,
+        evidence_tier: str | None = None,
+        source_family: str | None = None,
+        verification_summary: str | None = None,
     ) -> IncidentDict | None: ...
 
     def update_incident_translation(

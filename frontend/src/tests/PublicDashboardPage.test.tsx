@@ -52,6 +52,12 @@ function buildArchiveIncident(
     incident_topic: overrides.incident_topic ?? "privacy",
     categories: overrides.categories ?? ["Privacy/Security"],
     severity_score: overrides.severity_score ?? 4,
+    publication_track: overrides.publication_track ?? "accident_watch",
+    evidence_tier: overrides.evidence_tier ?? "reported_unconfirmed",
+    source_family: overrides.source_family ?? "customer_support",
+    verification_summary:
+      overrides.verification_summary ??
+      "Reported by credible sources; official confirmation remains pending.",
     archive_summary:
       overrides.archive_summary ??
       "A support automation rollout leaked internal notes into user-facing replies.",
@@ -163,6 +169,8 @@ describe("PublicDashboardPage", () => {
         AssistCo: "助理公司",
         RoboFleet: "机器人舰队",
       },
+      publication_tracks: ["accident_watch", "verified_accident"],
+      source_families: ["customer_support", "autonomous_vehicle"],
       years: [2026, 2025],
       months_by_year: {
         "2026": [4, 3],
@@ -173,6 +181,133 @@ describe("PublicDashboardPage", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+  });
+
+  it("renders dual-track sections, evidence metadata, filters, and detail evidence block", async () => {
+    const verifiedIncident = buildArchiveIncident({
+      id: "incident-verified",
+      headline: "DMV collision report documents autonomous vehicle crash",
+      headline_en: "DMV collision report documents autonomous vehicle crash",
+      date_logged: "2026-05-02",
+      company_involved: "RoboFleet",
+      company_involved_zh: "机器人舰队",
+      categories: ["Autonomous Systems"],
+      publication_track: "verified_accident",
+      evidence_tier: "official_documented",
+      source_family: "autonomous_vehicle",
+      verification_summary:
+        "California DMV documents the collision; editorial review still checks AI relevance and severity.",
+      archive_summary:
+        "A fixed verified source documents an autonomous vehicle collision.",
+    });
+    const watchIncident = buildArchiveIncident({
+      id: "incident-watch",
+      headline: "AI coding assistant blamed for migration outage",
+      headline_en: "AI coding assistant blamed for migration outage",
+      company_involved: "DeployAI",
+      company_involved_zh: null,
+      categories: ["Model Governance"],
+      publication_track: "accident_watch",
+      evidence_tier: "reported_unconfirmed",
+      source_family: "coding_failure",
+      verification_summary:
+        "Search discovery found reporting, but no official source has verified the incident yet.",
+      archive_summary:
+        "Reporting says a coding assistant produced a broken migration.",
+    });
+
+    mockedFetchIncidentFeed.mockResolvedValue(
+      buildFeedResponse([verifiedIncident, watchIncident]),
+    );
+    mockedFetchIncidentDetail.mockResolvedValue(
+      buildIncidentDetail({
+        ...verifiedIncident,
+        sources: [
+          {
+            id: "source-dmv",
+            source_url: "https://www.dmv.ca.gov/report.pdf",
+            source_type: "official",
+            source_origin: "fixed_verified_source",
+            source_registry_key: "ca_dmv_av_collisions",
+            raw_source_payload: { report_number: "OL 316" },
+            publisher: "California DMV",
+            title: "Autonomous vehicle collision report",
+          },
+        ],
+      }),
+    );
+
+    render(<PublicDashboardPage />);
+
+    expect(
+      await screen.findByText(
+        "A readable watchlist of AI failures and verified accidents",
+      ),
+    ).toBeInTheDocument();
+
+    const verifiedSection = screen
+      .getByRole("heading", { name: "Verified AI Accidents" })
+      .closest("section");
+    const watchSection = screen
+      .getByRole("heading", { name: "AI Accident Watch" })
+      .closest("section");
+
+    expect(verifiedSection).not.toBeNull();
+    expect(watchSection).not.toBeNull();
+    expect(
+      within(verifiedSection as HTMLElement).getByText(
+        "DMV collision report documents autonomous vehicle crash",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(verifiedSection as HTMLElement).getByText("Official documented"),
+    ).toBeInTheDocument();
+    expect(
+      within(verifiedSection as HTMLElement).getByText("Autonomous vehicle"),
+    ).toBeInTheDocument();
+    expect(
+      within(watchSection as HTMLElement).getByText(
+        "AI coding assistant blamed for migration outage",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(watchSection as HTMLElement).getByText("Reported unconfirmed"),
+    ).toBeInTheDocument();
+    expect(
+      within(watchSection as HTMLElement).getByText("Coding failure"),
+    ).toBeInTheDocument();
+
+    expect(screen.getByLabelText("Filter by track")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter by source family")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Filter by track"), {
+      target: { value: "verified_accident" },
+    });
+
+    await waitFor(() => {
+      expect(mockedFetchIncidentFeed).toHaveBeenLastCalledWith(
+        expect.objectContaining({ publicationTrack: "verified_accident" }),
+      );
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "What is confirmed" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "What remains uncertain" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Primary source trail" }),
+    ).toBeInTheDocument();
+    const confirmedBlock = screen
+      .getByRole("heading", { name: "What is confirmed" })
+      .closest("div");
+    expect(confirmedBlock).not.toBeNull();
+    expect(
+      within(confirmedBlock as HTMLElement).getByText(
+        "California DMV documents the collision; editorial review still checks AI relevance and severity.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("renders slice-level highlights, localized archive cards, and source-backed detail", async () => {

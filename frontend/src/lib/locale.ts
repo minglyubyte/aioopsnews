@@ -33,6 +33,7 @@ export type HighlightInsight = {
 export const PUBLIC_COPY = {
   en: {
     brand: "AI Reality Check",
+    positioning: "A readable watchlist of AI failures and verified accidents",
     lede: "Are you tired of headlines like these?",
     heroExamples: [
       '"AGI is HERE? This Mind-Blowing AI Just Made Humans OBSOLETE 🤯"',
@@ -78,6 +79,10 @@ export const PUBLIC_COPY = {
     allCategories: "All categories",
     filterByCompany: "Filter by company",
     allCompanies: "All companies",
+    filterByTrack: "Filter by track",
+    allTracks: "All tracks",
+    filterBySourceFamily: "Filter by source family",
+    allSourceFamilies: "All source families",
     filterByYear: "Filter by year",
     allYears: "All years",
     filterByMonth: "Filter by month",
@@ -93,6 +98,12 @@ export const PUBLIC_COPY = {
     highlightInsightsTitle: "Slice-level view",
     highlightInsightsBody:
       "This panel summarizes the filtered archive so readers can scan the shape of the slice before opening any incident.",
+    verifiedSectionTitle: "Verified AI Accidents",
+    verifiedSectionBody:
+      "Source-backed case files from official, court, regulator, company, or fixed high-provenance records.",
+    watchSectionTitle: "AI Accident Watch",
+    watchSectionBody:
+      "Developing reports and credible signals that are readable, useful, and clearly not fully confirmed.",
     noIncidentsForSlice: "No incidents match this slice yet.",
     detailActionLabel: (headline: string) => `Open full context for ${headline}`,
     sourceBackedDetailActionLabel: (headline: string) =>
@@ -105,6 +116,9 @@ export const PUBLIC_COPY = {
     whatHappenedTitle: "What happened",
     whyItMattersTitle: "Why it matters",
     evidenceSummaryTitle: "Evidence summary",
+    whatIsConfirmedTitle: "What is confirmed",
+    whatRemainsUncertainTitle: "What remains uncertain",
+    primarySourceTrailTitle: "Primary source trail",
     claimVsReality: "Claim vs. reality",
     confidenceLabel: "Confidence",
     reportingTrailKicker: "Reporting trail",
@@ -152,6 +166,7 @@ export const PUBLIC_COPY = {
   },
   zh: {
     brand: "AI 现实校验",
+    positioning: "一个可读的 AI 失败观察站与已验证事故档案",
     lede: "你是否也受够了这样的标题？",
     heroExamples: [
       '"太炸裂了！刚刚AI史诗级更新，这几个行业的饭碗彻底被砸碎！😱"',
@@ -191,6 +206,10 @@ export const PUBLIC_COPY = {
     allCategories: "全部类别",
     filterByCompany: "按公司筛选",
     allCompanies: "全部公司",
+    filterByTrack: "按轨道筛选",
+    allTracks: "全部轨道",
+    filterBySourceFamily: "按来源领域筛选",
+    allSourceFamilies: "全部来源领域",
     filterByYear: "按年份筛选",
     allYears: "全部年份",
     filterByMonth: "按月份筛选",
@@ -203,6 +222,12 @@ export const PUBLIC_COPY = {
     spotlightTitle: "快速了解",
     spotlightLoading: "正在加载事件流...",
     highlightsEmpty: "当这个筛选范围积累到足够信号后，这里会显示摘要。",
+    verifiedSectionTitle: "已验证 AI 事故",
+    verifiedSectionBody:
+      "来自官方、法院、监管、公司或固定高可信记录的来源支撑档案。",
+    watchSectionTitle: "AI 事故观察",
+    watchSectionBody:
+      "仍在发展中的报道和可信信号，保持可读，同时清楚标注尚未完全确认。",
     highlightInsightsTitle: "筛选摘要",
     highlightInsightsBody:
       "这个面板总结当前筛选后的公开档案，让读者先看清整体轮廓，再决定打开哪一条事件。",
@@ -218,6 +243,9 @@ export const PUBLIC_COPY = {
     whatHappenedTitle: "发生了什么",
     whyItMattersTitle: "为什么重要",
     evidenceSummaryTitle: "证据摘要",
+    whatIsConfirmedTitle: "已确认内容",
+    whatRemainsUncertainTitle: "仍不确定内容",
+    primarySourceTrailTitle: "主要来源链",
     claimVsReality: "声明 vs. 现实",
     confidenceLabel: "置信度",
     reportingTrailKicker: "报道轨迹",
@@ -266,6 +294,7 @@ export const PUBLIC_COPY = {
   ReaderLocale,
   {
     brand: string;
+    positioning: string;
     lede: string;
     heroExamples: string[];
     heroCopy: string;
@@ -297,6 +326,10 @@ export const PUBLIC_COPY = {
     allCategories: string;
     filterByCompany: string;
     allCompanies: string;
+    filterByTrack: string;
+    allTracks: string;
+    filterBySourceFamily: string;
+    allSourceFamilies: string;
     filterByYear: string;
     allYears: string;
     filterByMonth: string;
@@ -311,6 +344,10 @@ export const PUBLIC_COPY = {
     highlightsEmpty: string;
     highlightInsightsTitle: string;
     highlightInsightsBody: string;
+    verifiedSectionTitle: string;
+    verifiedSectionBody: string;
+    watchSectionTitle: string;
+    watchSectionBody: string;
     noIncidentsForSlice: string;
     detailActionLabel: (headline: string) => string;
     sourceBackedDetailActionLabel: (headline: string) => string;
@@ -322,6 +359,9 @@ export const PUBLIC_COPY = {
     whatHappenedTitle: string;
     whyItMattersTitle: string;
     evidenceSummaryTitle: string;
+    whatIsConfirmedTitle: string;
+    whatRemainsUncertainTitle: string;
+    primarySourceTrailTitle: string;
     claimVsReality: string;
     confidenceLabel: string;
     reportingTrailKicker: string;

@@ -45,6 +45,12 @@ function buildAdminIncident(
     incident_topic: overrides.incident_topic ?? "privacy",
     categories: overrides.categories ?? ["Privacy/Security"],
     severity_score: overrides.severity_score ?? 4,
+    publication_track: overrides.publication_track ?? "accident_watch",
+    evidence_tier: overrides.evidence_tier ?? "reported_unconfirmed",
+    source_family: overrides.source_family ?? "customer_support",
+    verification_summary:
+      overrides.verification_summary ??
+      "Reported by credible sources; official confirmation remains pending.",
     reality_summary:
       overrides.reality_summary ??
       "A support automation rollout leaked internal notes into user-facing replies.",

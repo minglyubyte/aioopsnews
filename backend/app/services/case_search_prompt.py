@@ -101,11 +101,7 @@ Field definitions:
 
 - source_links:
   - CRITICAL: Every URL in source_links MUST be a first-hand / primary source
-  - At least 2 distinct primary-source URLs per row (more is better)
-  - Separate URLs with: " | "
-  - Every URL must begin with http:// or https://
-  - Use only direct article/document URLs, never homepages
-  - What counts as a primary source:
+  - Primary sources:
     - official government or regulator pages
     - court filings, sanction orders, dockets, complaints, judgments, tribunal decisions
     - company disclosures, incident reports, outage notices, official blog posts, press releases
@@ -113,14 +109,22 @@ Field definitions:
     - official university, school, hospital, police, or public-body statements
     - direct academic papers or official research publications when the incident is research-driven
     - NHTSA records, recall notices, DMV collision reports, EEOC filings
-    - original investigative journalism that broke the story with primary evidence (not rewrites or aggregations)
+    - original investigative journalism that broke the story with primary evidence
+  - Second-hand sources:
+    - rewrites, opinion pieces, blog commentary, and analysis articles that only summarize a primary source
+  - All rows require at least 3 distinct URLs total
+  - All rows require at least 1 primary source whenever a defensible primary source should exist
+  - If a likely incident has weaker source coverage, it must be marked REVIEW, and the notes field explicitly says the stronger primary source was not found
+  - Separate URLs with: " | "
+  - Every URL must begin with http:// or https://
+  - Use only direct article/document URLs, never homepages
   - BANNED sources (never include these as source_links):
     - https://incidentdatabase.ai/ or any URL under incidentdatabase.ai
     - Any incident aggregator database, tracker, or index site that merely catalogues incidents reported elsewhere
     - Second-hand rewrites, opinion pieces, blog commentary, or analysis articles that only summarize a primary source
     - Generic homepages, search result pages, or broad topic index pages
   - Second-hand reporting, news rewrites, or commentary articles do NOT count as primary sources and must NOT be included
-  - If you cannot find at least 2 verifiable primary-source URLs for an incident, do NOT include that incident — omit the row entirely
+  - If you cannot find at least 3 distinct source URLs for an incident, do NOT include that incident — omit the row entirely
   - Avoid duplicated URLs
   - Avoid broken links
   - Replace generic homepages with direct document links whenever possible
@@ -186,7 +190,7 @@ Validation rules:
 - No duplicate rows describing the same event
 - All required columns must be present
 - incident_date must be valid YYYY-MM-DD
-- source_links must contain at least 2 distinct valid primary-source URLs (no aggregators, no second-hand rewrites)
+- source_links must contain at least 3 distinct valid URLs total (no aggregators, no second-hand rewrites)
 - source_links must NOT contain any URL from incidentdatabase.ai
 - legitimacy_flag must be exactly ACCEPT, REVIEW, or REJECT
 - confidence_level must be exactly low, medium, or high
@@ -196,8 +200,8 @@ Validation rules:
   - preserve quotes correctly
 
 Editorial guidance for scoring:
-- Use ACCEPT/high for incidents backed by 2+ strong primary sources (court filings, regulator records, official disclosures)
-- Use ACCEPT/medium for likely real incidents with 2 primary sources but some date or framing ambiguity
+- Use ACCEPT/high for incidents backed by 3+ strong sources with primary-source support (court filings, regulator records, official disclosures)
+- Use ACCEPT/medium for likely real incidents with 3 sources but some date or framing ambiguity
 - Use REVIEW/high or REVIEW/medium for incidents that seem relevant but primary sources are borderline
 - Use REJECT when the event is too weak, too speculative, duplicate, misleading, cannot meet the 2-primary-source minimum, or not actually an AI incident
 
@@ -219,7 +223,7 @@ Target quality:
 
 Before final output, silently self-check:
 - Is each row a distinct 2023 incident?
-- Does each row have at least 2 primary-source URLs?
+- Does each row have at least 3 distinct source URLs?
 - Are ALL URLs genuine first-hand primary sources (not rewrites, not aggregators, not commentary)?
 - Have I accidentally included any incidentdatabase.ai URL?
 - Are any homepage links still present where a direct document link should be used?

@@ -21,6 +21,17 @@ FORENSIC_COLUMN_DEFINITIONS = [
     "evidence_summary_en text",
     "evidence_summary_zh text",
 ]
+DUAL_PIPELINE_INCIDENT_COLUMN_DEFINITIONS = [
+    "publication_track text",
+    "evidence_tier text",
+    "source_family text",
+    "verification_summary text",
+]
+DUAL_PIPELINE_SOURCE_COLUMN_DEFINITIONS = [
+    "source_origin text",
+    "source_registry_key text",
+    "raw_source_payload text",
+]
 
 
 def test_product_docs_are_reorganized_into_four_canonical_files() -> None:
@@ -98,6 +109,12 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "create table if not exists incident_duplicate_candidates" in normalized
     for column_definition in FORENSIC_COLUMN_DEFINITIONS:
         assert column_definition in normalized
+    for column_definition in DUAL_PIPELINE_INCIDENT_COLUMN_DEFINITIONS:
+        assert column_definition in normalized
+        assert f"add column if not exists {column_definition}" in normalized
+    for column_definition in DUAL_PIPELINE_SOURCE_COLUMN_DEFINITIONS:
+        assert column_definition in normalized
+        assert f"add column if not exists {column_definition}" in normalized
 
 
 def test_initial_migration_bootstraps_same_core_tables() -> None:
@@ -136,6 +153,10 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     assert "embedding_model text" in migration_sql
     assert "create table if not exists incident_duplicate_candidates" in migration_sql
     assert "canonical_url text" in migration_sql
+    for column_definition in DUAL_PIPELINE_INCIDENT_COLUMN_DEFINITIONS:
+        assert column_definition in migration_sql
+    for column_definition in DUAL_PIPELINE_SOURCE_COLUMN_DEFINITIONS:
+        assert column_definition in migration_sql
 
 
 def test_forensic_migration_adds_incident_log_review_fields() -> None:
@@ -211,6 +232,10 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         why_it_matters_zh="该问题影响了真实客户并增加了人工支持负担。",
         evidence_summary_en="Three independent reports and an internal status page confirm the disruption.",
         evidence_summary_zh="三份独立报道和内部状态页证实了这次故障。",
+        publication_track="accident_watch",
+        evidence_tier="reported_unconfirmed",
+        source_family="customer_support",
+        verification_summary="Reported by credible sources; official confirmation remains pending.",
         translation_status="completed",
         import_notes="Imported from 2023 editorial batch.",
         review_batch_id="batch-123",
@@ -234,6 +259,9 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         publisher="Example News",
         title="Agent rollout goes sideways",
         published_at=datetime(2026, 4, 29, 8, 0, 0),
+        source_origin="search_discovery",
+        source_registry_key="google_search",
+        raw_source_payload={"query": "AI support bot leaked account notes"},
         is_primary=True,
     )
 
@@ -251,6 +279,12 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     assert incident.duplicate_status == "suspected"
     assert incident.canonical_incident_id == "incident-0"
     assert incident.embedding_model == "text-embedding-3-small"
+    assert incident.publication_track == "accident_watch"
+    assert incident.evidence_tier == "reported_unconfirmed"
+    assert incident.source_family == "customer_support"
+    assert incident.verification_summary == (
+        "Reported by credible sources; official confirmation remains pending."
+    )
     assert incident.headline_zh == "智能体发布导致错误客户升级"
     assert incident.incident_summary_en == "Support agents mishandled escalations after rollout."
     assert incident.incident_summary_zh == "发布后支持智能体错误处理了升级请求。"
@@ -271,3 +305,6 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     assert incident.source_validation_summary_zh == "已核实 3 个不同来源。"
     assert incident.categories == ["Job Automation Fails", "Missed Timelines"]
     assert source.incident_id == incident.id
+    assert source.source_origin == "search_discovery"
+    assert source.source_registry_key == "google_search"
+    assert source.raw_source_payload == {"query": "AI support bot leaked account notes"}

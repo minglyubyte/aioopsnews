@@ -2,6 +2,9 @@ export type IncidentSource = {
   id: string;
   source_url: string;
   source_type: string;
+  source_origin?: string | null;
+  source_registry_key?: string | null;
+  raw_source_payload?: Record<string, unknown> | null;
   publisher?: string;
   title?: string;
 };
@@ -30,6 +33,10 @@ export type PublicIncidentBase = {
   severity_score: number;
   status: string;
   translation_status?: string | null;
+  publication_track: string;
+  evidence_tier: string;
+  source_family: string;
+  verification_summary: string;
 };
 
 export type IncidentArchiveItem = PublicIncidentBase & {
@@ -115,6 +122,8 @@ export type IncidentFilters = {
   claimants: string[];
   companies: string[];
   company_labels_zh: Record<string, string | null>;
+  publication_tracks: string[];
+  source_families: string[];
   years: number[];
   months_by_year: Record<string, number[]>;
 };
@@ -125,6 +134,8 @@ export type IncidentFeedFilters = {
   claimant?: string;
   severityMin?: number;
   severityMax?: number;
+  publicationTrack?: string;
+  sourceFamily?: string;
   year?: number;
   month?: number;
   page?: number;

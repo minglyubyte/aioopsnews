@@ -11,6 +11,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.core.incident_metadata import (
+    DEFAULT_EVIDENCE_TIER,
+    DEFAULT_PUBLICATION_TRACK,
+    DEFAULT_SOURCE_FAMILY,
+    DEFAULT_VERIFICATION_SUMMARY,
+)
+
 
 # ---------------------------------------------------------------------------
 # Low-level field parsers
@@ -27,6 +34,20 @@ def parse_text_array(value: str | None) -> list[str]:
     if not isinstance(parsed, list):
         return []
     return [str(item) for item in parsed if str(item)]
+
+
+def parse_optional_json_object(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def sanitize_reader_text(value: Any) -> str | None:
@@ -58,6 +79,18 @@ def _base_incident_fields(row: dict[str, Any]) -> dict[str, Any]:
         "reality_summary_en": row.get("reality_summary_en"),
         "reality_summary_zh": row.get("reality_summary_zh"),
         "status": row["status"],
+        **_dual_track_fields(row),
+    }
+
+
+def _dual_track_fields(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "publication_track": row.get("publication_track")
+        or DEFAULT_PUBLICATION_TRACK,
+        "evidence_tier": row.get("evidence_tier") or DEFAULT_EVIDENCE_TIER,
+        "source_family": row.get("source_family") or DEFAULT_SOURCE_FAMILY,
+        "verification_summary": row.get("verification_summary")
+        or DEFAULT_VERIFICATION_SUMMARY,
     }
 
 
@@ -119,6 +152,16 @@ def serialize_review_queue_row(
         **_duplicate_fields(row),
         "duplicate_candidates": duplicate_candidates,
         "sources": sources,
+        "incident_summary_en": row.get("incident_summary_en"),
+        "incident_summary_zh": row.get("incident_summary_zh"),
+        "what_happened_en": row.get("what_happened_en"),
+        "what_happened_zh": row.get("what_happened_zh"),
+        "ai_failure_point_en": row.get("ai_failure_point_en"),
+        "ai_failure_point_zh": row.get("ai_failure_point_zh"),
+        "why_it_matters_en": row.get("why_it_matters_en"),
+        "why_it_matters_zh": row.get("why_it_matters_zh"),
+        "evidence_summary_en": row.get("evidence_summary_en"),
+        "evidence_summary_zh": row.get("evidence_summary_zh"),
         "analysis": {
             "incident_summary_en": row.get("incident_summary_en"),
             "incident_summary_zh": row.get("incident_summary_zh"),
@@ -229,6 +272,16 @@ def serialize_review_result_row(
         **_duplicate_fields(row),
         "duplicate_candidates": duplicate_candidates,
         "sources": sources,
+        "incident_summary_en": row.get("incident_summary_en"),
+        "incident_summary_zh": row.get("incident_summary_zh"),
+        "what_happened_en": row.get("what_happened_en"),
+        "what_happened_zh": row.get("what_happened_zh"),
+        "ai_failure_point_en": row.get("ai_failure_point_en"),
+        "ai_failure_point_zh": row.get("ai_failure_point_zh"),
+        "why_it_matters_en": row.get("why_it_matters_en"),
+        "why_it_matters_zh": row.get("why_it_matters_zh"),
+        "evidence_summary_en": row.get("evidence_summary_en"),
+        "evidence_summary_zh": row.get("evidence_summary_zh"),
         "analysis": {
             "incident_summary_en": row.get("incident_summary_en"),
             "incident_summary_zh": row.get("incident_summary_zh"),
@@ -264,6 +317,16 @@ def serialize_translation_result_row(
         **_duplicate_fields(row),
         "duplicate_candidates": duplicate_candidates,
         "sources": sources,
+        "incident_summary_en": row.get("incident_summary_en"),
+        "incident_summary_zh": row.get("incident_summary_zh"),
+        "what_happened_en": row.get("what_happened_en"),
+        "what_happened_zh": row.get("what_happened_zh"),
+        "ai_failure_point_en": row.get("ai_failure_point_en"),
+        "ai_failure_point_zh": row.get("ai_failure_point_zh"),
+        "why_it_matters_en": row.get("why_it_matters_en"),
+        "why_it_matters_zh": row.get("why_it_matters_zh"),
+        "evidence_summary_en": row.get("evidence_summary_en"),
+        "evidence_summary_zh": row.get("evidence_summary_zh"),
         "analysis": {
             "incident_summary_en": row.get("incident_summary_en"),
             "incident_summary_zh": row.get("incident_summary_zh"),
@@ -296,6 +359,11 @@ def serialize_source_row(row: dict[str, Any]) -> dict[str, Any]:
         "http_status": row.get("http_status"),
         "evidence_text": row.get("evidence_text"),
         "fetch_error": row.get("fetch_error"),
+        "source_origin": row.get("source_origin"),
+        "source_registry_key": row.get("source_registry_key"),
+        "raw_source_payload": parse_optional_json_object(
+            row.get("raw_source_payload")
+        ),
     }
 
 
@@ -372,6 +440,7 @@ def serialize_public_archive_row(row: dict[str, Any]) -> dict[str, Any]:
         "archive_summary_zh": row.get("reality_summary_zh"),
         "status": row["status"],
         "translation_status": row.get("translation_status"),
+        **_dual_track_fields(row),
     }
 
 
@@ -400,6 +469,7 @@ def serialize_public_detail_row(
         "reality_summary_zh": row.get("reality_summary_zh"),
         "status": row["status"],
         "translation_status": row.get("translation_status"),
+        **_dual_track_fields(row),
         "analysis": {
             "incident_summary_en": sanitize_reader_text(
                 row.get("incident_summary_en"),

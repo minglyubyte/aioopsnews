@@ -19,9 +19,9 @@ class Settings:
     deepseek_translation_model: str = "deepseek-v4-flash"
     review_max_output_tokens: int = 8000
     review_response_parse_max_attempts: int = 3
-    forensic_min_word_count_what_happened: int = 80
-    forensic_min_word_count_ai_failure_point: int = 80
-    forensic_min_word_count_why_it_matters: int = 80
+    forensic_min_word_count_what_happened: int = 100
+    forensic_min_word_count_ai_failure_point: int = 100
+    forensic_min_word_count_why_it_matters: int = 100
 
 
 def _load_dotenv_defaults() -> None:
@@ -103,16 +103,16 @@ def get_settings() -> Settings:
             "REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS",
             3,
         ),
-        forensic_min_word_count_what_happened=_get_int_env(
-            "FORENSIC_MIN_WORD_COUNT_WHAT_HAPPENED",
-            80,
+        forensic_min_word_count_what_happened=max(
+            _get_int_env("FORENSIC_MIN_WORD_COUNT_WHAT_HAPPENED", 100),
+            100,
         ),
-        forensic_min_word_count_ai_failure_point=_get_int_env(
-            "FORENSIC_MIN_WORD_COUNT_AI_FAILURE_POINT",
-            80,
+        forensic_min_word_count_ai_failure_point=max(
+            _get_int_env("FORENSIC_MIN_WORD_COUNT_AI_FAILURE_POINT", 100),
+            100,
         ),
-        forensic_min_word_count_why_it_matters=_get_int_env(
-            "FORENSIC_MIN_WORD_COUNT_WHY_IT_MATTERS",
-            80,
+        forensic_min_word_count_why_it_matters=max(
+            _get_int_env("FORENSIC_MIN_WORD_COUNT_WHY_IT_MATTERS", 100),
+            100,
         ),
     )

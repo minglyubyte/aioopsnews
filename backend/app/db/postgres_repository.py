@@ -78,7 +78,11 @@ class PostgresIncidentRepository:
                     incident_logs.reality_summary_en,
                     incident_logs.reality_summary_zh,
                     incident_logs.status,
-                    incident_logs.translation_status
+                    incident_logs.translation_status,
+                    incident_logs.publication_track,
+                    incident_logs.evidence_tier,
+                    incident_logs.source_family,
+                    incident_logs.verification_summary
                 from incident_logs
                 where {where_sql}
                 order by incident_logs.date_logged desc
@@ -165,7 +169,11 @@ class PostgresIncidentRepository:
                     incident_logs.reality_summary_en,
                     incident_logs.reality_summary_zh,
                     incident_logs.status,
-                    incident_logs.translation_status
+                    incident_logs.translation_status,
+                    incident_logs.publication_track,
+                    incident_logs.evidence_tier,
+                    incident_logs.source_family,
+                    incident_logs.verification_summary
                 from incident_logs
                 where {where_sql}
                 order by incident_logs.date_logged desc
@@ -245,6 +253,10 @@ class PostgresIncidentRepository:
                     incident_logs.legitimacy_reasoning_zh,
                     incident_logs.source_validation_summary,
                     incident_logs.source_validation_summary_zh,
+                    incident_logs.publication_track,
+                    incident_logs.evidence_tier,
+                    incident_logs.source_family,
+                    incident_logs.verification_summary,
                     incident_logs.claim_match_confidence,
                     claims.id as claim_id,
                     claims.claimant_name as claim_claimant_name,
@@ -272,6 +284,9 @@ class PostgresIncidentRepository:
                     incident_id,
                     source_url,
                     source_type,
+                    source_origin,
+                    source_registry_key,
+                    raw_source_payload,
                     publisher,
                     title
                 from incident_sources
@@ -414,7 +429,11 @@ class PostgresIncidentRepository:
                     canonical_incident_id,
                     embedding_model,
                     embedding_vector,
-                    translation_status
+                    translation_status,
+                    publication_track,
+                    evidence_tier,
+                    source_family,
+                    verification_summary
                 from incident_logs
                 where status = %s
                 order by date_logged desc, id asc
@@ -434,7 +453,10 @@ class PostgresIncidentRepository:
                     fetch_status,
                     http_status,
                     evidence_text,
-                    fetch_error
+                    fetch_error,
+                    source_origin,
+                    source_registry_key,
+                    raw_source_payload
                 from incident_sources
                 order by published_at desc, id asc
                 """
@@ -627,6 +649,12 @@ class PostgresIncidentRepository:
             }
         )
         companies = sorted({incident["company_involved"] for incident in incidents})
+        publication_tracks = sorted(
+            {incident["publication_track"] for incident in incidents}
+        )
+        source_families = sorted(
+            {incident["source_family"] for incident in incidents}
+        )
         company_labels_zh = {
             company: next(
                 (
@@ -660,6 +688,8 @@ class PostgresIncidentRepository:
             "claimants": claimants,
             "companies": companies,
             "company_labels_zh": company_labels_zh,
+            "publication_tracks": publication_tracks,
+            "source_families": source_families,
             "years": years,
             "months_by_year": months_by_year,
         }
@@ -707,10 +737,14 @@ class PostgresIncidentRepository:
                     review_notes,
                     matched_claim_id,
                     claim_match_confidence,
-                    translation_status
+                    translation_status,
+                    publication_track,
+                    evidence_tier,
+                    source_family,
+                    verification_summary
                 ) values (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 """,
                 (
@@ -736,6 +770,13 @@ class PostgresIncidentRepository:
                     None,
                     None,
                     "not_requested",
+                    "accident_watch",
+                    "reported_unconfirmed",
+                    "other",
+                    (
+                        "RSS discovery found reporting that needs source "
+                        "verification before publication."
+                    ),
                 ),
             )
             connection.execute(
@@ -748,8 +789,11 @@ class PostgresIncidentRepository:
                     publisher,
                     title,
                     published_at,
+                    source_origin,
+                    source_registry_key,
+                    raw_source_payload,
                     is_primary
-                ) values (%s, %s, %s, %s, %s, %s, %s, %s)
+                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     source_id,
@@ -759,6 +803,9 @@ class PostgresIncidentRepository:
                     article.publisher,
                     article.title,
                     article.published_at.isoformat(),
+                    "search_discovery",
+                    article.source_key,
+                    json.dumps({"source_key": article.source_key}),
                     0,
                 ),
             )
@@ -1115,6 +1162,13 @@ class PostgresIncidentRepository:
         headline_zh: str | None,
         reality_summary_zh: str | None,
         translation_status: str,
+        publication_track: str | None = None,
+        evidence_tier: str | None = None,
+        source_family: str | None = None,
+        verification_summary: str | None = None,
+        source_origin: str | None = None,
+        source_registry_key: str | None = None,
+        raw_source_payloads: list[dict[str, object] | None] | None = None,
     ) -> None:
         with self._connect() as connection:
             incident_id = connection.execute(
@@ -1161,10 +1215,15 @@ class PostgresIncidentRepository:
                     review_batch_id,
                     review_model,
                     reviewed_at,
-                    translated_at
+                    translated_at,
+                    publication_track,
+                    evidence_tier,
+                    source_family,
+                    verification_summary
                 ) values (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s
                 )
                 on conflict (id) do update
                 set
@@ -1194,6 +1253,10 @@ class PostgresIncidentRepository:
                     review_model = excluded.review_model,
                     reviewed_at = excluded.reviewed_at,
                     translated_at = excluded.translated_at,
+                    publication_track = excluded.publication_track,
+                    evidence_tier = excluded.evidence_tier,
+                    source_family = excluded.source_family,
+                    verification_summary = excluded.verification_summary,
                     updated_at = current_timestamp
                 """,
                 (
@@ -1227,6 +1290,10 @@ class PostgresIncidentRepository:
                     None,
                     None,
                     None,
+                    publication_track or "accident_watch",
+                    evidence_tier or "developing",
+                    source_family or "other",
+                    verification_summary,
                 ),
             )
             connection.execute(
@@ -1235,6 +1302,9 @@ class PostgresIncidentRepository:
             )
             source_rows: list[tuple[object, ...]] = []
             for display_order, source_url in enumerate(source_links):
+                raw_source_payload = None
+                if raw_source_payloads and display_order < len(raw_source_payloads):
+                    raw_source_payload = raw_source_payloads[display_order]
                 source_rows.append(
                     (
                         f"source-{uuid4()}",
@@ -1249,6 +1319,9 @@ class PostgresIncidentRepository:
                         None,
                         None,
                         None,
+                        source_origin or "manual_import",
+                        source_registry_key,
+                        json.dumps(raw_source_payload) if raw_source_payload else None,
                         1 if display_order == 0 else 0,
                     )
                 )
@@ -1268,8 +1341,13 @@ class PostgresIncidentRepository:
                     http_status,
                     evidence_text,
                     fetch_error,
+                    source_origin,
+                    source_registry_key,
+                    raw_source_payload,
                     is_primary
-                ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) values (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
                 """,
                 source_rows,
             )
@@ -1575,6 +1653,10 @@ class PostgresIncidentRepository:
         ai_failure_point_en: str | None = None,
         why_it_matters_en: str | None = None,
         evidence_summary_en: str | None = None,
+        publication_track: str | None = None,
+        evidence_tier: str | None = None,
+        source_family: str | None = None,
+        verification_summary: str | None = None,
     ) -> dict[str, Any] | None:
         with self._connect() as connection:
             cursor = connection.execute(
@@ -1603,6 +1685,10 @@ class PostgresIncidentRepository:
                     ai_failure_point_en = %s,
                     why_it_matters_en = %s,
                     evidence_summary_en = %s,
+                    publication_track = coalesce(%s, publication_track),
+                    evidence_tier = coalesce(%s, evidence_tier),
+                    source_family = coalesce(%s, source_family),
+                    verification_summary = coalesce(%s, verification_summary),
                     review_model = %s,
                     review_batch_id = %s,
                     reviewed_at = %s,
@@ -1633,6 +1719,10 @@ class PostgresIncidentRepository:
                     ai_failure_point_en,
                     why_it_matters_en,
                     evidence_summary_en,
+                    publication_track,
+                    evidence_tier,
+                    source_family,
+                    verification_summary,
                     review_model,
                     review_batch_id,
                     reviewed_at,
@@ -1678,6 +1768,10 @@ class PostgresIncidentRepository:
                     ai_failure_point_en,
                     why_it_matters_en,
                     evidence_summary_en,
+                    publication_track,
+                    evidence_tier,
+                    source_family,
+                    verification_summary,
                     translation_status,
                     review_batch_id,
                     review_model,
@@ -1702,7 +1796,10 @@ class PostgresIncidentRepository:
                     fetch_status,
                     http_status,
                     evidence_text,
-                    fetch_error
+                    fetch_error,
+                    source_origin,
+                    source_registry_key,
+                    raw_source_payload
                 from incident_sources
                 where incident_id = %s
                 order by published_at desc, id asc
@@ -1917,6 +2014,16 @@ class PostgresIncidentRepository:
         if filters.severity_max is not None:
             where_clauses.append("incident_logs.severity_score <= %s")
             params.append(filters.severity_max)
+        if filters.publication_track:
+            where_clauses.append(
+                "coalesce(incident_logs.publication_track, 'accident_watch') = %s"
+            )
+            params.append(filters.publication_track)
+        if filters.source_family:
+            where_clauses.append(
+                "coalesce(incident_logs.source_family, 'other') = %s"
+            )
+            params.append(filters.source_family)
         if filters.year is not None:
             where_clauses.append(
                 "extract(year from incident_logs.date_logged::date) = %s"

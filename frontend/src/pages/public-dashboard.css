@@ -891,6 +891,47 @@
   transform: translateY(0);
 }
 
+.public-positioning,
+.public-verification-summary {
+  max-width: 52rem;
+}
+
+.public-evidence-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.6rem;
+}
+
+.public-track-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.public-track-section + .public-track-section {
+  margin-top: 1.5rem;
+}
+
+.public-track-header {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.public-track-header h3,
+.public-evidence-block h3 {
+  margin: 0;
+}
+
+.public-evidence-block {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--public-border);
+  border-radius: 0.75rem;
+  background: var(--public-surface-strong);
+}
+
 /* ── Respect reduced motion ──────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
