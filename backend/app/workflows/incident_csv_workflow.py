@@ -39,6 +39,8 @@ async def run_incident_csv_workflow(
     embedding_model: str = "text-embedding-3-small",
     duplicate_judge_model: str | None = None,
     dry_run: bool = False,
+    import_only: bool = False,
+    max_reviews: int | None = None,
 ) -> dict[str, Any]:
     csv_paths = (
         sorted(path for path in inbox_dir.glob("*.csv"))
@@ -95,7 +97,7 @@ async def run_incident_csv_workflow(
         if not dry_run:
             _archive_csv(csv_path, archive_dir)
 
-    if dry_run:
+    if dry_run or import_only:
         return summary
 
     review_summary = await review_pending_incidents(
@@ -110,6 +112,7 @@ async def run_incident_csv_workflow(
         escalation_model=escalation_model,
         embedding_model=embedding_model,
         duplicate_judge_model=duplicate_judge_model or escalation_model,
+        max_reviews=max_reviews,
     )
     summary["reviews_attempted"] = review_summary.reviews_attempted
     summary["reviews_completed"] = review_summary.reviews_completed

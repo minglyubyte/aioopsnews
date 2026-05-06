@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from io import StringIO
 from pathlib import Path
 
@@ -106,8 +107,7 @@ def records_to_incident_csv(records: list[VerifiedSourceRecord]) -> str:
     writer.writeheader()
     for index, record in enumerate(records, start=1):
         candidate = normalize_verified_source_record(record)
-        writer.writerow(
-            {
+        row = {
                 "ref_number": str(index),
                 "incident_id": record.external_id,
                 "company": record.company,
@@ -129,7 +129,7 @@ def records_to_incident_csv(records: list[VerifiedSourceRecord]) -> str:
                 "source_origin": candidate.sources[0].source_origin,
                 "source_registry_key": candidate.sources[0].source_registry_key,
             }
-        )
+        writer.writerow({key: _clean_cell(value) for key, value in row.items()})
     return output.getvalue()
 
 
@@ -146,6 +146,10 @@ def _source_links_for(record: VerifiedSourceRecord) -> list[str]:
 
 def _split_sources(value: str) -> list[str]:
     return [source.strip() for source in value.split(",") if source.strip()]
+
+
+def _clean_cell(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
 
 
 if __name__ == "__main__":

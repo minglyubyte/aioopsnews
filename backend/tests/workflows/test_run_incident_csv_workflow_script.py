@@ -81,6 +81,8 @@ def test_workflow_script_logs_start_and_finish(
             inbox_dir=inbox_dir,
             archive_dir=archive_dir,
             dry_run=False,
+            import_only=False,
+            max_reviews=25,
         ),
     )
     monkeypatch.setattr(
@@ -158,6 +160,8 @@ def test_workflow_script_logs_start_and_finish(
     ]
     assert workflow_calls[0]["primary_model"] == "deepseek-v4-flash"
     assert workflow_calls[0]["escalation_model"] == "deepseek-v4-pro"
+    assert workflow_calls[0]["import_only"] is False
+    assert workflow_calls[0]["max_reviews"] == 25
     stdout = capsys.readouterr().out
     assert json.loads(stdout) == summary
 
@@ -194,6 +198,8 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
             inbox_dir=tmp_path / "inbox",
             archive_dir=tmp_path / "archive",
             dry_run=False,
+            import_only=False,
+            max_reviews=None,
         ),
     )
     monkeypatch.setattr(
@@ -284,6 +290,8 @@ def test_workflow_script_fails_fast_without_downstream_review_credentials(
             inbox_dir=tmp_path / "inbox",
             archive_dir=tmp_path / "archive",
             dry_run=False,
+            import_only=False,
+            max_reviews=None,
         ),
     )
 
@@ -345,6 +353,8 @@ def test_workflow_script_allows_dry_run_without_primary_review_credentials(
             inbox_dir=tmp_path / "inbox",
             archive_dir=tmp_path / "archive",
             dry_run=True,
+            import_only=False,
+            max_reviews=None,
         ),
     )
     monkeypatch.setattr(
@@ -365,4 +375,6 @@ def test_workflow_script_allows_dry_run_without_primary_review_credentials(
     assert exit_code == 0
     assert repository.closed is True
     assert workflow_calls[0]["dry_run"] is True
+    assert workflow_calls[0]["import_only"] is False
+    assert workflow_calls[0]["max_reviews"] is None
     assert json.loads(capsys.readouterr().out) == summary

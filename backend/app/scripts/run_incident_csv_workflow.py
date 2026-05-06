@@ -65,6 +65,17 @@ def main() -> int:
         action="store_true",
         help="Validate inbox CSVs without writing database rows or moving files.",
     )
+    parser.add_argument(
+        "--import-only",
+        action="store_true",
+        help="Import and archive valid CSV files without running review.",
+    )
+    parser.add_argument(
+        "--max-reviews",
+        type=int,
+        default=None,
+        help="Maximum pending incidents to review in this run.",
+    )
     args = parser.parse_args()
     _configure_logging()
 
@@ -131,6 +142,8 @@ def main() -> int:
                 escalation_model=settings.escalation_review_model,
                 embedding_model=settings.openai_embedding_model,
                 dry_run=args.dry_run,
+                import_only=args.import_only,
+                max_reviews=args.max_reviews,
             )
         )
         LOGGER.info(

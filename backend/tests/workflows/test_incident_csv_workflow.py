@@ -284,6 +284,123 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
     assert len(list(archive_dir.glob("2023-a*.csv"))) == 1
 
 
+def test_run_incident_csv_workflow_can_import_without_reviewing(
+    tmp_path,
+) -> None:
+    from app.workflows.incident_csv_workflow import run_incident_csv_workflow
+
+    repository = InMemoryIncidentRepository()
+    inbox_dir = tmp_path / "inbox"
+    archive_dir = tmp_path / "archive"
+    inbox_dir.mkdir()
+    (inbox_dir / "2023-a.csv").write_text(VALID_IMPORT_CSV, encoding="utf-8")
+    review_client = FakeAsyncReviewClient(results_by_external_id={})
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            import_only=True,
+        )
+    )
+
+    assert summary["files_imported"] == 1
+    assert summary["incidents_imported"] == 2
+    assert summary["reviews_attempted"] == 0
+    assert review_client.calls == []
+    assert not (inbox_dir / "2023-a.csv").exists()
+    assert len(list(archive_dir.glob("2023-a*.csv"))) == 1
+    assert len(repository.list_incidents_pending_llm_review()) == 2
+
+
+def test_run_incident_csv_workflow_limits_reviews_per_run(
+    tmp_path,
+) -> None:
+    from app.workflows.incident_csv_workflow import run_incident_csv_workflow
+
+    repository = InMemoryIncidentRepository()
+    inbox_dir = tmp_path / "inbox"
+    archive_dir = tmp_path / "archive"
+    inbox_dir.mkdir()
+    (inbox_dir / "2023-a.csv").write_text(VALID_IMPORT_CSV, encoding="utf-8")
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-openai-001": [
+                IncidentReviewResult(
+                    incident_id="unused-openai",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Needs editor review.",
+                    source_quality_summary="Sources need review.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="OpenAI filing included fake legal citations",
+                    reality_summary_en="Court records describe the incident.",
+                    categories=["Hallucinations"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Needs review.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+            "inc-school-002": [
+                IncidentReviewResult(
+                    incident_id="unused-school",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Needs editor review.",
+                    source_quality_summary="Sources need review.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="School chatbot gave inaccurate enrollment guidance",
+                    reality_summary_en="Reporting describes the incident.",
+                    categories=["Autonomous Systems"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Needs review.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+        }
+    )
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            max_reviews=1,
+        )
+    )
+
+    assert summary["incidents_imported"] == 2
+    assert summary["reviews_attempted"] == 1
+    assert len(review_client.calls) == 1
+    assert review_client.calls[0][1] == "gpt-5.4-mini"
+    assert len(repository.list_incidents_pending_llm_review()) == 1
+
+
 def test_run_incident_csv_workflow_leaves_invalid_csv_in_inbox_and_continues(
     tmp_path,
 ) -> None:

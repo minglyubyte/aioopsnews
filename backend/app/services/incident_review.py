@@ -8,18 +8,8 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.services.review_prompts import (
-    FORENSIC_MIN_WORD_COUNTS,
-    REVIEW_MAX_OUTPUT_TOKENS,
-    REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS,
-    ReviewResponseParseError,
-    build_review_messages as _build_review_messages,
-    build_review_response_format as _build_review_response_format,
-    parse_review_result as _parse_review_result,
-    parse_review_result_from_provider_payload as _parse_review_result_from_provider_payload,
-)
-
 from app.db.repository_protocol import IncidentRepository
+from app.services import review_prompts
 from app.services.incident_deduplication import (
     IncidentDuplicateJudgeClient,
     IncidentEmbeddingClient,
@@ -28,6 +18,18 @@ from app.services.incident_deduplication import (
 from app.services.incident_translation import (
     IncidentTranslationClient,
     translate_incident_copy,
+)
+
+ReviewResponseParseError = review_prompts.ReviewResponseParseError
+REVIEW_MAX_OUTPUT_TOKENS = review_prompts.REVIEW_MAX_OUTPUT_TOKENS
+REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS = (
+    review_prompts.REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS
+)
+_build_review_messages = review_prompts.build_review_messages
+_build_review_response_format = review_prompts.build_review_response_format
+_parse_review_result = review_prompts.parse_review_result
+_parse_review_result_from_provider_payload = (
+    review_prompts.parse_review_result_from_provider_payload
 )
 
 AUTO_APPROVAL_SEVERITY_THRESHOLD = 2
@@ -238,15 +240,19 @@ class OpenAIIncidentReviewClient:
         api_key: str,
         base_url: str = "https://api.openai.com/v1",
         timeout_seconds: float = 120.0,
-        max_output_tokens: int = REVIEW_MAX_OUTPUT_TOKENS,
-        response_parse_max_attempts: int = REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS,
+        max_output_tokens: int = review_prompts.REVIEW_MAX_OUTPUT_TOKENS,
+        response_parse_max_attempts: int = (
+            review_prompts.REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS
+        ),
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._max_output_tokens = max_output_tokens
         self._response_parse_max_attempts = response_parse_max_attempts
         self._headers = {"Authorization": f"Bearer {api_key}"}
-        self._response_format = _build_review_response_format(base_url=self._base_url)
+        self._response_format = review_prompts.build_review_response_format(
+            base_url=self._base_url
+        )
 
     def submit_batch(
         self,
@@ -263,7 +269,7 @@ class OpenAIIncidentReviewClient:
                     "body": {
                         "model": model,
                         "response_format": self._response_format,
-                        "messages": _build_review_messages(incident),
+                        "messages": review_prompts.build_review_messages(incident),
                         "max_tokens": self._max_output_tokens,
                     },
                 }
@@ -316,7 +322,7 @@ class OpenAIIncidentReviewClient:
             body = payload["response"]["body"]
             content = body["choices"][0]["message"]["content"]
             results.append(
-                _parse_review_result(
+                review_prompts.parse_review_result(
                     incident_id=payload["custom_id"],
                     model=body["model"],
                     content=content,
@@ -341,12 +347,12 @@ class OpenAIIncidentReviewClient:
                 {
                     "model": model,
                     "response_format": self._response_format,
-                    "messages": _build_review_messages(incident),
+                    "messages": review_prompts.build_review_messages(incident),
                     "max_tokens": self._max_output_tokens,
                 },
             )
             try:
-                return _parse_review_result_from_provider_payload(
+                return review_prompts.parse_review_result_from_provider_payload(
                     incident_id=incident["id"],
                     payload=payload,
                 )
@@ -402,8 +408,10 @@ class AsyncOpenAIIncidentReviewClient:
         api_key: str,
         base_url: str = "https://api.openai.com/v1",
         timeout_seconds: float = 120.0,
-        max_output_tokens: int = REVIEW_MAX_OUTPUT_TOKENS,
-        response_parse_max_attempts: int = REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS,
+        max_output_tokens: int = review_prompts.REVIEW_MAX_OUTPUT_TOKENS,
+        response_parse_max_attempts: int = (
+            review_prompts.REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS
+        ),
     ) -> None:
         try:
             from openai import AsyncOpenAI
@@ -415,7 +423,9 @@ class AsyncOpenAIIncidentReviewClient:
         self._base_url = base_url.rstrip("/")
         self._max_output_tokens = max_output_tokens
         self._response_parse_max_attempts = response_parse_max_attempts
-        self._response_format = _build_review_response_format(base_url=self._base_url)
+        self._response_format = review_prompts.build_review_response_format(
+            base_url=self._base_url
+        )
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=self._base_url,
@@ -433,11 +443,11 @@ class AsyncOpenAIIncidentReviewClient:
             payload = await self._client.chat.completions.create(
                 model=model,
                 response_format=self._response_format,
-                messages=_build_review_messages(incident),
+                messages=review_prompts.build_review_messages(incident),
                 max_tokens=self._max_output_tokens,
             )
             try:
-                return _parse_review_result_from_provider_payload(
+                return review_prompts.parse_review_result_from_provider_payload(
                     incident_id=incident["id"],
                     payload=payload,
                 )
@@ -513,9 +523,12 @@ async def review_pending_incidents(
     duplicate_judge_model: str,
     concurrency: int = 8,
     max_attempts: int = 3,
+    max_reviews: int | None = None,
     approval_threshold: float = AUTO_APPROVAL_LEGITIMACY_THRESHOLD,
 ) -> IncidentReviewRunSummary:
     incidents = repository.list_incidents_pending_llm_review()
+    if max_reviews is not None:
+        incidents = incidents[:max_reviews]
     if not incidents:
         return IncidentReviewRunSummary(
             reviews_attempted=0,
@@ -536,6 +549,12 @@ async def review_pending_incidents(
         source_fetcher=source_fetcher,
     )
     refreshed_incidents = repository.list_incidents_pending_llm_review()
+    refreshed_incident_ids = {str(incident["id"]) for incident in incidents}
+    refreshed_incidents = [
+        incident
+        for incident in refreshed_incidents
+        if str(incident["id"]) in refreshed_incident_ids
+    ]
     semaphore = asyncio.Semaphore(concurrency)
 
     async def _process_incident(

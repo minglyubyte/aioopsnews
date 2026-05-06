@@ -58,6 +58,27 @@ def test_records_to_incident_csv_pads_duplicate_source_links() -> None:
     assert len(parsed_rows[0].source_links) == 3
 
 
+def test_records_to_incident_csv_collapses_cell_whitespace() -> None:
+    records = [
+        VerifiedSourceRecord(
+            source_registry_key="damien_charlotin_hallucinations",
+            external_id="damien-hallucination-whitespace-2026-05-05",
+            title="Whitespace case",
+            incident_date="2026-05-05",
+            company="Legal filing",
+            summary="Court quote has trailing spaces.  \nNext line continues.",
+            source_url="https://www.damiencharlotin.com/documents/example.pdf",
+            publisher="Damien Charlotin AI Hallucination Cases",
+            raw_payload={"case": "Whitespace case"},
+        )
+    ]
+
+    csv_text = script.records_to_incident_csv(records)
+
+    assert "  \n" not in csv_text
+    assert "Court quote has trailing spaces. Next line continues." in csv_text
+
+
 def test_generate_verified_source_csv_main_fetches_and_writes_file(
     monkeypatch,
     tmp_path,
