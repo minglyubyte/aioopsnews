@@ -378,3 +378,78 @@ def test_workflow_script_allows_dry_run_without_primary_review_credentials(
     assert workflow_calls[0]["import_only"] is False
     assert workflow_calls[0]["max_reviews"] is None
     assert json.loads(capsys.readouterr().out) == summary
+
+
+def test_workflow_script_allows_import_only_without_review_credentials(
+    monkeypatch,
+    capsys,
+    tmp_path,
+) -> None:
+    repository = _StubRepository()
+    summary = {
+        "files_found": 1,
+        "files_imported": 1,
+        "files_failed": 0,
+        "incidents_imported": 25,
+        "reviews_attempted": 0,
+        "reviews_completed": 0,
+        "reviews_failed": 0,
+        "review_failures": [],
+        "approved": 0,
+        "pending_review": 0,
+        "rejected": 0,
+        "translations_completed": 0,
+        "translations_failed": 0,
+        "file_results": [],
+    }
+    workflow_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        workflow_script,
+        "get_settings",
+        lambda: Settings(
+            database_url="postgresql://example/db",
+            openai_api_key=None,
+            primary_review_api_key=None,
+            primary_review_base_url="https://api.deepseek.com/v1",
+            primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
+            deepseek_api_key=None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "build_incident_repository",
+        lambda database_url: repository,
+    )
+    monkeypatch.setattr(
+        workflow_script.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            inbox_dir=tmp_path / "inbox",
+            archive_dir=tmp_path / "archive",
+            dry_run=False,
+            import_only=True,
+            max_reviews=None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "AsyncCompatibleIncidentReviewClient",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("review client should not be built for import-only")
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "run_incident_csv_workflow",
+        lambda **kwargs: workflow_calls.append(kwargs) or _async_summary(summary),
+    )
+
+    exit_code = workflow_script.main()
+
+    assert exit_code == 0
+    assert repository.closed is True
+    assert workflow_calls[0]["dry_run"] is False
+    assert workflow_calls[0]["import_only"] is True
+    assert json.loads(capsys.readouterr().out) == summary

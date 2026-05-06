@@ -80,7 +80,7 @@ def main() -> int:
     _configure_logging()
 
     settings = get_settings()
-    if not args.dry_run:
+    if not args.dry_run and not args.import_only:
         _require_non_dry_run_credentials(settings)
     repository = build_incident_repository(settings.database_url)
     try:
@@ -90,7 +90,7 @@ def main() -> int:
             args.archive_dir,
             args.dry_run,
         )
-        if args.dry_run:
+        if args.dry_run or args.import_only:
             source_fetcher = object()
             review_client = object()
             escalation_client = object()

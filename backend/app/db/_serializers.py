@@ -8,7 +8,9 @@ require a single change.
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
+from uuid import UUID
 
 # ---------------------------------------------------------------------------
 # Low-level field helpers
@@ -28,6 +30,15 @@ def sanitize_reader_text(value: Any) -> str | None:
     return text or None
 
 
+def json_safe_scalar(value: Any) -> Any:
+    """Normalize PostgreSQL-native scalars that JSON encoders cannot handle."""
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Shared base field extractors
 # ---------------------------------------------------------------------------
@@ -36,11 +47,11 @@ def sanitize_reader_text(value: Any) -> str | None:
 def _base_incident_fields(row: dict[str, Any]) -> dict[str, Any]:
     """Fields common to virtually every incident serialization."""
     return {
-        "id": row["id"],
+        "id": json_safe_scalar(row["id"]),
         "headline": row["headline"],
         "headline_en": row.get("headline_en"),
         "headline_zh": row.get("headline_zh"),
-        "date_logged": row["date_logged"],
+        "date_logged": json_safe_scalar(row["date_logged"]),
         "company_involved": row["company_involved"],
         "company_involved_zh": row.get("company_involved_zh"),
         "incident_topic": row.get("incident_topic"),
@@ -84,8 +95,10 @@ def _duplicate_fields(row: dict[str, Any]) -> dict[str, Any]:
     """Fields related to duplicate detection."""
     return {
         "duplicate_status": row.get("duplicate_status"),
-        "duplicate_of_incident_id": row.get("duplicate_of_incident_id"),
-        "canonical_incident_id": row.get("canonical_incident_id"),
+        "duplicate_of_incident_id": json_safe_scalar(
+            row.get("duplicate_of_incident_id")
+        ),
+        "canonical_incident_id": json_safe_scalar(row.get("canonical_incident_id")),
     }
 
 
@@ -113,7 +126,7 @@ def serialize_review_queue_row(
     return {
         **_base_incident_fields(row),
         "suggested_severity_score": row.get("suggested_severity_score"),
-        "matched_claim_id": row.get("matched_claim_id"),
+        "matched_claim_id": json_safe_scalar(row.get("matched_claim_id")),
         "claim_match_confidence": row.get("claim_match_confidence"),
         "company_involved_zh": row.get("company_involved_zh"),
         **_review_fields(row),
@@ -230,7 +243,7 @@ def serialize_review_result_row(
     return {
         **_base_incident_fields(row),
         "suggested_severity_score": row.get("suggested_severity_score"),
-        "matched_claim_id": row.get("matched_claim_id"),
+        "matched_claim_id": json_safe_scalar(row.get("matched_claim_id")),
         "claim_match_confidence": row.get("claim_match_confidence"),
         **_review_fields(row),
         **_batch_fields(row),
@@ -273,7 +286,7 @@ def serialize_translation_result_row(
         **_base_incident_fields(row),
         "company_involved_zh": row.get("company_involved_zh"),
         "suggested_severity_score": row.get("suggested_severity_score"),
-        "matched_claim_id": row.get("matched_claim_id"),
+        "matched_claim_id": json_safe_scalar(row.get("matched_claim_id")),
         "claim_match_confidence": row.get("claim_match_confidence"),
         **_review_fields(row),
         "legitimacy_reasoning_zh": row.get("legitimacy_reasoning_zh"),
@@ -315,7 +328,7 @@ def serialize_translation_result_row(
 def serialize_source_row(row: dict[str, Any]) -> dict[str, Any]:
     """Serialize a single incident_sources row."""
     return {
-        "id": row["id"],
+        "id": json_safe_scalar(row["id"]),
         "source_url": row["source_url"],
         "canonical_url": row.get("canonical_url"),
         "source_type": row["source_type"],
@@ -339,13 +352,15 @@ def group_sources_by_incident(
 
     result: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in source_rows:
-        result[row["incident_id"]].append(serialize_source_row(row))
+        result[str(json_safe_scalar(row["incident_id"]))].append(
+            serialize_source_row(row)
+        )
     return result
 
 
 def serialize_duplicate_candidate_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
-        "candidate_incident_id": row["candidate_incident_id"],
+        "candidate_incident_id": json_safe_scalar(row["candidate_incident_id"]),
         "embedding_score": row["embedding_score"],
         "llm_verdict": row["llm_verdict"],
         "confidence": row["confidence"],
@@ -375,11 +390,11 @@ def build_public_claim_payload(
         return None
 
     return {
-        "id": row["claim_id"],
+        "id": json_safe_scalar(row["claim_id"]),
         "claimant_name": row["claim_claimant_name"],
         "company_involved": row["claim_company_involved"],
         "original_claim": row["original_claim"],
-        "claim_date": row["claim_date"],
+        "claim_date": json_safe_scalar(row["claim_date"]),
         "claim_topic": row["claim_topic"],
         "match_confidence": row["claim_match_confidence"],
     }
@@ -388,11 +403,11 @@ def build_public_claim_payload(
 def serialize_public_archive_row(row: dict[str, Any]) -> dict[str, Any]:
     """Serialize a row for the public archive feed."""
     return {
-        "id": row["id"],
+        "id": json_safe_scalar(row["id"]),
         "headline": row["headline"],
         "headline_en": row.get("headline_en") or row["headline"],
         "headline_zh": row.get("headline_zh"),
-        "date_logged": row["date_logged"],
+        "date_logged": json_safe_scalar(row["date_logged"]),
         "company_involved": row["company_involved"],
         "company_involved_zh": row.get("company_involved_zh"),
         "incident_topic": row.get("incident_topic"),
@@ -416,11 +431,11 @@ def serialize_public_detail_row(
 ) -> dict[str, Any]:
     """Serialize a row for public incident detail view."""
     return {
-        "id": row["id"],
+        "id": json_safe_scalar(row["id"]),
         "headline": row["headline"],
         "headline_en": row.get("headline_en") or row["headline"],
         "headline_zh": row.get("headline_zh"),
-        "date_logged": row["date_logged"],
+        "date_logged": json_safe_scalar(row["date_logged"]),
         "company_involved": row["company_involved"],
         "company_involved_zh": row.get("company_involved_zh"),
         "incident_topic": row.get("incident_topic"),

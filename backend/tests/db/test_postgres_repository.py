@@ -1,7 +1,83 @@
 from __future__ import annotations
 
+from datetime import date
+from uuid import UUID
+
 import app.db.postgres_repository as postgres_repository
+from app.db._serializers import group_sources_by_incident, serialize_llm_pending_row
 from app.db.postgres_repository import PostgresIncidentRepository
+
+
+def test_llm_pending_serializer_returns_json_safe_uuid_strings() -> None:
+    incident_id = UUID("6a72c8c3-e5f4-4a7f-9974-5a2a87856344")
+    source_id = UUID("55334442-d676-465c-946e-212bd177deef")
+    row = {
+        "id": incident_id,
+        "external_id": "ca-dmv-waymo-2026-04-12-1",
+        "headline": "Waymo collision report",
+        "headline_en": "Waymo collision report",
+        "headline_zh": None,
+        "date_logged": date(2026, 4, 12),
+        "company_involved": "Waymo",
+        "company_involved_zh": None,
+        "incident_topic": "autonomous_vehicle",
+        "claimant_name": None,
+        "categories": [],
+        "severity_score": 1,
+        "reality_summary": "California DMV published a collision report.",
+        "reality_summary_en": "California DMV published a collision report.",
+        "reality_summary_zh": None,
+        "status": "pending_llm_review",
+        "publication_track": "verified_accident",
+        "evidence_tier": "official_documented",
+        "source_family": "autonomous_vehicle",
+        "verification_summary": "Fixed verified source.",
+        "suggested_severity_score": None,
+        "review_notes": None,
+        "severity_confidence": None,
+        "severity_reasoning": None,
+        "severity_flags": [],
+        "severity_model": None,
+        "severity_decision_source": None,
+        "legitimacy_flag": "REVIEW",
+        "confidence_level": "high",
+        "import_notes": None,
+        "translation_status": "not_requested",
+        "review_batch_id": None,
+        "review_model": None,
+        "duplicate_status": None,
+        "duplicate_of_incident_id": None,
+        "canonical_incident_id": None,
+        "embedding_model": None,
+        "embedding_vector": None,
+    }
+
+    serialized = serialize_llm_pending_row(
+        row,
+        sources=group_sources_by_incident(
+            [
+                {
+                    "id": source_id,
+                    "incident_id": incident_id,
+                    "source_url": "https://www.dmv.ca.gov/report.pdf",
+                    "source_type": "official",
+                    "publisher": "California DMV",
+                    "title": "Report",
+                    "fetch_status": "fetched",
+                    "http_status": 200,
+                    "evidence_text": "Evidence",
+                    "fetch_error": None,
+                    "source_origin": "fixed_verified_source",
+                    "source_registry_key": "ca_dmv_av_collisions",
+                    "raw_source_payload": {},
+                }
+            ]
+        )[str(incident_id)],
+    )
+
+    assert serialized["id"] == str(incident_id)
+    assert serialized["date_logged"] == "2026-04-12"
+    assert serialized["sources"][0]["id"] == str(source_id)
 
 
 class _StubResult:
