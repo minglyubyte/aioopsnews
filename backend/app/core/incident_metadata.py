@@ -56,3 +56,8 @@ SOURCE_FAMILIES: tuple[SourceFamily, ...] = (
     "model_governance",
     "other",
 )
+SOURCE_ORIGINS: tuple[SourceOrigin, ...] = (
+    "fixed_verified_source",
+    "search_discovery",
+    "manual_import",
+)

@@ -118,6 +118,46 @@ def test_import_incidents_csv_text_persists_legitimacy_metadata_and_translation(
     ]
 
 
+def test_import_incidents_csv_text_persists_optional_dual_track_metadata() -> None:
+    repository = InMemoryIncidentRepository()
+    csv_text = "\n".join(
+        [
+            (
+                "incident_id,company,incident_date,incident_topic,"
+                "incident_description,source_links,legitimacy_flag,"
+                "confidence_level,publication_track,evidence_tier,source_family,"
+                "verification_summary,source_origin,source_registry_key,notes"
+            ),
+            (
+                "ca-dmv-waymo-2024-03-30,Waymo,2024-03-30,"
+                "autonomous_vehicle,"
+                '"California DMV published an autonomous vehicle collision report.",'
+                '"https://www.dmv.ca.gov/report | https://www.dmv.ca.gov/index | '
+                'https://www.nhtsa.gov/data",REVIEW,high,verified_accident,'
+                "official_documented,autonomous_vehicle,"
+                '"California DMV documents the crash report; editorial review still '
+                'checks AI relevance.",fixed_verified_source,'
+                "ca_dmv_av_collisions,Generated from fixed source"
+            ),
+            "",
+        ]
+    )
+
+    summary = import_incidents_csv_text(repository, csv_text, dry_run=False)
+
+    assert summary.inserted == 1
+    incident = next(iter(repository.incidents.values()))
+    assert incident["publication_track"] == "verified_accident"
+    assert incident["evidence_tier"] == "official_documented"
+    assert incident["source_family"] == "autonomous_vehicle"
+    assert incident["verification_summary"] == (
+        "California DMV documents the crash report; editorial review still "
+        "checks AI relevance."
+    )
+    assert incident["sources"][0]["source_origin"] == "fixed_verified_source"
+    assert incident["sources"][0]["source_registry_key"] == "ca_dmv_av_collisions"
+
+
 def test_import_incidents_csv_text_dry_run_validates_without_persisting() -> None:
     repository = InMemoryIncidentRepository()
 

@@ -6,6 +6,12 @@ from datetime import date
 from io import StringIO
 from urllib.parse import urlparse
 
+from app.core.incident_metadata import (
+    EVIDENCE_TIERS,
+    PUBLICATION_TRACKS,
+    SOURCE_FAMILIES,
+    SOURCE_ORIGINS,
+)
 from app.db.repository_protocol import IncidentRepository
 
 ALLOWED_LEGITIMACY_FLAGS = {"ACCEPT", "REVIEW", "REJECT"}
@@ -39,6 +45,12 @@ class ParsedIncidentImportRow:
     source_links: list[str]
     legitimacy_flag: str
     confidence_level: str
+    publication_track: str | None
+    evidence_tier: str | None
+    source_family: str | None
+    verification_summary: str | None
+    source_origin: str | None
+    source_registry_key: str | None
     notes: str | None
 
 
@@ -111,6 +123,31 @@ def parse_incidents_csv_text(csv_text: str) -> list[ParsedIncidentImportRow]:
                 f"{', '.join(sorted(ALLOWED_CONFIDENCE_LEVELS))}"
             )
 
+        publication_track = _parse_optional_choice(
+            row.get("publication_track"),
+            allowed=PUBLICATION_TRACKS,
+            column="publication_track",
+            line_number=line_number,
+        )
+        evidence_tier = _parse_optional_choice(
+            row.get("evidence_tier"),
+            allowed=EVIDENCE_TIERS,
+            column="evidence_tier",
+            line_number=line_number,
+        )
+        source_family = _parse_optional_choice(
+            row.get("source_family"),
+            allowed=SOURCE_FAMILIES,
+            column="source_family",
+            line_number=line_number,
+        )
+        source_origin = _parse_optional_choice(
+            row.get("source_origin"),
+            allowed=SOURCE_ORIGINS,
+            column="source_origin",
+            line_number=line_number,
+        )
+
         rows.append(
             ParsedIncidentImportRow(
                 line_number=line_number,
@@ -124,6 +161,12 @@ def parse_incidents_csv_text(csv_text: str) -> list[ParsedIncidentImportRow]:
                 source_links=source_links,
                 legitimacy_flag=legitimacy_flag,
                 confidence_level=confidence_level,
+                publication_track=publication_track,
+                evidence_tier=evidence_tier,
+                source_family=source_family,
+                verification_summary=row.get("verification_summary") or None,
+                source_origin=source_origin,
+                source_registry_key=row.get("source_registry_key") or None,
                 notes=row.get("notes") or None,
             )
         )
@@ -184,6 +227,12 @@ def import_incidents_csv_text(
             headline_zh=None,
             reality_summary_zh=None,
             translation_status="not_requested",
+            publication_track=row.publication_track,
+            evidence_tier=row.evidence_tier,
+            source_family=row.source_family,
+            verification_summary=row.verification_summary,
+            source_origin=row.source_origin,
+            source_registry_key=row.source_registry_key,
         )
         inserted += 1
         pending_llm_review += 1
@@ -215,6 +264,25 @@ def _parse_source_links(value: str, *, line_number: int) -> list[str]:
             seen.add(link)
             deduped.append(link)
     return deduped
+
+
+def _parse_optional_choice(
+    value: str | None,
+    *,
+    allowed: set[str],
+    column: str,
+    line_number: int,
+) -> str | None:
+    if value is None or not value.strip():
+        return None
+    normalized = value.strip()
+    if normalized not in allowed:
+        raise IncidentImportValidationError(
+            "Invalid incident import at line "
+            f"{line_number}: {column} must be one of "
+            f"{', '.join(sorted(allowed))}"
+        )
+    return normalized
 
 
 def _validate_iso_date(value: str, line_number: int) -> None:
