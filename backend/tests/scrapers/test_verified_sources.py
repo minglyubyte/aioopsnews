@@ -87,6 +87,28 @@ def test_parse_edrm_judicial_order_records_from_table_html() -> None:
     assert records[0].source_url == "https://edrm.net/order.pdf"
 
 
+def test_parse_edrm_judicial_order_records_skips_repeated_header_rows() -> None:
+    html = """
+    <table>
+      <tr><th>COURT</th><th>JUDGE</th><th>DATE</th><th>PDF</th></tr>
+      <tr><td>COURT</td><td>JUDGE</td><td>DATE</td><td>PDF</td></tr>
+      <tr>
+        <td>Superior Court of Example</td>
+        <td>Example Judge</td>
+        <td>01/02/2026</td>
+        <td><a href="https://edrm.net/example.pdf">Download</a></td>
+      </tr>
+    </table>
+    """
+
+    records = parse_edrm_judicial_order_records(html, limit=1)
+
+    assert len(records) == 1
+    assert records[0].external_id == (
+        "edrm-order-superior-court-of-example-example-judge-2026-01-02"
+    )
+
+
 def test_parse_nhtsa_sgo_records_from_csv() -> None:
     csv_text = "\n".join(
         [
@@ -169,4 +191,30 @@ def test_fetch_verified_source_records_continues_when_one_source_fails() -> None
 
     assert [record.external_id for record in records] == [
         "ca-dmv-waymo-2026-04-12-2"
+    ]
+
+
+def test_fetch_verified_source_records_makes_duplicate_external_ids_unique() -> None:
+    class FakeResponse:
+        text = """
+        <a href="/portal/file/waymo_112624-pdf/">Waymo November 26, 2024 (PDF)</a>
+        <a href="/portal/file/waymo_112624b-pdf/">Waymo November 26, 2024 (PDF)</a>
+        """
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeHttpClient:
+        def get(self, url: str) -> FakeResponse:
+            return FakeResponse()
+
+    records = fetch_verified_source_records(
+        sources=["ca_dmv_av_collisions"],
+        http_client=FakeHttpClient(),
+        limit_per_source=10,
+    )
+
+    assert [record.external_id for record in records] == [
+        "ca-dmv-waymo-2024-11-26",
+        "ca-dmv-waymo-2024-11-26-waymo-112624b-pdf",
     ]

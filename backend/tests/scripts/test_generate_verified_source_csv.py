@@ -38,6 +38,26 @@ def test_records_to_incident_csv_writes_importable_dual_track_rows() -> None:
     assert len(parsed_rows[0].source_links) == 3
 
 
+def test_records_to_incident_csv_pads_duplicate_source_links() -> None:
+    records = [
+        VerifiedSourceRecord(
+            source_registry_key="damien_charlotin_hallucinations",
+            external_id="damien-hallucination-no-source-2026-05-05",
+            title="Case without independent source URL",
+            incident_date="2026-05-05",
+            company="Legal filing",
+            summary="Tracker row falls back to the tracker home page.",
+            source_url="https://www.damiencharlotin.com/hallucinations/",
+            publisher="Damien Charlotin AI Hallucination Cases",
+            raw_payload={"case": "Case without independent source URL"},
+        )
+    ]
+
+    parsed_rows = parse_incidents_csv_text(script.records_to_incident_csv(records))
+
+    assert len(parsed_rows[0].source_links) == 3
+
+
 def test_generate_verified_source_csv_main_fetches_and_writes_file(
     monkeypatch,
     tmp_path,

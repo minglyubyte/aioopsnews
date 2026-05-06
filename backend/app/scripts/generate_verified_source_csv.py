@@ -50,10 +50,12 @@ SUPPLEMENTAL_SOURCE_LINKS = {
     "damien_charlotin_hallucinations": [
         CHARLOTIN_HOME_URL,
         CHARLOTIN_DOWNLOAD_URL,
+        "https://www.damiencharlotin.com/",
     ],
     "edrm_judicial_orders": [
         EDRM_JUDICIAL_ORDERS_URL,
         "https://edrm.net/2024/04/edrm-announces-genai-judicial-orders-repository/",
+        "https://edrm.net/",
     ],
 }
 

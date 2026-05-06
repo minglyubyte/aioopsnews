@@ -85,7 +85,7 @@ def fetch_verified_source_records(
             continue
 
         records.extend(_filter_since(source_records, since))
-    return records
+    return _dedupe_external_ids(records)
 
 
 def _fetch_one_source(
@@ -268,6 +268,8 @@ def parse_edrm_judicial_order_records(
         court = row.get("court", "").strip()
         judge = row.get("judge", "").strip()
         raw_date = row.get("date", "").strip()
+        if _looks_like_repeated_header(row):
+            continue
         if not court or not raw_date:
             continue
         incident_date = _parse_flexible_date(raw_date)
@@ -488,6 +490,14 @@ def _extract_table_rows(html: str) -> list[list[str]]:
     return parser.rows
 
 
+def _looks_like_repeated_header(row: dict[str, str]) -> bool:
+    return any(
+        value.strip().lower() == key
+        for key, value in row.items()
+        if value.strip()
+    )
+
+
 def _filter_since(
     records: list[VerifiedSourceRecord],
     since: str | None,
@@ -500,6 +510,41 @@ def _filter_since(
         for record in records
         if date.fromisoformat(record.incident_date) >= since_date
     ]
+
+
+def _dedupe_external_ids(
+    records: list[VerifiedSourceRecord],
+) -> list[VerifiedSourceRecord]:
+    seen: set[str] = set()
+    deduped: list[VerifiedSourceRecord] = []
+    for record in records:
+        external_id = record.external_id
+        if external_id in seen:
+            source_slug = _source_slug(record.source_url)
+            external_id = f"{record.external_id}-{source_slug}"
+            counter = 2
+            while external_id in seen:
+                external_id = f"{record.external_id}-{source_slug}-{counter}"
+                counter += 1
+            record = VerifiedSourceRecord(
+                source_registry_key=record.source_registry_key,
+                external_id=external_id,
+                title=record.title,
+                incident_date=record.incident_date,
+                company=record.company,
+                summary=record.summary,
+                source_url=record.source_url,
+                publisher=record.publisher,
+                raw_payload=record.raw_payload,
+            )
+        seen.add(record.external_id)
+        deduped.append(record)
+    return deduped
+
+
+def _source_slug(url: str) -> str:
+    path = url.rstrip("/").rsplit("/", maxsplit=1)[-1]
+    return _slug(path or url)
 
 
 def _normalize_row(row: dict[str, str | None]) -> dict[str, str]:
