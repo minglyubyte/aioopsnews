@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 
 from app.services.claim_import import (
@@ -17,7 +19,7 @@ CLAIMS_WITH_SOURCES_CSV = "\n".join(
             "secondary_source_links,notes"
         ),
         (
-            "claim-openai-001,OpenAI,OpenAI,"
+            "6a72c8c3-e5f4-4a7f-9974-5a2a87856344,OpenAI,OpenAI,"
             '"Our model will reduce repetitive support work.",'
             "2026-01-15,customer support,approved,"
             '"https://openai.com/blog/example-announcement | '
@@ -37,6 +39,20 @@ INVALID_URL_CSV = "\n".join(
         (
             'OpenAI,OpenAI,"Our model will reduce repetitive support work.",'
             "2026-01-15,customer support,not-a-url"
+        ),
+        "",
+    ]
+)
+INVALID_ID_CSV = "\n".join(
+    [
+        (
+            "id,claimant_name,company_involved,original_claim,"
+            "claim_date,claim_topic"
+        ),
+        (
+            'claim-openai-001,OpenAI,OpenAI,'
+            '"Our model will reduce repetitive support work.",'
+            "2026-01-15,customer support"
         ),
         "",
     ]
@@ -80,6 +96,7 @@ def test_parse_claims_csv_text_extracts_pipe_separated_sources_and_notes() -> No
     rows = parse_claims_csv_text(CLAIMS_WITH_SOURCES_CSV)
 
     assert len(rows) == 1
+    assert rows[0].claim_id == "6a72c8c3-e5f4-4a7f-9974-5a2a87856344"
     assert rows[0].primary_source_links == [
         "https://openai.com/blog/example-announcement",
         "https://openai.com/newsroom/example",
@@ -98,6 +115,14 @@ def test_parse_claims_csv_text_rejects_invalid_urls() -> None:
     assert "valid http:// or https:// URL" in str(exc_info.value)
 
 
+def test_parse_claims_csv_text_rejects_non_uuid_ids() -> None:
+    with pytest.raises(ClaimImportValidationError) as exc_info:
+        parse_claims_csv_text(INVALID_ID_CSV)
+
+    assert "line 2" in str(exc_info.value)
+    assert "id must be a UUID" in str(exc_info.value)
+
+
 def test_import_claims_csv_text_persists_generated_ids_and_sources() -> None:
     repository = InMemoryIncidentRepository()
 
@@ -108,13 +133,18 @@ def test_import_claims_csv_text_persists_generated_ids_and_sources() -> None:
     )
 
     assert summary.inserted == 2
-    assert sorted(repository.claims) == ["claim-openai-001", "claim-openai-002"]
-    assert repository.claims["claim-openai-001"]["status"] == "approved"
-    assert (
-        repository.claims["claim-openai-001"]["notes"]
-        == "Claim pulled from launch post"
+    claim_ids = sorted(repository.claims)
+    assert len(claim_ids) == 2
+    assert all(str(UUID(claim_id)) == claim_id for claim_id in claim_ids)
+
+    first_claim_id = next(
+        claim_id
+        for claim_id, claim in repository.claims.items()
+        if claim["original_claim"] == "Our model will reduce repetitive support work."
     )
-    assert repository.claim_sources["claim-openai-001"] == [
+    assert repository.claims[first_claim_id]["status"] == "approved"
+    assert repository.claims[first_claim_id]["notes"] == "Claim pulled from launch post"
+    assert repository.claim_sources[first_claim_id] == [
         {
             "source_url": "https://openai.com/blog/example-announcement",
             "source_kind": "primary",

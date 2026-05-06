@@ -36,7 +36,7 @@ class _StubConnection:
             "company_involved_zh": "开放人工智能",
             "incident_topic": None,
             "claimant_name": None,
-            "categories": '["Hallucinations"]',
+            "categories": ["Hallucinations"],
             "severity_score": 3,
             "suggested_severity_score": None,
             "reality_summary": "Updated summary",
@@ -50,7 +50,7 @@ class _StubConnection:
             "legitimacy_label": "rejected",
             "severity_confidence": 0.1,
             "severity_reasoning": "Not enough evidence.",
-            "severity_flags": "[]",
+            "severity_flags": [],
             "severity_model": "gpt-5.4-mini",
             "severity_decision_source": None,
             "legitimacy_reasoning": "Rejected.",
@@ -68,6 +68,12 @@ class _StubConnection:
             "evidence_summary_en": None,
             "evidence_summary_zh": None,
             "translation_status": None,
+            "publication_track": "accident_watch",
+            "evidence_tier": "reported_unconfirmed",
+            "source_family": "model_governance",
+            "verification_summary": (
+                "Fresh schema row with classified evidence metadata."
+            ),
             "review_batch_id": "batch-1",
             "review_model": "gpt-5.4-mini",
             "duplicate_status": None,
@@ -161,9 +167,7 @@ class _StubConnection:
                 }
             )
         if "group by category.value" in query:
-            return _StubResult(
-                rows=[{"category": "Hallucinations", "count": 1}]
-            )
+            return _StubResult(rows=[{"category": "Hallucinations", "count": 1}])
         if "group by incident_logs.company_involved" in query:
             return _StubResult(
                 rows=[
@@ -190,22 +194,24 @@ class _StubConnection:
                         "company_involved_zh": "开放人工智能",
                         "incident_topic": None,
                         "claimant_name": None,
-                        "categories": '["Hallucinations"]',
+                        "categories": ["Hallucinations"],
                         "severity_score": 3,
                         "reality_summary": "Updated summary",
                         "reality_summary_en": "Updated summary",
                         "reality_summary_zh": None,
                         "status": "approved",
                         "translation_status": "completed",
+                        "publication_track": "accident_watch",
+                        "evidence_tier": "reported_unconfirmed",
+                        "source_family": "model_governance",
+                        "verification_summary": (
+                            "Fresh schema row with classified evidence metadata."
+                        ),
                     }
                 ]
             )
-        if (
-            "from incident_logs" in query
-            and (
-                "where id = %s" in query
-                or "where incident_logs.id = %s" in query
-            )
+        if "from incident_logs" in query and (
+            "where id = %s" in query or "where incident_logs.id = %s" in query
         ):
             row = dict(self.incident_row)
             if "company_involved_zh" in query:
@@ -372,6 +378,69 @@ def test_apply_incident_review_result_uses_python_decided_severity_score(
     assert incident["ai_failure_point_en"] == "Failure point."
     assert incident["why_it_matters_en"] == "Why it matters."
     assert incident["evidence_summary_en"] == "Evidence summary."
+
+
+def test_postgres_repository_writes_native_postgres_values(monkeypatch) -> None:
+    connection = _StubConnection()
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+    repository.apply_incident_review_result(
+        incident_id="incident-1",
+        status="approved",
+        legitimacy_score=0.9,
+        legitimacy_label="auto_publish",
+        legitimacy_reasoning="Strong source trail.",
+        source_validation_summary="Validated.",
+        headline_en="Updated headline",
+        reality_summary_en="Updated summary",
+        categories=["Hallucinations"],
+        severity_score=4,
+        suggested_severity_score=4,
+        severity_confidence=0.8,
+        severity_reasoning="Meaningful disruption.",
+        severity_flags=["core_system_outage"],
+        severity_model="gpt-5.4-mini",
+        severity_decision_source="primary_llm",
+        severity_suggested_at="2026-04-30T12:00:00+00:00",
+        review_model="gpt-5.4-mini",
+        review_batch_id="batch-1",
+        reviewed_at="2026-04-30T12:00:00+00:00",
+    )
+    repository.update_incident_embedding(
+        incident_id="incident-1",
+        embedding_model="text-embedding-3-small",
+        embedding_vector=[0.1, 0.9],
+    )
+
+    review_params = next(
+        args[0]
+        for query, args in connection.calls
+        if args and "severity_suggested_at = %s" in query
+    )
+    embedding_params = next(
+        args[0]
+        for query, args in connection.calls
+        if args and "embedding_vector = %s" in query
+    )
+
+    assert review_params[5] == ["Hallucinations"]
+    assert review_params[10] == ["core_system_outage"]
+    assert embedding_params[1] == [0.1, 0.9]
 
 
 def test_apply_admin_review_selects_translation_fields(monkeypatch) -> None:

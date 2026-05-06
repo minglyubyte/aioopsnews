@@ -8,46 +8,16 @@ require a single change.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from app.core.incident_metadata import (
-    DEFAULT_EVIDENCE_TIER,
-    DEFAULT_PUBLICATION_TRACK,
-    DEFAULT_SOURCE_FAMILY,
-    DEFAULT_VERIFICATION_SUMMARY,
-)
-
-
 # ---------------------------------------------------------------------------
-# Low-level field parsers
+# Low-level field helpers
 # ---------------------------------------------------------------------------
 
-def parse_text_array(value: str | None) -> list[str]:
-    """Parse a JSON text array stored in a text column."""
-    if not value:
-        return []
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed if str(item)]
 
-
-def parse_optional_json_object(value: Any) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+def native_text_array(value: Any) -> list[str]:
+    """Normalize a PostgreSQL text[] value to a JSON-serializable list."""
+    return [str(item) for item in (value or []) if str(item)]
 
 
 def sanitize_reader_text(value: Any) -> str | None:
@@ -62,6 +32,7 @@ def sanitize_reader_text(value: Any) -> str | None:
 # Shared base field extractors
 # ---------------------------------------------------------------------------
 
+
 def _base_incident_fields(row: dict[str, Any]) -> dict[str, Any]:
     """Fields common to virtually every incident serialization."""
     return {
@@ -71,9 +42,10 @@ def _base_incident_fields(row: dict[str, Any]) -> dict[str, Any]:
         "headline_zh": row.get("headline_zh"),
         "date_logged": row["date_logged"],
         "company_involved": row["company_involved"],
+        "company_involved_zh": row.get("company_involved_zh"),
         "incident_topic": row.get("incident_topic"),
         "claimant_name": row.get("claimant_name"),
-        "categories": json.loads(row["categories"]),
+        "categories": native_text_array(row["categories"]),
         "severity_score": row["severity_score"],
         "reality_summary": row["reality_summary"],
         "reality_summary_en": row.get("reality_summary_en"),
@@ -85,12 +57,10 @@ def _base_incident_fields(row: dict[str, Any]) -> dict[str, Any]:
 
 def _dual_track_fields(row: dict[str, Any]) -> dict[str, Any]:
     return {
-        "publication_track": row.get("publication_track")
-        or DEFAULT_PUBLICATION_TRACK,
-        "evidence_tier": row.get("evidence_tier") or DEFAULT_EVIDENCE_TIER,
-        "source_family": row.get("source_family") or DEFAULT_SOURCE_FAMILY,
-        "verification_summary": row.get("verification_summary")
-        or DEFAULT_VERIFICATION_SUMMARY,
+        "publication_track": row["publication_track"],
+        "evidence_tier": row["evidence_tier"],
+        "source_family": row["source_family"],
+        "verification_summary": row["verification_summary"],
     }
 
 
@@ -102,7 +72,7 @@ def _review_fields(row: dict[str, Any]) -> dict[str, Any]:
         "legitimacy_label": row.get("legitimacy_label"),
         "severity_confidence": row.get("severity_confidence"),
         "severity_reasoning": row.get("severity_reasoning"),
-        "severity_flags": parse_text_array(row.get("severity_flags")),
+        "severity_flags": native_text_array(row.get("severity_flags")),
         "severity_model": row.get("severity_model"),
         "severity_decision_source": row.get("severity_decision_source"),
         "legitimacy_reasoning": row.get("legitimacy_reasoning"),
@@ -131,6 +101,7 @@ def _batch_fields(row: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Public serializers (called by repository read methods)
 # ---------------------------------------------------------------------------
+
 
 def serialize_review_queue_row(
     row: dict[str, Any],
@@ -190,7 +161,7 @@ def serialize_llm_pending_row(
         "review_notes": row.get("review_notes"),
         "severity_confidence": row.get("severity_confidence"),
         "severity_reasoning": row.get("severity_reasoning"),
-        "severity_flags": parse_text_array(row.get("severity_flags")),
+        "severity_flags": native_text_array(row.get("severity_flags")),
         "severity_model": row.get("severity_model"),
         "severity_decision_source": row.get("severity_decision_source"),
         "legitimacy_flag": row.get("legitimacy_flag"),
@@ -200,9 +171,7 @@ def serialize_llm_pending_row(
         "sources": sources,
         **_duplicate_fields(row),
         "embedding_model": row.get("embedding_model"),
-        "embedding_vector": json.loads(row["embedding_vector"])
-        if row.get("embedding_vector")
-        else None,
+        "embedding_vector": row.get("embedding_vector"),
     }
 
 
@@ -224,9 +193,7 @@ def serialize_internal_incident(
         **_batch_fields(row),
         **_duplicate_fields(row),
         "embedding_model": row.get("embedding_model"),
-        "embedding_vector": json.loads(row["embedding_vector"])
-        if row.get("embedding_vector")
-        else None,
+        "embedding_vector": row.get("embedding_vector"),
         "duplicate_candidates": duplicate_candidates,
         "sources": sources,
     }
@@ -248,9 +215,7 @@ def serialize_duplicate_search_row(
         **_batch_fields(row),
         **_duplicate_fields(row),
         "embedding_model": row.get("embedding_model"),
-        "embedding_vector": json.loads(row["embedding_vector"])
-        if row.get("embedding_vector")
-        else None,
+        "embedding_vector": row.get("embedding_vector"),
         "sources": sources,
     }
 
@@ -346,6 +311,7 @@ def serialize_translation_result_row(
 # Source helpers
 # ---------------------------------------------------------------------------
 
+
 def serialize_source_row(row: dict[str, Any]) -> dict[str, Any]:
     """Serialize a single incident_sources row."""
     return {
@@ -361,9 +327,7 @@ def serialize_source_row(row: dict[str, Any]) -> dict[str, Any]:
         "fetch_error": row.get("fetch_error"),
         "source_origin": row.get("source_origin"),
         "source_registry_key": row.get("source_registry_key"),
-        "raw_source_payload": parse_optional_json_object(
-            row.get("raw_source_payload")
-        ),
+        "raw_source_payload": row.get("raw_source_payload"),
     }
 
 
@@ -393,6 +357,7 @@ def serialize_duplicate_candidate_row(row: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Public detail / claim serializers (used by get_public_incident)
 # ---------------------------------------------------------------------------
+
 
 def build_public_claim_payload(
     row: dict[str, Any],
@@ -432,11 +397,10 @@ def serialize_public_archive_row(row: dict[str, Any]) -> dict[str, Any]:
         "company_involved_zh": row.get("company_involved_zh"),
         "incident_topic": row.get("incident_topic"),
         "claimant_name": row["claimant_name"],
-        "categories": json.loads(row["categories"]),
+        "categories": native_text_array(row["categories"]),
         "severity_score": row["severity_score"],
         "archive_summary": row["reality_summary"],
-        "archive_summary_en": row.get("reality_summary_en")
-        or row["reality_summary"],
+        "archive_summary_en": row.get("reality_summary_en") or row["reality_summary"],
         "archive_summary_zh": row.get("reality_summary_zh"),
         "status": row["status"],
         "translation_status": row.get("translation_status"),
@@ -461,11 +425,10 @@ def serialize_public_detail_row(
         "company_involved_zh": row.get("company_involved_zh"),
         "incident_topic": row.get("incident_topic"),
         "claimant_name": row["claimant_name"],
-        "categories": json.loads(row["categories"]),
+        "categories": native_text_array(row["categories"]),
         "severity_score": row["severity_score"],
         "reality_summary": row["reality_summary"],
-        "reality_summary_en": row.get("reality_summary_en")
-        or row["reality_summary"],
+        "reality_summary_en": row.get("reality_summary_en") or row["reality_summary"],
         "reality_summary_zh": row.get("reality_summary_zh"),
         "status": row["status"],
         "translation_status": row.get("translation_status"),

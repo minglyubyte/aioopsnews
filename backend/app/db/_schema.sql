@@ -1,60 +1,60 @@
--- Database schema and migrations for AI Reality Check.
+-- Fresh PostgreSQL-native schema for AI Reality Check.
 -- Loaded at repository startup via _initialize_database().
 
+create extension if not exists pgcrypto;
+
 create table if not exists claims (
-    id text primary key,
+    id uuid primary key default gen_random_uuid(),
     claimant_name text not null,
     company_involved text not null,
     original_claim text not null,
-    claim_date text not null,
+    claim_date date not null,
     claim_topic text not null,
-    status text not null,
+    status text not null default 'seeded',
     notes text,
-    created_at timestamptz default current_timestamp,
-    updated_at timestamptz default current_timestamp
+    created_at timestamptz not null default current_timestamp,
+    updated_at timestamptz not null default current_timestamp
 );
 
-alter table claims
-    add column if not exists notes text;
-
 create table if not exists claim_sources (
-    id text primary key,
-    claim_id text not null references claims(id) on delete cascade,
+    id uuid primary key default gen_random_uuid(),
+    claim_id uuid not null references claims(id) on delete cascade,
     source_url text not null,
     source_kind text not null,
     display_order integer not null default 0,
-    created_at timestamptz default current_timestamp
+    created_at timestamptz not null default current_timestamp,
+    unique (claim_id, source_url)
 );
 
 create table if not exists incident_logs (
-    id text primary key,
-    external_id text,
+    id uuid primary key default gen_random_uuid(),
+    external_id text unique,
     headline text not null,
     headline_en text,
     headline_zh text,
-    date_logged text not null,
+    date_logged date not null,
     company_involved text not null,
     company_involved_zh text,
     incident_topic text,
     claimant_name text,
-    categories text not null,
+    categories text[] not null default '{}',
     severity_score integer not null,
     suggested_severity_score integer,
     reality_summary text not null,
     reality_summary_en text,
     reality_summary_zh text,
-    status text not null,
+    status text not null default 'pending_review',
     ingestion_run_id text,
-    confidence_score double precision,
-    severity_confidence double precision,
+    confidence_score numeric(4, 3),
+    severity_confidence numeric(4, 3),
     severity_reasoning text,
-    severity_flags text,
+    severity_flags text[] not null default '{}',
     severity_model text,
     severity_decision_source text,
     review_notes text,
-    matched_claim_id text references claims(id),
-    claim_match_confidence double precision,
-    legitimacy_score double precision,
+    matched_claim_id uuid references claims(id),
+    claim_match_confidence numeric(4, 3),
+    legitimacy_score numeric(4, 3),
     legitimacy_label text,
     legitimacy_reasoning text,
     legitimacy_reasoning_zh text,
@@ -70,275 +70,107 @@ create table if not exists incident_logs (
     why_it_matters_zh text,
     evidence_summary_en text,
     evidence_summary_zh text,
-    publication_track text,
-    evidence_tier text,
-    source_family text,
-    verification_summary text,
+    publication_track text not null default 'accident_watch',
+    evidence_tier text not null default 'developing',
+    source_family text not null default 'other',
+    verification_summary text not null default 'Evidence metadata has not been classified yet.',
     legitimacy_flag text,
     confidence_level text,
     import_notes text,
-    translation_status text,
+    translation_status text not null default 'not_requested',
     review_batch_id text,
     review_model text,
     duplicate_status text,
-    duplicate_of_incident_id text references incident_logs(id),
-    canonical_incident_id text references incident_logs(id),
+    duplicate_of_incident_id uuid references incident_logs(id),
+    canonical_incident_id uuid references incident_logs(id),
     embedding_model text,
-    embedding_vector text,
+    embedding_vector jsonb,
     reviewed_at timestamptz,
     severity_suggested_at timestamptz,
     translated_at timestamptz,
-    created_at timestamptz default current_timestamp,
-    updated_at timestamptz default current_timestamp
+    created_at timestamptz not null default current_timestamp,
+    updated_at timestamptz not null default current_timestamp,
+    check (severity_score between 1 and 5),
+    check (
+        suggested_severity_score is null
+        or suggested_severity_score between 1 and 5
+    ),
+    check (confidence_score is null or confidence_score between 0 and 1),
+    check (severity_confidence is null or severity_confidence between 0 and 1),
+    check (
+        claim_match_confidence is null
+        or claim_match_confidence between 0 and 1
+    ),
+    check (legitimacy_score is null or legitimacy_score between 0 and 1)
 );
 
-alter table incident_logs
-    add column if not exists external_id text;
-
-alter table incident_logs
-    add column if not exists suggested_severity_score integer;
-
-alter table incident_logs
-    add column if not exists severity_confidence double precision;
-
-alter table incident_logs
-    add column if not exists severity_reasoning text;
-
-alter table incident_logs
-    add column if not exists severity_flags text;
-
-alter table incident_logs
-    add column if not exists severity_model text;
-
-alter table incident_logs
-    add column if not exists severity_decision_source text;
-
-alter table incident_logs
-    add column if not exists headline_en text;
-
-alter table incident_logs
-    add column if not exists headline_zh text;
-
-alter table incident_logs
-    add column if not exists company_involved_zh text;
-
-alter table incident_logs
-    add column if not exists incident_topic text;
-
-alter table incident_logs
-    add column if not exists reality_summary_en text;
-
-alter table incident_logs
-    add column if not exists reality_summary_zh text;
-
-alter table incident_logs
-    add column if not exists legitimacy_score double precision;
-
-alter table incident_logs
-    add column if not exists legitimacy_label text;
-
-alter table incident_logs
-    add column if not exists legitimacy_reasoning text;
-
-alter table incident_logs
-    add column if not exists legitimacy_reasoning_zh text;
-
-alter table incident_logs
-    add column if not exists source_validation_summary text;
-
-alter table incident_logs
-    add column if not exists source_validation_summary_zh text;
-
-alter table incident_logs
-    add column if not exists incident_summary_en text;
-
-alter table incident_logs
-    add column if not exists incident_summary_zh text;
-
-alter table incident_logs
-    add column if not exists what_happened_en text;
-
-alter table incident_logs
-    add column if not exists what_happened_zh text;
-
-alter table incident_logs
-    add column if not exists ai_failure_point_en text;
-
-alter table incident_logs
-    add column if not exists ai_failure_point_zh text;
-
-alter table incident_logs
-    add column if not exists why_it_matters_en text;
-
-alter table incident_logs
-    add column if not exists why_it_matters_zh text;
-
-alter table incident_logs
-    add column if not exists evidence_summary_en text;
-
-alter table incident_logs
-    add column if not exists evidence_summary_zh text;
-
-alter table incident_logs
-    add column if not exists publication_track text;
-
-alter table incident_logs
-    add column if not exists evidence_tier text;
-
-alter table incident_logs
-    add column if not exists source_family text;
-
-alter table incident_logs
-    add column if not exists verification_summary text;
-
-alter table incident_logs
-    add column if not exists legitimacy_flag text;
-
-alter table incident_logs
-    add column if not exists confidence_level text;
-
-alter table incident_logs
-    add column if not exists import_notes text;
-
-alter table incident_logs
-    add column if not exists translation_status text;
-
-alter table incident_logs
-    add column if not exists review_batch_id text;
-
-alter table incident_logs
-    add column if not exists review_model text;
-
-alter table incident_logs
-    add column if not exists duplicate_status text;
-
-alter table incident_logs
-    add column if not exists duplicate_of_incident_id text references incident_logs(id);
-
-alter table incident_logs
-    add column if not exists canonical_incident_id text references incident_logs(id);
-
-alter table incident_logs
-    add column if not exists embedding_model text;
-
-alter table incident_logs
-    add column if not exists embedding_vector text;
-
-alter table incident_logs
-    add column if not exists reviewed_at timestamptz;
-
-alter table incident_logs
-    add column if not exists severity_suggested_at timestamptz;
-
-alter table incident_logs
-    add column if not exists translated_at timestamptz;
-
 create table if not exists incident_sources (
-    id text primary key,
-    incident_id text not null references incident_logs(id) on delete cascade,
+    id uuid primary key default gen_random_uuid(),
+    incident_id uuid not null references incident_logs(id) on delete cascade,
     source_url text not null,
     canonical_url text,
     source_type text not null,
     publisher text,
     title text,
-    published_at text,
+    published_at timestamptz,
     fetch_status text,
     http_status integer,
     evidence_text text,
     fetch_error text,
     source_origin text,
     source_registry_key text,
-    raw_source_payload text,
+    raw_source_payload jsonb,
     fetched_at timestamptz,
-    is_primary integer not null default 0,
-    created_at timestamptz default current_timestamp
+    is_primary boolean not null default false,
+    created_at timestamptz not null default current_timestamp,
+    unique (incident_id, source_url)
 );
-
-alter table incident_sources
-    add column if not exists canonical_url text;
-
-alter table incident_sources
-    add column if not exists fetch_status text;
-
-alter table incident_sources
-    add column if not exists http_status integer;
-
-alter table incident_sources
-    add column if not exists evidence_text text;
-
-alter table incident_sources
-    add column if not exists fetch_error text;
-
-alter table incident_sources
-    add column if not exists source_origin text;
-
-alter table incident_sources
-    add column if not exists source_registry_key text;
-
-alter table incident_sources
-    add column if not exists raw_source_payload text;
-
-alter table incident_sources
-    add column if not exists fetched_at timestamptz;
-
-update incident_logs
-set
-    publication_track = coalesce(publication_track, 'verified_accident'),
-    evidence_tier = coalesce(evidence_tier, 'official_documented'),
-    source_family = coalesce(source_family, 'autonomous_vehicle'),
-    verification_summary = coalesce(
-        nullif(verification_summary, ''),
-        'California DMV collision-report metadata documents this autonomous-vehicle incident; editorial review still checks AI relevance, severity, and exact causal claims.'
-    )
-where lower(company_involved) = 'waymo'
-  and (
-      headline ilike '%california dmv%'
-      or headline ilike '%dmv collision%'
-      or reality_summary ilike '%california dmv%'
-      or reality_summary ilike '%dmv collision%'
-      or categories::text ilike '%autonomous systems%'
-  );
-
-update incident_sources
-set
-    source_origin = coalesce(source_origin, 'fixed_verified_source'),
-    source_registry_key = coalesce(source_registry_key, 'ca_dmv_av_collisions')
-where incident_id in (
-    select id
-    from incident_logs
-    where publication_track = 'verified_accident'
-      and source_family = 'autonomous_vehicle'
-      and lower(company_involved) = 'waymo'
-)
-  and (
-      publisher ilike '%dmv%'
-      or source_url ilike '%dmv.ca.gov%'
-  );
 
 create table if not exists incident_duplicate_candidates (
-    id text primary key,
-    incident_id text not null references incident_logs(id) on delete cascade,
-    candidate_incident_id text not null references incident_logs(id) on delete cascade,
-    embedding_score double precision not null,
+    id uuid primary key default gen_random_uuid(),
+    incident_id uuid not null references incident_logs(id) on delete cascade,
+    candidate_incident_id uuid not null references incident_logs(id) on delete cascade,
+    embedding_score numeric(6, 5) not null,
     llm_verdict text not null,
-    confidence double precision not null,
+    confidence numeric(4, 3) not null,
     reasoning text,
     status text not null,
-    created_at timestamptz default current_timestamp
+    created_at timestamptz not null default current_timestamp,
+    unique (incident_id, candidate_incident_id)
 );
 
-create unique index if not exists claim_sources_claim_url_unique_idx
-    on claim_sources (claim_id, source_url);
+create index if not exists incident_logs_date_logged_idx
+    on incident_logs (date_logged desc);
+
+create index if not exists incident_logs_severity_score_idx
+    on incident_logs (severity_score);
+
+create index if not exists incident_logs_company_involved_idx
+    on incident_logs (company_involved);
+
+create index if not exists incident_logs_claimant_name_idx
+    on incident_logs (claimant_name);
+
+create index if not exists incident_logs_status_idx
+    on incident_logs (status);
+
+create index if not exists incident_logs_publication_track_idx
+    on incident_logs (publication_track);
+
+create index if not exists incident_logs_source_family_idx
+    on incident_logs (source_family);
+
+create index if not exists incident_logs_categories_idx
+    on incident_logs using gin (categories);
+
+create index if not exists claims_company_involved_idx
+    on claims (company_involved);
+
+create index if not exists claims_claim_date_idx
+    on claims (claim_date desc);
 
 create index if not exists claim_sources_claim_id_idx
     on claim_sources (claim_id);
 
 create index if not exists claim_sources_source_kind_idx
     on claim_sources (source_kind);
-
-create unique index if not exists incident_logs_external_id_unique_idx
-    on incident_logs (external_id)
-    where external_id is not null;
-
-create unique index if not exists incident_duplicate_candidates_unique_idx
-    on incident_duplicate_candidates (incident_id, candidate_incident_id);

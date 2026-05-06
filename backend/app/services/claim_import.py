@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from io import StringIO
 from urllib.parse import urlparse
+from uuid import UUID, uuid4
 
 from app.db.repository_protocol import IncidentRepository
 
@@ -89,6 +90,7 @@ def parse_claims_csv_text(csv_text: str) -> list[ParsedClaimImportRow]:
 
         claim_id = row.get("id") or None
         if claim_id:
+            _validate_uuid(claim_id, line_number)
             if claim_id in seen_ids:
                 raise ClaimImportValidationError(
                     "Invalid claim import at line "
@@ -128,17 +130,12 @@ def import_claims_csv_text(
         )
 
     rows = parse_claims_csv_text(csv_text)
-    generated_counts: dict[str, int] = {}
-
     if dry_run:
         return ClaimImportSummary(validated=len(rows), inserted=0)
 
     inserted = 0
     for row in rows:
-        claim_id = row.claim_id or _generate_claim_id(
-            row.company_involved,
-            generated_counts,
-        )
+        claim_id = row.claim_id or _generate_claim_id()
         repository.upsert_claim_import_row(
             claim_id=claim_id,
             claimant_name=row.claimant_name,
@@ -187,7 +184,14 @@ def _validate_iso_date(value: str, line_number: int) -> None:
         )
 
 
-def _generate_claim_id(company_involved: str, generated_counts: dict[str, int]) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", company_involved.lower()).strip("-")
-    generated_counts[slug] = generated_counts.get(slug, 0) + 1
-    return f"claim-{slug}-{generated_counts[slug]:03d}"
+def _validate_uuid(value: str, line_number: int) -> None:
+    try:
+        UUID(value)
+    except ValueError as exc:
+        raise ClaimImportValidationError(
+            f"Invalid claim import at line {line_number}: id must be a UUID"
+        ) from exc
+
+
+def _generate_claim_id() -> str:
+    return str(uuid4())

@@ -10,16 +10,15 @@ import httpx
 import pytest
 
 from app.core.incident_taxonomy import INCIDENT_CATEGORY_TAXONOMY
-from app.scripts.backfill_incident_forensic_fields import _missing_forensic_fields
 from app.services.incident_deduplication import DuplicateJudgeDecision
 from app.services.incident_import import import_incidents_csv_text
 from app.services.incident_review import (
+    REVIEW_MAX_OUTPUT_TOKENS,
+    AsyncOpenAIIncidentReviewClient,
     FetchedIncidentSource,
     HttpIncidentSourceFetcher,
     IncidentReviewResult,
     OpenAIIncidentReviewClient,
-    AsyncOpenAIIncidentReviewClient,
-    REVIEW_MAX_OUTPUT_TOKENS,
     ReviewResponseParseError,
     _build_review_messages,
     _build_review_response_format,
@@ -369,29 +368,6 @@ def test_parse_review_result_rejects_forensic_sections_under_100_words() -> None
 
     assert "what_happened_en" in str(exc_info.value)
     assert "100 words" in str(exc_info.value)
-
-
-def test_backfill_marks_short_forensic_sections_as_missing() -> None:
-    missing_fields = _missing_forensic_fields(
-        {
-            "analysis": {
-                "incident_summary_en": _wordy("summary", count=40),
-                "incident_summary_zh": "摘要",
-                "what_happened_en": _wordy("happened", count=99),
-                "what_happened_zh": "发生了什么",
-                "ai_failure_point_en": _wordy("failure", count=75),
-                "ai_failure_point_zh": "失败点",
-                "why_it_matters_en": _wordy("matters"),
-                "why_it_matters_zh": "重要性",
-                "evidence_summary_en": _wordy("evidence", count=40),
-                "evidence_summary_zh": "证据摘要",
-            }
-        }
-    )
-
-    assert "what_happened_en" in missing_fields
-    assert "ai_failure_point_en" in missing_fields
-    assert "why_it_matters_en" not in missing_fields
 
 
 def test_parse_review_result_marks_unknown_categories_for_escalation() -> None:

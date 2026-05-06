@@ -55,6 +55,28 @@ It is not yet a full launch-ready MVP. The main remaining gaps are review audit 
 
 The backend now expects a PostgreSQL `DATABASE_URL`. Point it at a local PostgreSQL database before starting the API. On first connection, the repository bootstraps the core tables, but it does not auto-seed or re-seed incident data when tables are empty.
 
+To intentionally wipe and recreate a local or development database from the fresh dual-track schema:
+
+```bash
+psql "$DATABASE_URL" -f infra/supabase/reset_local_dev.sql
+```
+
+This command drops the app tables and destroys their data. Do not run it against production.
+
+After a reset, inject data through the current import paths:
+
+```bash
+cd backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.import_claims_csv /path/to/claims.csv --dry-run
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.import_claims_csv /path/to/claims.csv
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.import_incidents_csv /path/to/incidents.csv --dry-run
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.import_incidents_csv /path/to/incidents.csv
+```
+
+Claim CSV `id` values are UUIDs. Leave `id` blank to let the importer generate
+one. Incident CSV `incident_id` remains an external import key and is stored in
+`incident_logs.external_id`; the database row id is generated as a UUID.
+
 ## Run Locally
 
 ### Frontend
@@ -118,7 +140,7 @@ cd backend
 - primary LLM review with strict structured output, taxonomy-bound categories, severity suggestion, and approval gating
 - resumable historical backfill with checkpoint and audit files
 - daily ingestion orchestration with retry and run metrics
-- CSV claim import with `python -m app.scripts.import_claims_csv /path/to/claims.csv --dry-run`
+- CSV claim import with UUID primary keys; omit `id` to generate one
 - incident daily runner commands documented in `docs/product/daily-runner.md`
 - canonical operator research prompt for ChatGPT Deep Research / Gemini Deep Research in `backend/app/services/case_search_prompt.py`
 

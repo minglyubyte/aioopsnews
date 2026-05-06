@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from app.db._serializers import (
-    build_public_claim_payload,
     group_sources_by_incident,
-    parse_text_array as _parse_text_array,
-    sanitize_reader_text as _sanitize_reader_text,
     serialize_duplicate_candidate_row,
     serialize_duplicate_search_row,
     serialize_internal_incident,
@@ -19,7 +15,6 @@ from app.db._serializers import (
     serialize_review_queue_row,
     serialize_review_result_row,
     serialize_translation_result_row,
-    _fallback_public_evidence_summary,
 )
 from app.models.claim import ClaimRecord
 from app.scrapers.rss import RSSArticle
@@ -37,6 +32,7 @@ except ModuleNotFoundError:
     ConnectionPool = None
 
 _POSTGRES_SCHEMA = (Path(__file__).parent / "_schema.sql").read_text()
+
 
 class PostgresIncidentRepository:
     def __init__(self, database_url: str) -> None:
@@ -91,10 +87,7 @@ class PostgresIncidentRepository:
                 (*params, filters.page_size, offset),
             ).fetchall()
 
-        return [
-            serialize_public_archive_row(row)
-            for row in incident_rows
-        ]
+        return [serialize_public_archive_row(row) for row in incident_rows]
 
     def list_public_incident_feed(
         self,
@@ -129,9 +122,7 @@ class PostgresIncidentRepository:
                     category.value as category,
                     count(*) as count
                 from incident_logs
-                cross join lateral jsonb_array_elements_text(
-                    incident_logs.categories::jsonb
-                ) as category(value)
+                cross join lateral unnest(incident_logs.categories) as category(value)
                 where {where_sql}
                 group by category.value
                 order by count(*) desc, category.value asc
@@ -185,10 +176,7 @@ class PostgresIncidentRepository:
         total_count = int(count_row["total_count"])
         total_pages = max((total_count + filters.page_size - 1) // filters.page_size, 1)
         return {
-            "items": [
-                serialize_public_archive_row(row)
-                for row in incident_rows
-            ],
+            "items": [serialize_public_archive_row(row) for row in incident_rows],
             "page": filters.page,
             "page_size": filters.page_size,
             "total_count": total_count,
@@ -652,9 +640,7 @@ class PostgresIncidentRepository:
         publication_tracks = sorted(
             {incident["publication_track"] for incident in incidents}
         )
-        source_families = sorted(
-            {incident["source_family"] for incident in incidents}
-        )
+        source_families = sorted({incident["source_family"] for incident in incidents})
         company_labels_zh = {
             company: next(
                 (
@@ -713,8 +699,8 @@ class PostgresIncidentRepository:
             if existing_row is not None:
                 return False
 
-            incident_id = f"incident-{uuid4()}"
-            source_id = f"source-{uuid4()}"
+            incident_id = str(uuid4())
+            source_id = str(uuid4())
 
             connection.execute(
                 """
@@ -756,7 +742,7 @@ class PostgresIncidentRepository:
                     "Pending classification",
                     None,
                     None,
-                    json.dumps([]),
+                    [],
                     1,
                     article.summary,
                     article.summary,
@@ -805,8 +791,8 @@ class PostgresIncidentRepository:
                     article.published_at.isoformat(),
                     "search_discovery",
                     article.source_key,
-                    json.dumps({"source_key": article.source_key}),
-                    0,
+                    {"source_key": article.source_key},
+                    False,
                 ),
             )
             connection.commit()
@@ -859,7 +845,7 @@ class PostgresIncidentRepository:
                     review_notes = trim(concat(coalesce(review_notes, ''), ' ', %s)),
                     updated_at = current_timestamp
                 where id = %s
-                  and coalesce(publication_track, 'accident_watch') = %s
+                  and publication_track = %s
                 """,
                 (
                     "pending_llm_review",
@@ -981,7 +967,7 @@ class PostgresIncidentRepository:
                 (
                     company_involved,
                     claimant_name,
-                    json.dumps(categories),
+                    categories,
                     reality_summary,
                     confidence_score,
                     review_notes,
@@ -1033,7 +1019,7 @@ class PostgresIncidentRepository:
                     status,
                     company_involved,
                     claimant_name,
-                    json.dumps(categories),
+                    categories,
                     severity_score,
                     severity_score,
                     reality_summary,
@@ -1176,7 +1162,7 @@ class PostgresIncidentRepository:
             for display_order, source_url in enumerate(primary_source_links):
                 source_rows.append(
                     (
-                        f"claim-source-{uuid4()}",
+                        str(uuid4()),
                         claim_id,
                         source_url,
                         "primary",
@@ -1186,7 +1172,7 @@ class PostgresIncidentRepository:
             for display_order, source_url in enumerate(secondary_source_links):
                 source_rows.append(
                     (
-                        f"claim-source-{uuid4()}",
+                        str(uuid4()),
                         claim_id,
                         source_url,
                         "secondary",
@@ -1250,7 +1236,7 @@ class PostgresIncidentRepository:
                 (external_id,),
             ).fetchone()
             resolved_incident_id = (
-                incident_id["id"] if incident_id is not None else f"incident-{uuid4()}"
+                incident_id["id"] if incident_id is not None else str(uuid4())
             )
             connection.execute(
                 """
@@ -1338,7 +1324,7 @@ class PostgresIncidentRepository:
                     company_involved,
                     incident_topic,
                     None,
-                    json.dumps([]),
+                    [],
                     3,
                     reality_summary,
                     reality_summary,
@@ -1376,7 +1362,7 @@ class PostgresIncidentRepository:
                     raw_source_payload = raw_source_payloads[display_order]
                 source_rows.append(
                     (
-                        f"source-{uuid4()}",
+                        str(uuid4()),
                         resolved_incident_id,
                         source_url,
                         None,
@@ -1390,8 +1376,8 @@ class PostgresIncidentRepository:
                         None,
                         source_origin or "manual_import",
                         source_registry_key,
-                        json.dumps(raw_source_payload) if raw_source_payload else None,
-                        1 if display_order == 0 else 0,
+                        raw_source_payload,
+                        display_order == 0,
                     )
                 )
             self._execute_many(
@@ -1475,7 +1461,7 @@ class PostgresIncidentRepository:
                     updated_at = current_timestamp
                 where id = %s
                 """,
-                (embedding_model, json.dumps(embedding_vector), incident_id),
+                (embedding_model, embedding_vector, incident_id),
             )
             connection.commit()
 
@@ -1505,7 +1491,7 @@ class PostgresIncidentRepository:
                     ) values (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        f"duplicate-candidate-{uuid4()}",
+                        str(uuid4()),
                         incident_id,
                         candidate["candidate_incident_id"],
                         candidate["embedding_score"],
@@ -1578,9 +1564,7 @@ class PostgresIncidentRepository:
                 """,
                 (canonical_incident_id,),
             ).fetchall()
-            existing_source_urls = {
-                row["source_url"] for row in existing_source_rows
-            }
+            existing_source_urls = {row["source_url"] for row in existing_source_rows}
             duplicate_source_rows = connection.execute(
                 """
                 select
@@ -1627,7 +1611,7 @@ class PostgresIncidentRepository:
                     )
                     """,
                     (
-                        f"source-{uuid4()}",
+                        str(uuid4()),
                         canonical_incident_id,
                         row["source_url"],
                         row["canonical_url"],
@@ -1771,12 +1755,12 @@ class PostgresIncidentRepository:
                     headline_en,
                     reality_summary_en,
                     reality_summary_en,
-                    json.dumps(categories),
+                    categories,
                     severity_score,
                     suggested_severity_score,
                     severity_confidence,
                     severity_reasoning,
-                    json.dumps(severity_flags),
+                    severity_flags,
                     severity_model,
                     severity_decision_source,
                     legitimacy_score,
@@ -2040,10 +2024,7 @@ class PostgresIncidentRepository:
                 """,
                 (incident_id,),
             ).fetchall()
-        return [
-            serialize_duplicate_candidate_row(row)
-            for row in rows
-        ]
+        return [serialize_duplicate_candidate_row(row) for row in rows]
 
     def _connect(self):
         return self._pool.connection()
@@ -2068,9 +2049,8 @@ class PostgresIncidentRepository:
         params: list[Any] = ["approved"]
 
         if filters.category:
-            where_clauses.append("incident_logs.categories like %s")
-            category_pattern = json.dumps(filters.category).strip('"')
-            params.append(f"%{category_pattern}%")
+            where_clauses.append("%s = any(incident_logs.categories)")
+            params.append(filters.category)
         if filters.company:
             where_clauses.append("incident_logs.company_involved = %s")
             params.append(filters.company)
@@ -2084,14 +2064,10 @@ class PostgresIncidentRepository:
             where_clauses.append("incident_logs.severity_score <= %s")
             params.append(filters.severity_max)
         if filters.publication_track:
-            where_clauses.append(
-                "coalesce(incident_logs.publication_track, 'accident_watch') = %s"
-            )
+            where_clauses.append("incident_logs.publication_track = %s")
             params.append(filters.publication_track)
         if filters.source_family:
-            where_clauses.append(
-                "coalesce(incident_logs.source_family, 'other') = %s"
-            )
+            where_clauses.append("incident_logs.source_family = %s")
             params.append(filters.source_family)
         if filters.year is not None:
             where_clauses.append(

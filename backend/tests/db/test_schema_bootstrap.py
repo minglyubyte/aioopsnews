@@ -30,7 +30,7 @@ DUAL_PIPELINE_INCIDENT_COLUMN_DEFINITIONS = [
 DUAL_PIPELINE_SOURCE_COLUMN_DEFINITIONS = [
     "source_origin text",
     "source_registry_key text",
-    "raw_source_payload text",
+    "raw_source_payload jsonb",
 ]
 
 
@@ -48,9 +48,7 @@ def test_product_docs_are_reorganized_into_four_canonical_files() -> None:
 
 
 def test_product_decision_record_captures_mvp_foundation() -> None:
-    decision_record = (
-        REPO_ROOT / "docs" / "product" / "prod-spec.md"
-    ).read_text()
+    decision_record = (REPO_ROOT / "docs" / "product" / "prod-spec.md").read_text()
 
     lowered = decision_record.lower()
 
@@ -64,7 +62,12 @@ def test_product_decision_record_captures_mvp_foundation() -> None:
 def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     normalized = _POSTGRES_SCHEMA.lower()
 
+    assert "alter table" not in normalized
+    assert "update incident_logs" not in normalized
+    assert "update incident_sources" not in normalized
+    assert "create extension if not exists pgcrypto" in normalized
     assert "create table if not exists claims" in normalized
+    assert "id uuid primary key default gen_random_uuid()" in normalized
     assert "notes text" in normalized
     assert "create table if not exists claim_sources" in normalized
     assert "create table if not exists incident_logs" in normalized
@@ -75,12 +78,13 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "source_kind text not null" in normalized
     assert "external_id text" in normalized
     assert "incident_topic text" in normalized
-    assert "severity_confidence double precision" in normalized
+    assert "categories text[] not null default '{}'" in normalized
+    assert "severity_confidence numeric(4, 3)" in normalized
     assert "severity_reasoning text" in normalized
-    assert "severity_flags text" in normalized
+    assert "severity_flags text[] not null default '{}'" in normalized
     assert "severity_model text" in normalized
     assert "severity_decision_source text" in normalized
-    assert "legitimacy_score double precision" in normalized
+    assert "legitimacy_score numeric(4, 3)" in normalized
     assert "legitimacy_label text" in normalized
     assert "legitimacy_reasoning text" in normalized
     assert "legitimacy_reasoning_zh text" in normalized
@@ -96,28 +100,28 @@ def test_postgres_schema_defines_claim_sources_notes_and_core_tables() -> None:
     assert "review_batch_id text" in normalized
     assert "review_model text" in normalized
     assert "duplicate_status text" in normalized
-    assert "duplicate_of_incident_id text references incident_logs(id)" in normalized
-    assert "canonical_incident_id text references incident_logs(id)" in normalized
+    assert "duplicate_of_incident_id uuid references incident_logs(id)" in normalized
+    assert "canonical_incident_id uuid references incident_logs(id)" in normalized
     assert "embedding_model text" in normalized
-    assert "embedding_vector text" in normalized
+    assert "embedding_vector jsonb" in normalized
     assert "reviewed_at timestamptz" in normalized
     assert "severity_suggested_at timestamptz" in normalized
     assert "canonical_url text" in normalized
     assert "fetch_status text" in normalized
     assert "http_status integer" in normalized
     assert "evidence_text text" in normalized
+    assert "raw_source_payload jsonb" in normalized
+    assert "is_primary boolean not null default false" in normalized
     assert "create table if not exists incident_duplicate_candidates" in normalized
     for column_definition in FORENSIC_COLUMN_DEFINITIONS:
         assert column_definition in normalized
     for column_definition in DUAL_PIPELINE_INCIDENT_COLUMN_DEFINITIONS:
         assert column_definition in normalized
-        assert f"add column if not exists {column_definition}" in normalized
     for column_definition in DUAL_PIPELINE_SOURCE_COLUMN_DEFINITIONS:
         assert column_definition in normalized
-        assert f"add column if not exists {column_definition}" in normalized
 
 
-def test_initial_migration_bootstraps_same_core_tables() -> None:
+def test_initial_migration_matches_fresh_postgres_native_schema() -> None:
     migration_path = (
         REPO_ROOT
         / "infra"
@@ -128,7 +132,11 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
 
     migration_sql = migration_path.read_text().lower()
 
+    assert "alter table" not in migration_sql
+    assert "update incident_logs" not in migration_sql
+    assert "create extension if not exists pgcrypto" in migration_sql
     assert "create table if not exists claims" in migration_sql
+    assert "id uuid primary key default gen_random_uuid()" in migration_sql
     assert "notes text" in migration_sql
     assert "create table if not exists claim_sources" in migration_sql
     assert "create table if not exists incident_logs" in migration_sql
@@ -137,9 +145,10 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     assert "incident_topic text" in migration_sql
     assert "suggested_severity_score integer" in migration_sql
     assert "legitimacy_score" in migration_sql
-    assert "severity_confidence" in migration_sql
+    assert "categories text[] not null default '{}'" in migration_sql
+    assert "severity_confidence numeric(4, 3)" in migration_sql
     assert "severity_reasoning text" in migration_sql
-    assert "severity_flags text" in migration_sql
+    assert "severity_flags text[] not null default '{}'" in migration_sql
     assert "severity_model text" in migration_sql
     assert "severity_decision_source text" in migration_sql
     assert "headline_zh text" in migration_sql
@@ -151,52 +160,42 @@ def test_initial_migration_bootstraps_same_core_tables() -> None:
     assert "review_model text" in migration_sql
     assert "duplicate_status text" in migration_sql
     assert "embedding_model text" in migration_sql
+    assert "embedding_vector jsonb" in migration_sql
     assert "create table if not exists incident_duplicate_candidates" in migration_sql
     assert "canonical_url text" in migration_sql
+    assert "raw_source_payload jsonb" in migration_sql
+    assert "is_primary boolean not null default false" in migration_sql
     for column_definition in DUAL_PIPELINE_INCIDENT_COLUMN_DEFINITIONS:
         assert column_definition in migration_sql
     for column_definition in DUAL_PIPELINE_SOURCE_COLUMN_DEFINITIONS:
         assert column_definition in migration_sql
 
 
-def test_dual_track_migration_backfills_dmv_waymo_fixture() -> None:
-    migration_path = (
-        REPO_ROOT
-        / "infra"
-        / "supabase"
-        / "migrations"
-        / "20260505120000_dual_track_incident_metadata.sql"
+def test_legacy_additive_migrations_were_removed() -> None:
+    migrations = sorted(
+        path.name
+        for path in (REPO_ROOT / "infra" / "supabase" / "migrations").glob("*.sql")
     )
+
+    assert migrations == ["20260429170000_initial_incident_schema.sql"]
+
+
+def test_local_dev_reset_drops_tables_before_recreating_schema() -> None:
+    migration_path = REPO_ROOT / "infra" / "supabase" / "reset_local_dev.sql"
 
     migration_sql = migration_path.read_text().lower()
 
-    assert (
-        "source_registry_key = coalesce(source_registry_key, 'ca_dmv_av_collisions')"
-        in migration_sql
-    )
-    assert (
-        "publication_track = coalesce(publication_track, 'verified_accident')"
-        in migration_sql
-    )
-    assert "source_url ilike '%dmv.ca.gov%'" in migration_sql
+    expected_order = [
+        "drop table if exists incident_duplicate_candidates cascade",
+        "drop table if exists incident_sources cascade",
+        "drop table if exists incident_logs cascade",
+        "drop table if exists claim_sources cascade",
+        "drop table if exists claims cascade",
+    ]
+    positions = [migration_sql.index(statement) for statement in expected_order]
 
-
-def test_forensic_migration_adds_incident_log_review_fields() -> None:
-    migration_path = (
-        REPO_ROOT
-        / "infra"
-        / "supabase"
-        / "migrations"
-        / "20260501120000_incident_forensic_fields.sql"
-    )
-
-    migration_sql = migration_path.read_text().lower()
-
-    assert "alter table incident_logs" in migration_sql
-    for column_definition in FORENSIC_COLUMN_DEFINITIONS:
-        assert column_definition in migration_sql
-        assert f"add column if not exists {column_definition}" in migration_sql
-        assert f"add column if not exists {column_definition}" in _POSTGRES_SCHEMA.lower()
+    assert positions == sorted(positions)
+    assert "\\ir migrations/20260429170000_initial_incident_schema.sql" in migration_sql
 
 
 def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
@@ -228,7 +227,10 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         status="pending_editor_review",
         confidence_score=0.82,
         severity_confidence=0.88,
-        severity_reasoning="The incident caused meaningful operational disruption that required manual intervention.",
+        severity_reasoning=(
+            "The incident caused meaningful operational disruption that required "
+            "manual intervention."
+        ),
         severity_flags=["core_system_outage"],
         severity_model="gpt-5.4-mini",
         severity_decision_source="editor",
@@ -246,18 +248,29 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         headline_zh="智能体发布导致错误客户升级",
         incident_summary_en="Support agents mishandled escalations after rollout.",
         incident_summary_zh="发布后支持智能体错误处理了升级请求。",
-        what_happened_en="The launch produced repeated customer escalations and manual fallbacks.",
+        what_happened_en=(
+            "The launch produced repeated customer escalations and manual fallbacks."
+        ),
         what_happened_zh="这次发布导致反复的客户升级和人工兜底。",
-        ai_failure_point_en="The routing agent misclassified urgent complaints as low priority.",
+        ai_failure_point_en=(
+            "The routing agent misclassified urgent complaints as low priority."
+        ),
         ai_failure_point_zh="路由智能体将紧急投诉误判为低优先级。",
-        why_it_matters_en="The issue affected real customers and increased manual support load.",
+        why_it_matters_en=(
+            "The issue affected real customers and increased manual support load."
+        ),
         why_it_matters_zh="该问题影响了真实客户并增加了人工支持负担。",
-        evidence_summary_en="Three independent reports and an internal status page confirm the disruption.",
+        evidence_summary_en=(
+            "Three independent reports and an internal status page confirm the "
+            "disruption."
+        ),
         evidence_summary_zh="三份独立报道和内部状态页证实了这次故障。",
         publication_track="accident_watch",
         evidence_tier="reported_unconfirmed",
         source_family="customer_support",
-        verification_summary="Reported by credible sources; official confirmation remains pending.",
+        verification_summary=(
+            "Reported by credible sources; official confirmation remains pending."
+        ),
         translation_status="completed",
         import_notes="Imported from 2023 editorial batch.",
         review_batch_id="batch-123",
@@ -308,7 +321,10 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         "Reported by credible sources; official confirmation remains pending."
     )
     assert incident.headline_zh == "智能体发布导致错误客户升级"
-    assert incident.incident_summary_en == "Support agents mishandled escalations after rollout."
+    assert (
+        incident.incident_summary_en
+        == "Support agents mishandled escalations after rollout."
+    )
     assert incident.incident_summary_zh == "发布后支持智能体错误处理了升级请求。"
     assert (
         incident.what_happened_en
@@ -320,7 +336,8 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
     assert incident.why_it_matters_zh == "该问题影响了真实客户并增加了人工支持负担。"
     assert (
         incident.evidence_summary_en
-        == "Three independent reports and an internal status page confirm the disruption."
+        == "Three independent reports and an internal status page confirm the "
+        "disruption."
     )
     assert incident.company_involved_zh == "OpenAI 中文"
     assert incident.legitimacy_reasoning_zh == "三条强有力的来源支持这起事件。"
