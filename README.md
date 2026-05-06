@@ -141,6 +141,8 @@ cd backend
 - resumable historical backfill with checkpoint and audit files
 - daily ingestion orchestration with retry and run metrics
 - CSV claim import with UUID primary keys; omit `id` to generate one
+- fixed-source accident CSV generation with
+  `python -m app.scripts.generate_verified_source_csv --sources all`
 - incident daily runner commands documented in `docs/product/daily-runner.md`
 - canonical operator research prompt for ChatGPT Deep Research / Gemini Deep Research in `backend/app/services/case_search_prompt.py`
 

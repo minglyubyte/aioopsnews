@@ -23,7 +23,9 @@ def test_dual_track_runner_script_builds_brave_provider_and_prints_summary(
 ) -> None:
     repository = _StubRepository()
     provider_calls: list[dict[str, object]] = []
+    fetch_calls: list[dict[str, object]] = []
     runner_calls: list[dict[str, object]] = []
+    verified_records = [object()]
     summary = {
         "accident_sources_seen": 0,
         "accidents_created": 0,
@@ -56,7 +58,10 @@ def test_dual_track_runner_script_builds_brave_provider_and_prints_summary(
         "parse_args",
         lambda self: argparse.Namespace(
             skip_news=False,
-            skip_verified=True,
+            skip_verified=False,
+            verified_sources="all",
+            since="2026-01-01",
+            limit_per_source=5,
             dry_run=False,
         ),
     )
@@ -69,6 +74,11 @@ def test_dual_track_runner_script_builds_brave_provider_and_prints_summary(
         runner_script,
         "run_dual_track_daily_ingestion",
         lambda **kwargs: runner_calls.append(kwargs) or summary,
+    )
+    monkeypatch.setattr(
+        runner_script,
+        "fetch_verified_source_records",
+        lambda **kwargs: fetch_calls.append(kwargs) or verified_records,
     )
 
     exit_code = runner_script.main()
@@ -83,9 +93,16 @@ def test_dual_track_runner_script_builds_brave_provider_and_prints_summary(
         }
     ]
     assert runner_calls[0]["repository"] is repository
-    assert runner_calls[0]["verified_records"] == []
+    assert runner_calls[0]["verified_records"] == verified_records
     assert runner_calls[0]["search_provider"] is not None
     assert runner_calls[0]["dry_run"] is False
+    assert fetch_calls == [
+        {
+            "sources": None,
+            "since": "2026-01-01",
+            "limit_per_source": 5,
+        }
+    ]
     assert json.loads(capsys.readouterr().out) == summary
 
 
@@ -106,6 +123,9 @@ def test_dual_track_runner_script_requires_brave_key_for_news(
         lambda self: argparse.Namespace(
             skip_news=False,
             skip_verified=True,
+            verified_sources="all",
+            since=None,
+            limit_per_source=50,
             dry_run=False,
         ),
     )
@@ -152,6 +172,9 @@ def test_dual_track_runner_script_allows_skip_news_without_brave_key(
         lambda self: argparse.Namespace(
             skip_news=True,
             skip_verified=True,
+            verified_sources="all",
+            since=None,
+            limit_per_source=50,
             dry_run=False,
         ),
     )

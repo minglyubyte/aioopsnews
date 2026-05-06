@@ -47,6 +47,10 @@ Useful options:
 --skip-news       # run only the accident side
 --skip-verified   # run only AI News discovery
 --dry-run         # compute create/skip counts without writing rows
+--verified-sources all
+--verified-sources ca_dmv_av_collisions,nhtsa_data
+--since 2026-01-01
+--limit-per-source 50
 ```
 
 The runner prints a JSON summary with:
@@ -63,9 +67,32 @@ The runner prints a JSON summary with:
 
 ### AI Accident Track
 
+- The runner fetches fixed-source records from:
+  - California DMV autonomous vehicle collision reports
+  - NHTSA Standing General Order crash reporting data
+  - Damien Charlotin's AI hallucination case tracker
+  - EDRM judicial orders
 - New fixed-source accident records are written with `publication_track="verified_accident"` and `status="pending_llm_review"`.
 - Existing `external_id` or source URL matches are skipped.
 - Existing reviewed incidents are not overwritten or moved back into review.
+
+To generate a CSV for inspection before importing, run:
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.generate_verified_source_csv \
+  --sources all \
+  --since 2026-01-01 \
+  --limit-per-source 50 \
+  --out app/imports/inbox/verified-source-auto.csv
+```
+
+Then validate the generated CSV with:
+
+```bash
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.import_incidents_csv \
+  app/imports/inbox/verified-source-auto.csv --dry-run
+```
 
 ### AI News Track
 

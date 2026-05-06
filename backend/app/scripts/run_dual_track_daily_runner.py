@@ -6,6 +6,7 @@ import logging
 
 from app.core.config import get_settings
 from app.db.repository_factory import build_incident_repository
+from app.scrapers.verified_sources import fetch_verified_source_records
 from app.workflows.dual_track_ingestion import (
     BraveNewsSearchProvider,
     run_dual_track_daily_ingestion,
@@ -32,6 +33,22 @@ def main() -> int:
         "--dry-run",
         action="store_true",
         help="Compute create/skip counts without writing incident rows.",
+    )
+    parser.add_argument(
+        "--verified-sources",
+        default="all",
+        help="Comma-separated fixed source registry keys, or 'all'.",
+    )
+    parser.add_argument(
+        "--since",
+        default=None,
+        help="Only include fixed-source records on or after this YYYY-MM-DD date.",
+    )
+    parser.add_argument(
+        "--limit-per-source",
+        type=int,
+        default=50,
+        help="Maximum fixed-source records to fetch per source.",
     )
     args = parser.parse_args()
     _configure_logging()
@@ -60,9 +77,27 @@ def main() -> int:
                 freshness=settings.ai_news_freshness,
             )
         )
+        verified_sources = (
+            None
+            if args.verified_sources == "all"
+            else [
+                source.strip()
+                for source in args.verified_sources.split(",")
+                if source.strip()
+            ]
+        )
+        verified_records = (
+            []
+            if args.skip_verified
+            else fetch_verified_source_records(
+                sources=verified_sources,
+                since=args.since,
+                limit_per_source=args.limit_per_source,
+            )
+        )
         summary = run_dual_track_daily_ingestion(
             repository=repository,
-            verified_records=[] if args.skip_verified else [],
+            verified_records=verified_records,
             search_provider=search_provider,
             dry_run=args.dry_run,
         )
