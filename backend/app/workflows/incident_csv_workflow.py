@@ -41,6 +41,7 @@ async def run_incident_csv_workflow(
     dry_run: bool = False,
     import_only: bool = False,
     max_reviews: int | None = None,
+    review_concurrency: int = 10,
 ) -> dict[str, Any]:
     csv_paths = (
         sorted(path for path in inbox_dir.glob("*.csv"))
@@ -113,6 +114,7 @@ async def run_incident_csv_workflow(
         embedding_model=embedding_model,
         duplicate_judge_model=duplicate_judge_model or escalation_model,
         max_reviews=max_reviews,
+        concurrency=review_concurrency,
     )
     summary["reviews_attempted"] = review_summary.reviews_attempted
     summary["reviews_completed"] = review_summary.reviews_completed

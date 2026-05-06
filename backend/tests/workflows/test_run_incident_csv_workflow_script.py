@@ -67,6 +67,7 @@ def test_workflow_script_logs_start_and_finish(
             deepseek_api_key="test-deepseek-key",
             review_max_output_tokens=8000,
             review_response_parse_max_attempts=3,
+            review_concurrency=10,
         ),
     )
     monkeypatch.setattr(
@@ -83,6 +84,7 @@ def test_workflow_script_logs_start_and_finish(
             dry_run=False,
             import_only=False,
             max_reviews=25,
+            review_concurrency=12,
         ),
     )
     monkeypatch.setattr(
@@ -162,6 +164,7 @@ def test_workflow_script_logs_start_and_finish(
     assert workflow_calls[0]["escalation_model"] == "deepseek-v4-pro"
     assert workflow_calls[0]["import_only"] is False
     assert workflow_calls[0]["max_reviews"] == 25
+    assert workflow_calls[0]["review_concurrency"] == 12
     stdout = capsys.readouterr().out
     assert json.loads(stdout) == summary
 

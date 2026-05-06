@@ -47,6 +47,50 @@ class FakeAsyncReviewClient:
         return response
 
 
+class TrackingAsyncReviewClient:
+    def __init__(self, *, external_ids: list[str]) -> None:
+        self._external_ids = set(external_ids)
+        self.active = 0
+        self.max_active = 0
+        self.calls: list[str] = []
+
+    async def review_incident(
+        self,
+        *,
+        incident: dict[str, object],
+        model: str,
+    ) -> IncidentReviewResult:
+        del model
+        external_id = str(incident["external_id"])
+        if external_id not in self._external_ids:
+            raise AssertionError(f"Unexpected incident {external_id}")
+        self.calls.append(external_id)
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        try:
+            await asyncio.sleep(0.01)
+            return IncidentReviewResult(
+                incident_id=str(incident["id"]),
+                verdict="pending_review",
+                score=0.62,
+                reasoning="Needs editor review.",
+                source_quality_summary="Sources need review.",
+                date_confirmed=True,
+                company_confirmed=True,
+                headline_en=str(incident["headline"]),
+                reality_summary_en=str(incident["reality_summary"]),
+                categories=["Autonomous Systems"],
+                suggested_severity_score=None,
+                severity_confidence=0.82,
+                severity_reasoning="Needs review.",
+                severity_flags=[],
+                needs_escalation=False,
+                reviewed_model="gpt-5.4-mini",
+            )
+        finally:
+            self.active -= 1
+
+
 class FakeEscalationReviewClient:
     def __init__(
         self,
@@ -144,6 +188,30 @@ class FakeDuplicateJudgeClient:
             reasoning="Same underlying sanctions-related filing.",
             canonical_incident_id="incident-canonical",
         )
+
+
+def _valid_import_csv_for_external_ids(external_ids: list[str]) -> str:
+    rows = [
+        (
+            "ref_number,incident_id,company,incident_date,incident_topic,"
+            "incident_description,mapped_claim,source_links,legitimacy_flag,"
+            "confidence_level,notes"
+        )
+    ]
+    for index, external_id in enumerate(external_ids, start=1):
+        rows.append(
+            (
+                f"{index},{external_id},Example AI,2024-01-{index:02d},"
+                f"autonomous system,"
+                f'"Example AI incident {index} required review.",,'
+                '"https://example.com/source-a-{index} | '
+                "https://example.com/source-b-{index} | "
+                'https://example.com/source-c-{index}",'
+                "REVIEW,medium,Concurrency test row"
+            ).format(index=index)
+        )
+    rows.append("")
+    return "\n".join(rows)
 
 
 def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_immediately(  # noqa: E501
@@ -399,6 +467,50 @@ def test_run_incident_csv_workflow_limits_reviews_per_run(
     assert len(review_client.calls) == 1
     assert review_client.calls[0][1] == "gpt-5.4-mini"
     assert len(repository.list_incidents_pending_llm_review()) == 1
+
+
+def test_run_incident_csv_workflow_limits_parallel_primary_reviews(
+    tmp_path,
+) -> None:
+    from app.workflows.incident_csv_workflow import run_incident_csv_workflow
+
+    external_ids = [
+        "inc-concurrency-001",
+        "inc-concurrency-002",
+        "inc-concurrency-003",
+        "inc-concurrency-004",
+    ]
+    repository = InMemoryIncidentRepository()
+    inbox_dir = tmp_path / "inbox"
+    archive_dir = tmp_path / "archive"
+    inbox_dir.mkdir()
+    (inbox_dir / "2024-a.csv").write_text(
+        _valid_import_csv_for_external_ids(external_ids),
+        encoding="utf-8",
+    )
+    review_client = TrackingAsyncReviewClient(external_ids=external_ids)
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            review_concurrency=2,
+        )
+    )
+
+    assert summary["reviews_attempted"] == 4
+    assert summary["reviews_completed"] == 4
+    assert review_client.max_active == 2
+    assert set(review_client.calls) == set(external_ids)
 
 
 def test_run_incident_csv_workflow_leaves_invalid_csv_in_inbox_and_continues(

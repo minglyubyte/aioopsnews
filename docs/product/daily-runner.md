@@ -144,21 +144,24 @@ By default this does all of the following:
 - scans the inbox directory for incident CSV files
 - validates and imports them
 - archives successfully imported CSV files
-- submits primary review batches for unbatched incidents
-- reconciles any batches that are already completed
+- reviews pending incidents with bounded async primary-review concurrency
+- applies escalation, duplicate, translation, and editor-gating decisions
 
-## Wait For Batches In One Run
+## Bounded Review Runs
 
-To run the full workflow and keep polling until newly submitted batches complete:
+To import any inbox CSVs and review at most 100 pending incidents with 10
+simultaneous primary review calls:
 
 ```bash
 cd /Users/leo/Desktop/AI_Oops/backend
 UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.run_incident_csv_workflow \
-  --wait-for-batches \
-  --poll-interval-seconds 30
+  --max-reviews 100 \
+  --review-concurrency 10
 ```
 
-This is the closest thing to a single manual “daily run everything now” command.
+DeepSeek applies dynamic server-side rate limits. Keep `--review-concurrency`
+near 10 for local operator runs, and lower it if the provider starts returning
+HTTP 429 responses.
 
 ## Dry Run
 
@@ -188,6 +191,16 @@ Default directories are:
 - inbox: `backend/app/imports/inbox`
 - archive: `backend/app/imports/archive`
 
+## Import Without Review
+
+To load CSV rows first and leave review for later:
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.run_incident_csv_workflow \
+  --import-only
+```
+
 The legacy `submit_incident_review_batch` and
 `reconcile_incident_review_batch` commands are deprecated. Use
 `run_incident_csv_workflow` for the full one-pass import and review flow.
@@ -208,7 +221,7 @@ The legacy `submit_incident_review_batch` and
 
 ### 3. Primary Review
 
-- sends incidents directly to the primary OpenAI review model with bounded async
+- sends incidents directly to the primary review model with bounded async
   concurrency
 - uses a strict JSON Schema response contract
 - receives:
@@ -255,8 +268,8 @@ Primary review output must satisfy all of the following:
 
 ## Operational Notes
 
-- This workflow is safe to run repeatedly because import and batch reconciliation are designed around current queue state.
-- `--wait-for-batches` is useful for manual runs, but scheduled environments may prefer submit-first and reconcile-later behavior depending on runtime limits.
+- This workflow is safe to run repeatedly because import and review are driven by current queue state.
+- `--max-reviews` keeps a run bounded; `--review-concurrency` controls simultaneous primary review API calls.
 - High-severity incidents will often stop in `pending_editor_review`; that is expected and is part of the product policy.
 - The workflow decides final persisted `severity_score` in Python and stores `suggested_severity_score` separately. A `null` model suggestion is valid and does not clear an existing final severity.
 
@@ -269,8 +282,8 @@ Use:
 ```bash
 cd /Users/leo/Desktop/AI_Oops/backend
 UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.run_incident_csv_workflow \
-  --wait-for-batches \
-  --poll-interval-seconds 30
+  --max-reviews 100 \
+  --review-concurrency 10
 ```
 
 ### Scheduler-Friendly Mode

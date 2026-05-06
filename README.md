@@ -143,6 +143,8 @@ cd backend
 - CSV claim import with UUID primary keys; omit `id` to generate one
 - fixed-source accident CSV generation with
   `python -m app.scripts.generate_verified_source_csv --sources all`
+- bounded concurrent DeepSeek review via
+  `python -m app.scripts.run_incident_csv_workflow --max-reviews 100 --review-concurrency 10`
 - incident daily runner commands documented in `docs/product/daily-runner.md`
 - canonical operator research prompt for ChatGPT Deep Research / Gemini Deep Research in `backend/app/services/case_search_prompt.py`
 

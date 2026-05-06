@@ -76,10 +76,23 @@ def main() -> int:
         default=None,
         help="Maximum pending incidents to review in this run.",
     )
+    parser.add_argument(
+        "--review-concurrency",
+        type=int,
+        default=None,
+        help=(
+            "Maximum primary review API calls to run at the same time. "
+            "Defaults to REVIEW_CONCURRENCY."
+        ),
+    )
     args = parser.parse_args()
     _configure_logging()
 
     settings = get_settings()
+    review_concurrency = max(
+        getattr(args, "review_concurrency", None) or settings.review_concurrency,
+        1,
+    )
     if not args.dry_run and not args.import_only:
         _require_non_dry_run_credentials(settings)
     repository = build_incident_repository(settings.database_url)
@@ -144,6 +157,7 @@ def main() -> int:
                 dry_run=args.dry_run,
                 import_only=args.import_only,
                 max_reviews=args.max_reviews,
+                review_concurrency=review_concurrency,
             )
         )
         LOGGER.info(

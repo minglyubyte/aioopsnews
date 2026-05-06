@@ -130,6 +130,7 @@ def test_get_settings_defaults_primary_review_to_deepseek(
     assert settings.primary_review_api_key is None
     assert settings.review_max_output_tokens == 8000
     assert settings.review_response_parse_max_attempts == 3
+    assert settings.review_concurrency == 10
 
 
 def test_get_settings_uses_deepseek_key_for_default_primary_review_path(
@@ -249,11 +250,13 @@ def test_get_settings_allows_explicit_review_runtime_overrides(
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("REVIEW_MAX_OUTPUT_TOKENS", "9000")
     monkeypatch.setenv("REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS", "4")
+    monkeypatch.setenv("REVIEW_CONCURRENCY", "12")
 
     settings = get_settings()
 
     assert settings.review_max_output_tokens == 9000
     assert settings.review_response_parse_max_attempts == 4
+    assert settings.review_concurrency == 12
 
 
 def test_get_settings_does_not_reuse_openai_key_for_primary_review(

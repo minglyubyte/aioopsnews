@@ -19,6 +19,7 @@ class Settings:
     deepseek_translation_model: str = "deepseek-v4-flash"
     review_max_output_tokens: int = 8000
     review_response_parse_max_attempts: int = 3
+    review_concurrency: int = 10
     forensic_min_word_count_what_happened: int = 100
     forensic_min_word_count_ai_failure_point: int = 100
     forensic_min_word_count_why_it_matters: int = 100
@@ -106,6 +107,7 @@ def get_settings() -> Settings:
             "REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS",
             3,
         ),
+        review_concurrency=max(_get_int_env("REVIEW_CONCURRENCY", 10), 1),
         forensic_min_word_count_what_happened=max(
             _get_int_env("FORENSIC_MIN_WORD_COUNT_WHAT_HAPPENED", 100),
             100,

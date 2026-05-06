@@ -521,7 +521,7 @@ async def review_pending_incidents(
     escalation_model: str,
     embedding_model: str,
     duplicate_judge_model: str,
-    concurrency: int = 8,
+    concurrency: int = 10,
     max_attempts: int = 3,
     max_reviews: int | None = None,
     approval_threshold: float = AUTO_APPROVAL_LEGITIMACY_THRESHOLD,
