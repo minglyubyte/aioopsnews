@@ -195,3 +195,86 @@ def test_patch_admin_incident_retranslates_already_approved_incident() -> None:
     assert payload["reality_summary_zh"] == (
         "ZH:Editors revised the summary after a follow-up check."
     )
+
+
+def test_upgrade_watch_news_to_accident_moves_same_record_into_llm_review() -> None:
+    repository = InMemoryIncidentRepository(
+        incidents=[
+            {
+                "id": "incident-news",
+                "external_id": "news:https://example.com/ai-news",
+                "headline": "AI news item from search discovery",
+                "headline_en": "AI news item from search discovery",
+                "headline_zh": None,
+                "date_logged": "2026-05-06",
+                "company_involved": "Pending classification",
+                "incident_topic": "coding_failure",
+                "claimant_name": None,
+                "categories": [],
+                "severity_score": 1,
+                "reality_summary": "Search found a fresh report about an AI failure.",
+                "reality_summary_en": (
+                    "Search found a fresh report about an AI failure."
+                ),
+                "reality_summary_zh": None,
+                "status": "approved",
+                "translation_status": "not_requested",
+                "publication_track": "accident_watch",
+                "evidence_tier": "reported_unconfirmed",
+                "source_family": "coding_failure",
+                "verification_summary": (
+                    "Search discovery found a fresh AI news signal; it is not "
+                    "a verified accident."
+                ),
+                "matched_claim_id": None,
+                "claim_match_confidence": None,
+                "review_notes": "Auto-published from daily news discovery.",
+                "sources": [
+                    {
+                        "id": "source-news",
+                        "source_url": "https://example.com/ai-news",
+                        "source_type": "secondary",
+                        "source_origin": "search_discovery",
+                        "source_registry_key": "brave_news_search",
+                        "raw_source_payload": {
+                            "query": "AI coding failure production outage"
+                        },
+                        "publisher": "Example News",
+                        "title": "AI news item from search discovery",
+                    }
+                ],
+            }
+        ]
+    )
+    client = TestClient(
+        create_app(
+            admin_api_token="secret-token",
+            incident_repository=repository,
+            incident_translation_client=StaticTranslationClient(),
+        )
+    )
+
+    response = client.post(
+        "/admin/incidents/incident-news/upgrade-to-accident",
+        headers={"X-Admin-Token": "secret-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == "incident-news"
+    assert payload["status"] == "pending_llm_review"
+    assert payload["publication_track"] == "verified_accident"
+    assert payload["evidence_tier"] == "developing"
+    assert payload["source_family"] == "coding_failure"
+    assert payload["sources"][0]["source_origin"] == "search_discovery"
+    assert payload["sources"][0]["source_registry_key"] == "brave_news_search"
+    assert repository.get_public_incident("incident-news") is None
+    assert repository.list_incidents_pending_llm_review()[0]["id"] == "incident-news"
+
+
+def test_upgrade_watch_news_to_accident_requires_admin_token() -> None:
+    client, _repository = _build_review_queue_client(admin_api_token="secret-token")
+
+    response = client.post("/admin/incidents/incident-1/upgrade-to-accident")
+
+    assert response.status_code == 401

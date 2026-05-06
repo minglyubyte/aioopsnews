@@ -1484,7 +1484,9 @@ function normalizeIncidentFeed(
 }
 
 function buildSliceFilterKey(filters: IncidentFeedFilters) {
-  const { page: _page, pageSize: _pageSize, ...sliceFilters } = filters;
+  const sliceFilters = { ...filters };
+  delete sliceFilters.page;
+  delete sliceFilters.pageSize;
   return JSON.stringify(sliceFilters);
 }
 

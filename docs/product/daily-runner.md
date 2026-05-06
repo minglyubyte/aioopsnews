@@ -4,6 +4,11 @@
 
 This document describes the operational daily runner workflow for incident ingestion and review.
 
+The product now has two daily tracks:
+
+- `AI Accidents`: fixed high-provenance sources are checked for newly documented incidents. New records enter accident review before public accident publication.
+- `AI News`: search discovery finds fresh AI failure reporting. New, non-duplicate items auto-publish to the public AI News stream as unverified news signals.
+
 The main entrypoint is the all-in-one script:
 
 - [run_incident_csv_workflow.py](/Users/leo/Desktop/AI_Oops/backend/app/scripts/run_incident_csv_workflow.py)
@@ -17,12 +22,73 @@ The runner expects:
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
 - `DEEPSEEK_API_KEY`
+- `BRAVE_SEARCH_API_KEY` for AI News search discovery
 
 It also uses the configured models from app settings:
 
 - primary review model: `gpt-5.4-mini`
 - escalation review model: `gpt-5.2`
 - embedding model: `text-embedding-3-small`
+- AI News daily result limit: `AI_NEWS_DAILY_RESULT_LIMIT`, default `3`
+- AI News freshness window: `AI_NEWS_FRESHNESS`, default `pd`
+
+## Dual-Track Daily Runner
+
+Run the dual-track daily runner from the backend directory:
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.run_dual_track_daily_runner
+```
+
+Useful options:
+
+```bash
+--skip-news       # run only the accident side
+--skip-verified   # run only AI News discovery
+--dry-run         # compute create/skip counts without writing rows
+```
+
+The runner prints a JSON summary with:
+
+- `accident_sources_seen`
+- `accidents_created`
+- `accidents_skipped_existing`
+- `news_queries_run`
+- `news_results_seen`
+- `news_created`
+- `news_duplicates_skipped`
+- `news_filtered`
+- `source_failures`
+
+### AI Accident Track
+
+- New fixed-source accident records are written with `publication_track="verified_accident"` and `status="pending_llm_review"`.
+- Existing `external_id` or source URL matches are skipped.
+- Existing reviewed incidents are not overwritten or moved back into review.
+
+### AI News Track
+
+- Brave News Search runs the configured watch queries in small batches.
+- Search-result URLs are canonicalized before duplicate checks.
+- New AI News records are written with:
+  - `status="approved"`
+  - `publication_track="accident_watch"`
+  - `evidence_tier="reported_unconfirmed"`
+  - `source_origin="search_discovery"`
+  - `source_registry_key="brave_news_search"`
+- AI News does not run accident legitimacy review before publication. It is a public news signal, not a verified accident case file.
+
+### Manual News Upgrade
+
+Editors can upgrade an auto-published AI News item into accident review:
+
+```http
+POST /admin/incidents/{id}/upgrade-to-accident
+X-Admin-Token: <admin token>
+```
+
+The same row is moved to `publication_track="verified_accident"` and `status="pending_llm_review"`. Source metadata is preserved. While review is pending, the row no longer appears in the public AI News stream.
 
 ## Core State Flow
 

@@ -8,7 +8,9 @@ This document defines the minimum operating model for running AI Reality Check a
 
 - One editor owns review and publication decisions.
 - Public incidents remain manual-approval only.
-- Daily ingestion is the default production workflow.
+- Daily dual-track ingestion is the default production workflow.
+- AI News auto-publishes after duplicate checks as an unverified news signal.
+- AI Accidents remain review-gated before public accident publication.
 - Historical backfill is a controlled maintenance task, not part of the daily schedule.
 
 ## Daily Ingest Scheduling
@@ -24,6 +26,7 @@ This document defines the minimum operating model for running AI Reality Check a
 - `DATABASE_URL`
 - `ADMIN_API_TOKEN`
 - `SCRAPER_USER_AGENT`
+- `BRAVE_SEARCH_API_KEY`
 - `OPENAI_API_KEY` if enrichment later moves beyond heuristic mode
 
 ### Expected Daily Sequence
@@ -31,12 +34,15 @@ This document defines the minimum operating model for running AI Reality Check a
 1. Start the scheduled ingest run.
 2. Confirm the run completes without fatal process failure.
 3. Review run metrics:
-   - `articles_fetched`
-   - `incidents_created`
-   - `duplicates_skipped`
-   - `incidents_flagged_for_manual_review`
+   - `accidents_created`
+   - `accidents_skipped_existing`
+   - `news_results_seen`
+   - `news_created`
+   - `news_duplicates_skipped`
    - `source_failures`
-4. Review the pending queue before approving anything public.
+4. Review the pending accident queue before approving any accident case file.
+5. Promote any AI News item to accident review only when it should become part
+   of the reviewed accident archive.
 
 ## Backfill Execution Policy
 

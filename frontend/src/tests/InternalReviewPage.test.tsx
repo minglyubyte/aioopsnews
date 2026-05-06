@@ -1,16 +1,24 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import InternalReviewPage from "../pages/InternalReviewPage";
-import { fetchAdminIncidentQueue, updateAdminIncident } from "../lib/api";
+import {
+  fetchAdminIncidentQueue,
+  updateAdminIncident,
+  upgradeAdminIncidentToAccident,
+} from "../lib/api";
 import type { AdminIncident } from "../types/incident";
 
 vi.mock("../lib/api", () => ({
   fetchAdminIncidentQueue: vi.fn(),
   updateAdminIncident: vi.fn(),
+  upgradeAdminIncidentToAccident: vi.fn(),
 }));
 
 const mockedFetchAdminIncidentQueue = vi.mocked(fetchAdminIncidentQueue);
 const mockedUpdateAdminIncident = vi.mocked(updateAdminIncident);
+const mockedUpgradeAdminIncidentToAccident = vi.mocked(
+  upgradeAdminIncidentToAccident,
+);
 
 function mockMatchMedia(matches: boolean) {
   Object.defineProperty(window, "matchMedia", {
@@ -147,6 +155,16 @@ describe("InternalReviewPage", () => {
         status: "approved",
         translation_status: "completed",
       }),
+    );
+    mockedUpgradeAdminIncidentToAccident.mockImplementation(
+      async (_token, incidentId) =>
+        buildAdminIncident({
+          id: incidentId,
+          status: "pending_llm_review",
+          publication_track: "verified_accident",
+          evidence_tier: "developing",
+          review_notes: "Upgraded from AI news discovery.",
+        }),
     );
   });
 
@@ -641,5 +659,70 @@ describe("InternalReviewPage", () => {
       within(queueButtons[1]).getByText("Older incident in queue"),
     ).toBeInTheDocument();
     expect(within(queueButtons[1]).getByText("2026-04-20")).toBeInTheDocument();
+  });
+
+  it("lets editors upgrade an auto-published AI news item to accident review", async () => {
+    const newsIncident = buildAdminIncident({
+      id: "incident-news",
+      headline: "AI news item from search discovery",
+      headline_en: "AI news item from search discovery",
+      status: "approved",
+      publication_track: "accident_watch",
+      evidence_tier: "reported_unconfirmed",
+      source_family: "coding_failure",
+      review_notes: "Auto-published from daily news discovery.",
+      sources: [
+        {
+          id: "source-news",
+          source_url: "https://example.com/ai-news",
+          source_type: "secondary",
+          source_origin: "search_discovery",
+          source_registry_key: "brave_news_search",
+          publisher: "Example News",
+          title: "AI news item from search discovery",
+        },
+      ],
+    });
+    mockedFetchAdminIncidentQueue
+      .mockResolvedValueOnce({ items: [newsIncident] })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            ...newsIncident,
+            status: "pending_llm_review",
+            publication_track: "verified_accident",
+            evidence_tier: "developing",
+          },
+        ],
+      });
+
+    render(<InternalReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "secret-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Upgrade AI news to accident review",
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Upgrade AI news to accident review",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(mockedUpgradeAdminIncidentToAccident).toHaveBeenCalledWith(
+        "secret-token",
+        "incident-news",
+      );
+    });
+    await waitFor(() => {
+      expect(mockedFetchAdminIncidentQueue).toHaveBeenCalledTimes(2);
+    });
   });
 });

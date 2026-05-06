@@ -110,3 +110,24 @@ export async function updateAdminIncident(
 
   return (await response.json()) as AdminIncident;
 }
+
+export async function upgradeAdminIncidentToAccident(
+  adminToken: string,
+  incidentId: string,
+): Promise<AdminIncident> {
+  const response = await fetch(
+    `${API_BASE_URL}/admin/incidents/${incidentId}/upgrade-to-accident`,
+    {
+      method: "POST",
+      headers: {
+        "X-Admin-Token": adminToken,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as AdminIncident;
+}

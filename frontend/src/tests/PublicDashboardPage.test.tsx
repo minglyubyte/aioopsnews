@@ -249,7 +249,7 @@ describe("PublicDashboardPage", () => {
       .getByRole("heading", { name: "Verified AI Accidents" })
       .closest("section");
     const watchSection = screen
-      .getByRole("heading", { name: "AI Accident Watch" })
+      .getByRole("heading", { name: "AI News" })
       .closest("section");
 
     expect(verifiedSection).not.toBeNull();
@@ -330,13 +330,13 @@ describe("PublicDashboardPage", () => {
     render(<PublicDashboardPage />);
 
     const watchSection = (
-      await screen.findByRole("heading", { name: "AI Accident Watch" })
+      await screen.findByRole("heading", { name: "AI News" })
     ).closest("section");
 
     expect(watchSection).not.toBeNull();
     expect(
       within(watchSection as HTMLElement).getByText(
-        "No watch items in this slice yet.",
+        "No AI news items in this slice yet.",
       ),
     ).toBeInTheDocument();
   });

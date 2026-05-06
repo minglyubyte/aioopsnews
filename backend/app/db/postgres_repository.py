@@ -813,6 +813,75 @@ class PostgresIncidentRepository:
 
         return True
 
+    def incident_exists_by_external_id(self, external_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select 1
+                from incident_logs
+                where external_id = %s
+                limit 1
+                """,
+                (external_id,),
+            ).fetchone()
+        return row is not None
+
+    def source_url_exists(self, source_url: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select 1
+                from incident_sources
+                where source_url = %s
+                limit 1
+                """,
+                (source_url,),
+            ).fetchone()
+        return row is not None
+
+    def upgrade_watch_incident_to_verified_accident(
+        self,
+        incident_id: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            result = connection.execute(
+                """
+                update incident_logs
+                set
+                    status = %s,
+                    publication_track = %s,
+                    evidence_tier = %s,
+                    translation_status = %s,
+                    review_batch_id = null,
+                    review_model = null,
+                    reviewed_at = null,
+                    verification_summary = %s,
+                    review_notes = trim(concat(coalesce(review_notes, ''), ' ', %s)),
+                    updated_at = current_timestamp
+                where id = %s
+                  and coalesce(publication_track, 'accident_watch') = %s
+                """,
+                (
+                    "pending_llm_review",
+                    "verified_accident",
+                    "developing",
+                    "not_requested",
+                    (
+                        "Manually upgraded from AI news discovery into AI accident "
+                        "review; source metadata is preserved, and accident "
+                        "verification is pending."
+                    ),
+                    "Manually upgraded from AI news discovery.",
+                    incident_id,
+                    "accident_watch",
+                ),
+            )
+            connection.commit()
+
+        if result.rowcount == 0:
+            return None
+        return self.get_incident(incident_id)
+
     def list_pending_incidents(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             incident_rows = connection.execute(

@@ -10,16 +10,19 @@
 
 - `DATABASE_URL`
 - `OPENAI_API_KEY` when enrichment moves from heuristic mode to hosted model calls
+- `BRAVE_SEARCH_API_KEY` for the AI News discovery side of the dual-track runner
 - a descriptive RSS fetch user agent for source requests
 
 ## Run Stages
 
-1. `fetch`
-2. `dedupe`
-3. `persist`
-4. `enrich`
-5. `claim_match`
-6. `mark_review_status`
+1. `accident_fixed_source_check`
+2. `news_search_discovery`
+3. `dedupe`
+4. `persist`
+5. `accident_review`
+6. `news_auto_publish`
+
+AI News items are public after duplicate checks and basic discovery metadata capture. They remain separate from reviewed AI Accident case files and can be manually upgraded into accident review from the admin surface.
 
 ## Retry Policy
 
@@ -30,6 +33,6 @@
 ## Operator Checks
 
 - confirm `source_failures` is `0`
-- review `incidents_created` and `duplicates_skipped` for sharp changes
-- review `incidents_flagged_for_manual_review` to understand queue growth
+- review `accidents_created`, `news_created`, and `news_duplicates_skipped` for sharp changes
+- review pending accident-review queue growth after upgrades or fixed-source discoveries
 - inspect any failed source entries before the next run

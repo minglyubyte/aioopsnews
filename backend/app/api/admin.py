@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.api.incidents import IncidentSourceResponse, IncidentAnalysisResponse
+from app.api.incidents import IncidentAnalysisResponse, IncidentSourceResponse
 from app.core.config import Settings
 from app.services.incident_translation import translate_incident_copy
 
@@ -44,6 +44,10 @@ class AdminIncidentResponse(BaseModel):
     reality_summary_en: str | None = None
     reality_summary_zh: str | None = None
     status: str
+    publication_track: str
+    evidence_tier: str
+    source_family: str
+    verification_summary: str
     matched_claim_id: str | None = None
     claim_match_confidence: float | None = None
     review_notes: str | None = None
@@ -138,7 +142,9 @@ def patch_admin_incident(
             headline_en=updated_incident["headline"],
             reality_summary_en=updated_incident["reality_summary"],
             legitimacy_reasoning_en=updated_incident.get("legitimacy_reasoning") or "",
-            source_validation_summary_en=updated_incident.get("source_validation_summary") or "",
+            source_validation_summary_en=(
+                updated_incident.get("source_validation_summary") or ""
+            ),
             incident_summary_en=updated_incident.get("incident_summary_en") or "",
             what_happened_en=updated_incident.get("what_happened_en") or "",
             ai_failure_point_en=updated_incident.get("ai_failure_point_en") or "",
@@ -165,3 +171,20 @@ def patch_admin_incident(
             updated_incident = translated_incident
 
     return AdminIncidentResponse(**updated_incident)
+
+
+@router.post(
+    "/incidents/{incident_id}/upgrade-to-accident",
+    response_model=AdminIncidentResponse,
+)
+def upgrade_admin_incident_to_accident(
+    incident_id: str,
+    _authorized: None = Depends(require_admin_token),
+    repository=Depends(get_incident_repository),
+) -> AdminIncidentResponse:
+    upgraded_incident = repository.upgrade_watch_incident_to_verified_accident(
+        incident_id
+    )
+    if upgraded_incident is None:
+        raise HTTPException(status_code=404, detail="AI news item not found")
+    return AdminIncidentResponse(**upgraded_incident)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from collections import Counter
+from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import date
 from typing import Any
@@ -57,7 +56,10 @@ class InMemoryIncidentRepository:
         incidents = self._filter_public_incidents(filters)
         offset = (filters.page - 1) * filters.page_size
         window = incidents[offset : offset + filters.page_size]
-        return [self._serialize_public_archive_incident(incident) for incident in window]
+        return [
+            self._serialize_public_archive_incident(incident)
+            for incident in window
+        ]
 
     def list_public_incident_feed(
         self,
@@ -297,6 +299,40 @@ class InMemoryIncidentRepository:
             ],
         }
         return True
+
+    def incident_exists_by_external_id(self, external_id: str) -> bool:
+        return any(
+            incident.get("external_id") == external_id
+            for incident in self.incidents.values()
+        )
+
+    def source_url_exists(self, source_url: str) -> bool:
+        return source_url in self._source_urls
+
+    def upgrade_watch_incident_to_verified_accident(
+        self,
+        incident_id: str,
+    ) -> dict[str, Any] | None:
+        incident = self.incidents.get(incident_id)
+        if incident is None or incident.get("publication_track") != "accident_watch":
+            return None
+
+        incident["status"] = "pending_llm_review"
+        incident["publication_track"] = "verified_accident"
+        incident["evidence_tier"] = "developing"
+        incident["translation_status"] = "not_requested"
+        incident["review_batch_id"] = None
+        incident["review_model"] = None
+        incident["reviewed_at"] = None
+        incident["verification_summary"] = (
+            "Manually upgraded from AI news discovery into AI accident review; "
+            "source metadata is preserved, and accident verification is pending."
+        )
+        incident["review_notes"] = (
+            ((incident.get("review_notes") or "") + " ").strip()
+            + "Manually upgraded from AI news discovery."
+        ).strip()
+        return self._serialize_admin_incident(incident)
 
     def list_pending_incidents(self) -> list[dict[str, Any]]:
         incidents = [

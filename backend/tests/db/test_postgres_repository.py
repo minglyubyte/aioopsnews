@@ -94,7 +94,11 @@ class _StubConnection:
     def execute(self, query: str, *args, **kwargs) -> _StubResult:
         self.executed.append(query)
         self.calls.append((query, args))
-        if "update incident_logs" in query and "severity_suggested_at" in query:
+        if (
+            args
+            and "update incident_logs" in query
+            and "severity_suggested_at" in query
+        ):
             params = args[0]
             self.incident_row.update(
                 {
@@ -126,7 +130,7 @@ class _StubConnection:
                     "severity_suggested_at": params[25],
                 }
             )
-        if "update incident_logs" in query and "translated_at = %s" in query:
+        if args and "update incident_logs" in query and "translated_at = %s" in query:
             params = args[0]
             self.incident_row.update(
                 {
@@ -353,7 +357,7 @@ def test_apply_incident_review_result_uses_python_decided_severity_score(
     update_query, update_args = next(
         (query, args)
         for query, args in connection.calls
-        if "update incident_logs" in query
+        if args and "update incident_logs" in query
     )
     params = update_args[0]
     assert "is not null" not in update_query
@@ -450,7 +454,7 @@ def test_update_incident_translation_persists_company_name_translation(
     update_query, update_args = next(
         (query, args)
         for query, args in connection.calls
-        if "update incident_logs" in query
+        if args and "update incident_logs" in query
     )
     params = update_args[0]
 

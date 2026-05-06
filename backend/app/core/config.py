@@ -22,6 +22,9 @@ class Settings:
     forensic_min_word_count_what_happened: int = 100
     forensic_min_word_count_ai_failure_point: int = 100
     forensic_min_word_count_why_it_matters: int = 100
+    brave_search_api_key: str | None = None
+    ai_news_daily_result_limit: int = 3
+    ai_news_freshness: str = "pd"
 
 
 def _load_dotenv_defaults() -> None:
@@ -115,4 +118,10 @@ def get_settings() -> Settings:
             _get_int_env("FORENSIC_MIN_WORD_COUNT_WHY_IT_MATTERS", 100),
             100,
         ),
+        brave_search_api_key=_get_optional_env("BRAVE_SEARCH_API_KEY"),
+        ai_news_daily_result_limit=max(
+            _get_int_env("AI_NEWS_DAILY_RESULT_LIMIT", 3),
+            1,
+        ),
+        ai_news_freshness=_get_optional_env("AI_NEWS_FRESHNESS") or "pd",
     )

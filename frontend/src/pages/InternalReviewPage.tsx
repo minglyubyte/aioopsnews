@@ -1,7 +1,11 @@
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { fetchAdminIncidentQueue, updateAdminIncident } from "../lib/api";
+import {
+  fetchAdminIncidentQueue,
+  updateAdminIncident,
+  upgradeAdminIncidentToAccident,
+} from "../lib/api";
 import type { AdminIncident, AdminIncidentUpdateRequest } from "../types/incident";
 
 const ADMIN_TOKEN_STORAGE_KEY = "ai-reality-check-admin-token";
@@ -215,6 +219,34 @@ export default function InternalReviewPage() {
         reviewSaved
           ? "Review saved, but the queue could not be refreshed."
           : "Unable to save the review decision right now.",
+      );
+    } finally {
+      setIsAdminLoading(false);
+      setIsSaving(false);
+    }
+  }
+
+  async function handleUpgradeNewsToAccident() {
+    if (!activeIncident || !adminToken) {
+      return;
+    }
+
+    setIsSaving(true);
+    setAdminError(null);
+    let upgraded = false;
+
+    try {
+      await upgradeAdminIncidentToAccident(adminToken, activeIncident.id);
+      upgraded = true;
+      setIsAdminLoading(true);
+
+      const refreshedQueue = await fetchAdminIncidentQueue(adminToken);
+      applyAdminQueue(refreshedQueue.items, activeIncident.id);
+    } catch {
+      setAdminError(
+        upgraded
+          ? "News item upgraded, but the queue could not be refreshed."
+          : "Unable to upgrade this AI news item right now.",
       );
     } finally {
       setIsAdminLoading(false);
@@ -467,6 +499,18 @@ export default function InternalReviewPage() {
                       Potential duplicate: {candidate.candidate_incident_id} ({Math.round(candidate.embedding_score * 100)}%)
                     </p>
                   ))}
+                  {activeIncident.publication_track === "accident_watch" ? (
+                    <button
+                      className="secondary-action"
+                      disabled={isSaving}
+                      type="button"
+                      onClick={() => {
+                        void handleUpgradeNewsToAccident();
+                      }}
+                    >
+                      Upgrade AI news to accident review
+                    </button>
+                  ) : null}
                 </article>
 
                 <form

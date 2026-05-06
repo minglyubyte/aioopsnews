@@ -46,6 +46,18 @@ def create_app(
         review_response_parse_max_attempts=(
             settings.review_response_parse_max_attempts
         ),
+        forensic_min_word_count_what_happened=(
+            settings.forensic_min_word_count_what_happened
+        ),
+        forensic_min_word_count_ai_failure_point=(
+            settings.forensic_min_word_count_ai_failure_point
+        ),
+        forensic_min_word_count_why_it_matters=(
+            settings.forensic_min_word_count_why_it_matters
+        ),
+        brave_search_api_key=settings.brave_search_api_key,
+        ai_news_daily_result_limit=settings.ai_news_daily_result_limit,
+        ai_news_freshness=settings.ai_news_freshness,
     )
     app = FastAPI(title="AI Reality Check API", lifespan=_lifespan)
     app.state.settings = effective_settings

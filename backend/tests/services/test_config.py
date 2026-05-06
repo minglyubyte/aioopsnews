@@ -279,3 +279,27 @@ def test_get_settings_does_not_reuse_openai_key_for_primary_review(
     assert settings.openai_api_key == "openai-key"
     assert settings.primary_review_api_key is None
     assert settings.deepseek_api_key is None
+
+
+def test_get_settings_reads_ai_news_search_configuration(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo_root = tmp_path / "repo"
+    backend_dir = repo_root / "backend"
+    backend_dir.mkdir(parents=True)
+    (repo_root / ".env").write_text(
+        "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ai_reality_check\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(backend_dir)
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+    monkeypatch.setenv("AI_NEWS_DAILY_RESULT_LIMIT", "4")
+    monkeypatch.setenv("AI_NEWS_FRESHNESS", "pw")
+
+    settings = get_settings()
+
+    assert settings.brave_search_api_key == "brave-key"
+    assert settings.ai_news_daily_result_limit == 4
+    assert settings.ai_news_freshness == "pw"
