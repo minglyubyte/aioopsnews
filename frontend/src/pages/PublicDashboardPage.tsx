@@ -70,7 +70,9 @@ export default function PublicDashboardPage() {
     null,
   );
   const [detailRequestNonce, setDetailRequestNonce] = useState(0);
-  const [incidentDetail, setIncidentDetail] = useState<IncidentDetail | null>(null);
+  const [incidentDetail, setIncidentDetail] = useState<IncidentDetail | null>(
+    null,
+  );
   const [isFiltersLoading, setIsFiltersLoading] = useState(true);
   const [isFeedLoading, setIsFeedLoading] = useState(true);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
@@ -106,11 +108,7 @@ export default function PublicDashboardPage() {
   const copy = PUBLIC_COPY[readerLocale];
   const monthlySignals = buildMonthlySignals(incidents, readerLocale);
   const categorySignals = buildCategorySignals(incidents, readerLocale);
-  const heroMetrics = buildHeroMetrics(
-    feed,
-    categorySignals,
-    readerLocale,
-  );
+  const heroMetrics = buildHeroMetrics(feed, categorySignals, readerLocale);
   const highlightInsights = buildHighlightInsights(sliceSummary, readerLocale);
   const maxMonthlyCount = Math.max(
     ...monthlySignals.map((signal) => signal.count),
@@ -160,7 +158,8 @@ export default function PublicDashboardPage() {
   useEffect(() => {
     let isCancelled = false;
     const nextSliceFilterKey = buildSliceFilterKey(readerFilters);
-    const sliceFiltersChanged = lastSliceFilterKeyRef.current !== nextSliceFilterKey;
+    const sliceFiltersChanged =
+      lastSliceFilterKeyRef.current !== nextSliceFilterKey;
 
     async function loadFeed() {
       setIsFeedLoading(true);
@@ -264,10 +263,7 @@ export default function PublicDashboardPage() {
     }));
   }
 
-  function renderArchiveCard(
-    incident: IncidentArchiveItem,
-    cardIdx: number,
-  ) {
+  function renderArchiveCard(incident: IncidentArchiveItem, cardIdx: number) {
     const isSelected = incident.id === selectedIncident?.id;
 
     return (
@@ -282,16 +278,22 @@ export default function PublicDashboardPage() {
           <span>{formatDate(incident.date_logged, readerLocale)}</span>
         </div>
         <div className="public-evidence-badges">
-          <span className="tag">{trackLabel(incident.publication_track)}</span>
-          <span className="tag">{evidenceTierLabel(incident.evidence_tier)}</span>
-          <span className="tag">{sourceFamilyLabel(incident.source_family)}</span>
+          <span className="tag">
+            {trackLabel(incident.publication_track, readerLocale)}
+          </span>
+          <span className="tag">
+            {evidenceTierLabel(incident.evidence_tier, readerLocale)}
+          </span>
+          <span className="tag">
+            {sourceFamilyLabel(incident.source_family, readerLocale)}
+          </span>
         </div>
         <h3>{localizedHeadline(incident, readerLocale)}</h3>
         <p className="body-copy public-archive-summary">
           {buildSnippet(localizedArchiveSummary(incident, readerLocale))}
         </p>
         <p className="body-copy public-verification-summary">
-          {incident.verification_summary}
+          {localizedVerificationSummary(incident, readerLocale)}
         </p>
         <div className="tag-row">
           {incident.categories.map((category) => (
@@ -306,9 +308,7 @@ export default function PublicDashboardPage() {
           type="button"
           onClick={() => showIncidentDetail(incident.id)}
         >
-          {copy.detailActionLabel(
-            localizedHeadline(incident, readerLocale),
-          )}
+          {copy.detailActionLabel(localizedHeadline(incident, readerLocale))}
         </button>
       </article>
     );
@@ -485,10 +485,12 @@ export default function PublicDashboardPage() {
                       <div aria-hidden="true" className="public-signal-track">
                         <div
                           className="public-signal-bar"
-                          style={{
-                            width: `${Math.max((signal.count / maxMonthlyCount) * 100, 18)}%`,
-                            "--bar-index": barIdx,
-                          } as React.CSSProperties}
+                          style={
+                            {
+                              width: `${Math.max((signal.count / maxMonthlyCount) * 100, 18)}%`,
+                              "--bar-index": barIdx,
+                            } as React.CSSProperties
+                          }
                         />
                       </div>
                     </li>
@@ -511,7 +513,9 @@ export default function PublicDashboardPage() {
                   <div
                     aria-hidden="true"
                     className="public-donut"
-                    style={{ backgroundImage: buildCategoryDonut(categorySignals) }}
+                    style={{
+                      backgroundImage: buildCategoryDonut(categorySignals),
+                    }}
                   >
                     <div className="public-donut-core">
                       <strong>{incidents.length}</strong>
@@ -618,7 +622,7 @@ export default function PublicDashboardPage() {
                   <option value="">{copy.allTracks}</option>
                   {(filters?.publication_tracks ?? []).map((track) => (
                     <option key={track} value={track}>
-                      {trackLabel(track)}
+                      {trackLabel(track, readerLocale)}
                     </option>
                   ))}
                 </select>
@@ -640,7 +644,7 @@ export default function PublicDashboardPage() {
                   <option value="">{copy.allSourceFamilies}</option>
                   {(filters?.source_families ?? []).map((sourceFamily) => (
                     <option key={sourceFamily} value={sourceFamily}>
-                      {sourceFamilyLabel(sourceFamily)}
+                      {sourceFamilyLabel(sourceFamily, readerLocale)}
                     </option>
                   ))}
                 </select>
@@ -672,7 +676,9 @@ export default function PublicDashboardPage() {
                   onChange={(event) =>
                     updateFilter(
                       "month",
-                      event.target.value ? Number(event.target.value) : undefined,
+                      event.target.value
+                        ? Number(event.target.value)
+                        : undefined,
                     )
                   }
                 >
@@ -704,7 +710,11 @@ export default function PublicDashboardPage() {
               {isFeedLoading ? (
                 <div aria-busy="true" aria-label={copy.archiveLoading}>
                   {Array.from({ length: 3 }).map((_, i) => (
-                    <div className="public-skeleton-card" key={i} style={{ marginBottom: "1rem" }}>
+                    <div
+                      className="public-skeleton-card"
+                      key={i}
+                      style={{ marginBottom: "1rem" }}
+                    >
                       <div className="public-skeleton public-skeleton-block is-short" />
                       <div className="public-skeleton public-skeleton-block is-tall" />
                       <div className="public-skeleton public-skeleton-block is-medium" />
@@ -818,13 +828,17 @@ export default function PublicDashboardPage() {
                 </div>
               ) : null}
               {feedError ? <p>{copy.feedError}</p> : null}
-              {!isFeedLoading && !feedError && sliceSummary.total_matches > 0 ? (
+              {!isFeedLoading &&
+              !feedError &&
+              sliceSummary.total_matches > 0 ? (
                 <article
                   className="public-panel-compact public-spotlight-insights"
                   data-inview={insightsInView ? "true" : "false"}
                   ref={insightsRef}
                 >
-                  <p className="public-claim-kicker">{copy.highlightInsightsTitle}</p>
+                  <p className="public-claim-kicker">
+                    {copy.highlightInsightsTitle}
+                  </p>
                   <p className="body-copy public-spotlight-copy">
                     {copy.highlightInsightsBody}
                   </p>
@@ -833,9 +847,15 @@ export default function PublicDashboardPage() {
                       <section
                         className="public-highlight-item"
                         key={insight.label}
-                        style={{ "--insight-index": insightIdx } as React.CSSProperties}
+                        style={
+                          {
+                            "--insight-index": insightIdx,
+                          } as React.CSSProperties
+                        }
                       >
-                        <span className="public-highlight-label">{insight.label}</span>
+                        <span className="public-highlight-label">
+                          {insight.label}
+                        </span>
                         <strong className="public-highlight-value">
                           {insight.value}
                         </strong>
@@ -847,7 +867,9 @@ export default function PublicDashboardPage() {
                   </div>
                 </article>
               ) : null}
-              {!isFeedLoading && !feedError && sliceSummary.total_matches === 0 ? (
+              {!isFeedLoading &&
+              !feedError &&
+              sliceSummary.total_matches === 0 ? (
                 <p className="body-copy">{copy.highlightsEmpty}</p>
               ) : null}
             </section>
@@ -877,9 +899,15 @@ export default function PublicDashboardPage() {
             <div className="public-detail-grid">
               <article className="public-incident-card public-detail-card">
                 <div className="incident-meta">
-                  <span>{localizedCompanyName(incidentDetail, readerLocale)}</span>
-                  <span>{severityLabel(incidentDetail.severity_score, readerLocale)}</span>
-                  <span>{formatDate(incidentDetail.date_logged, readerLocale)}</span>
+                  <span>
+                    {localizedCompanyName(incidentDetail, readerLocale)}
+                  </span>
+                  <span>
+                    {severityLabel(incidentDetail.severity_score, readerLocale)}
+                  </span>
+                  <span>
+                    {formatDate(incidentDetail.date_logged, readerLocale)}
+                  </span>
                 </div>
                 <h3>{localizedHeadline(incidentDetail, readerLocale)}</h3>
                 <p className="body-copy">
@@ -896,7 +924,10 @@ export default function PublicDashboardPage() {
                   <div>
                     <h3>{copy.whatIsConfirmedTitle}</h3>
                     <p className="body-copy">
-                      {incidentDetail.verification_summary}
+                      {localizedVerificationSummary(
+                        incidentDetail,
+                        readerLocale,
+                      )}
                     </p>
                   </div>
                   <div>
@@ -913,7 +944,9 @@ export default function PublicDashboardPage() {
                     readerLocale,
                   ) ? (
                     <section className="public-detail-block">
-                      <p className="public-claim-kicker">{copy.whatHappenedTitle}</p>
+                      <p className="public-claim-kicker">
+                        {copy.whatHappenedTitle}
+                      </p>
                       <p className="body-copy">
                         {localizedAnalysisText(
                           incidentDetail.analysis,
@@ -941,7 +974,9 @@ export default function PublicDashboardPage() {
                     readerLocale,
                   ) ? (
                     <section className="public-detail-block">
-                      <p className="public-claim-kicker">{copy.whyItMattersTitle}</p>
+                      <p className="public-claim-kicker">
+                        {copy.whyItMattersTitle}
+                      </p>
                       <p className="body-copy">
                         {localizedAnalysisText(
                           incidentDetail.analysis,
@@ -994,7 +1029,7 @@ export default function PublicDashboardPage() {
                 ) : null}
               </article>
 
-              <aside 
+              <aside
                 className="public-panel public-source-panel"
                 data-inview={sourceListInView ? "true" : "false"}
                 ref={sourceListRef}
@@ -1013,7 +1048,9 @@ export default function PublicDashboardPage() {
                       <article
                         className="public-source-item"
                         key={source.id}
-                        style={{ "--source-index": srcIdx } as React.CSSProperties}
+                        style={
+                          { "--source-index": srcIdx } as React.CSSProperties
+                        }
                       >
                         <p className="public-source-publisher">
                           {source.publisher ?? source.source_type}
@@ -1063,7 +1100,6 @@ function MetricCard({
 }
 
 function localizedHeadline(incident: PublicIncidentBase, locale: ReaderLocale) {
-
   if (locale === "zh") {
     return incident.headline_zh ?? incident.headline_en ?? incident.headline;
   }
@@ -1124,7 +1160,10 @@ function localizedArchiveSummary(
   return archiveSummaryEn ?? archiveSummary;
 }
 
-function localizedDetailSummary(incident: IncidentDetail, locale: ReaderLocale) {
+function localizedDetailSummary(
+  incident: IncidentDetail,
+  locale: ReaderLocale,
+) {
   const incidentSummary = localizedAnalysisText(
     incident.analysis,
     "incident_summary",
@@ -1161,17 +1200,37 @@ function localizedAnalysisText(
 
   if (locale === "zh") {
     return (
-      analysis[chineseKey] ??
-      analysis[baseKey] ??
-      analysis[englishKey] ??
-      null
+      analysis[chineseKey] ?? analysis[baseKey] ?? analysis[englishKey] ?? null
     );
   }
 
   return analysis[englishKey] ?? analysis[baseKey] ?? null;
 }
 
-function trackLabel(track: string) {
+const TRACK_LABELS_ZH: Record<string, string> = {
+  accident_watch: "事故观察",
+  verified_accident: "已验证事故",
+};
+
+const EVIDENCE_TIER_LABELS_ZH: Record<string, string> = {
+  court_or_regulator: "法院或监管记录",
+  official_documented: "官方已记录",
+  reported_unconfirmed: "报道未确认",
+};
+
+const SOURCE_FAMILY_LABELS_ZH: Record<string, string> = {
+  autonomous_vehicle: "自主车辆",
+  coding_failure: "代码生成故障",
+  customer_support: "客户支持",
+  legal_hallucination: "法律幻觉",
+  model_governance: "模型治理",
+};
+
+function trackLabel(track: string, locale: ReaderLocale) {
+  if (locale === "zh") {
+    return TRACK_LABELS_ZH[track] ?? humanizeSnakeCase(track);
+  }
+
   if (track === "verified_accident") {
     return "Verified accident";
   }
@@ -1181,24 +1240,55 @@ function trackLabel(track: string) {
   return humanizeSnakeCase(track);
 }
 
-function evidenceTierLabel(evidenceTier: string) {
+function evidenceTierLabel(evidenceTier: string, locale: ReaderLocale) {
+  if (locale === "zh") {
+    return (
+      EVIDENCE_TIER_LABELS_ZH[evidenceTier] ?? humanizeSnakeCase(evidenceTier)
+    );
+  }
+
   return humanizeSnakeCase(evidenceTier);
 }
 
-function sourceFamilyLabel(sourceFamily: string) {
+function sourceFamilyLabel(sourceFamily: string, locale: ReaderLocale) {
+  if (locale === "zh") {
+    return (
+      SOURCE_FAMILY_LABELS_ZH[sourceFamily] ?? humanizeSnakeCase(sourceFamily)
+    );
+  }
+
   return humanizeSnakeCase(sourceFamily);
 }
 
-function uncertaintySummary(incident: IncidentDetail) {
+function localizedVerificationSummary(
+  incident: PublicIncidentBase,
+  locale: ReaderLocale,
+) {
+  if (locale !== "zh") {
+    return incident.verification_summary;
+  }
+
   if (incident.publication_track === "verified_accident") {
     return (
-      "Editorial review still checks AI relevance, duplicate risk, and severity."
+      `固定高可信来源记录了这起${sourceFamilyLabel(incident.source_family, locale)}` +
+      "事故；编辑审核仍会检查 AI 相关性、重复风险和严重程度。"
     );
   }
 
   return (
-    "This remains a watch item until an official, court, regulator, company, "
-    + "or fixed verified source confirms the incident."
+    "这是一条自动发现的观察信号；需要官方、法院、监管、公司或固定高可信来源" +
+    "确认后，才会进入已验证事故档案。"
+  );
+}
+
+function uncertaintySummary(incident: IncidentDetail) {
+  if (incident.publication_track === "verified_accident") {
+    return "Editorial review still checks AI relevance, duplicate risk, and severity.";
+  }
+
+  return (
+    "This remains a watch item until an official, court, regulator, company, " +
+    "or fixed verified source confirms the incident."
   );
 }
 
@@ -1342,7 +1432,9 @@ function buildHighlightInsights(
       label: copy.highlights.totalMatches,
       value: `${sliceSummary.total_matches}`,
       note:
-        locale === "zh" ? "当前筛选结果中的已审阅事件数" : "Reviewed incidents in this slice",
+        locale === "zh"
+          ? "当前筛选结果中的已审阅事件数"
+          : "Reviewed incidents in this slice",
     },
     {
       label: copy.highlights.timeWindow,
@@ -1397,7 +1489,7 @@ function buildHighlightInsights(
                 .slice(0, 3)
                 .map(
                   (entry) =>
-                    `${locale === "zh" ? entry.company_zh ?? entry.company : entry.company} (${entry.count})`,
+                    `${locale === "zh" ? (entry.company_zh ?? entry.company) : entry.company} (${entry.count})`,
                 ),
             )
           : copy.highlights.noTopCompanies,

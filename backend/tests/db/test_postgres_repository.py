@@ -558,6 +558,139 @@ def test_apply_admin_review_selects_translation_fields(monkeypatch) -> None:
     assert incident["source_validation_summary_zh"] is None
 
 
+def test_apply_admin_review_selects_dual_track_and_analysis_fields(
+    monkeypatch,
+) -> None:
+    class StrictAdminReviewConnection(_StubConnection):
+        def execute(self, query: str, *args, **kwargs) -> _StubResult:
+            result = super().execute(query, *args, **kwargs)
+            if (
+                "from incident_logs" in query
+                and "where id = %s" in query
+                and "company_involved_zh" in query
+            ):
+                row = dict(result.fetchone() or {})
+                for field in (
+                    "publication_track",
+                    "evidence_tier",
+                    "source_family",
+                    "verification_summary",
+                    "incident_summary_en",
+                    "incident_summary_zh",
+                    "what_happened_en",
+                    "what_happened_zh",
+                    "ai_failure_point_en",
+                    "ai_failure_point_zh",
+                    "why_it_matters_en",
+                    "why_it_matters_zh",
+                    "evidence_summary_en",
+                    "evidence_summary_zh",
+                ):
+                    if field not in query:
+                        row.pop(field, None)
+                return _StubResult(row)
+            return result
+
+    connection = StrictAdminReviewConnection()
+    connection.incident_row["status"] = "pending_editor_review"
+    connection.incident_row["publication_track"] = "verified_accident"
+    connection.incident_row["evidence_tier"] = "official_documented"
+    connection.incident_row["source_family"] = "autonomous_vehicle"
+    connection.incident_row["verification_summary"] = "Fixed source accident."
+    connection.incident_row["incident_summary_en"] = "Short summary."
+    connection.incident_row["what_happened_en"] = "Detailed sequence."
+    connection.incident_row["ai_failure_point_en"] = "Model failure."
+    connection.incident_row["why_it_matters_en"] = "Public safety."
+    connection.incident_row["evidence_summary_en"] = "Official report."
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    incident = repository.apply_admin_review(
+        incident_id="incident-1",
+        status="approved",
+        company_involved="OpenAI",
+        claimant_name=None,
+        categories=["Hallucinations"],
+        severity_score=3,
+        reality_summary="Updated summary",
+        matched_claim_id=None,
+        claim_match_confidence=None,
+        review_notes="Editor approved after review.",
+    )
+
+    assert incident is not None
+    assert incident["publication_track"] == "verified_accident"
+    assert incident["evidence_tier"] == "official_documented"
+    assert incident["source_family"] == "autonomous_vehicle"
+    assert incident["verification_summary"] == "Fixed source accident."
+    assert incident["analysis"]["incident_summary_en"] == "Short summary."
+    assert incident["analysis"]["what_happened_en"] == "Detailed sequence."
+    assert incident["analysis"]["ai_failure_point_en"] == "Model failure."
+    assert incident["analysis"]["why_it_matters_en"] == "Public safety."
+    assert incident["analysis"]["evidence_summary_en"] == "Official report."
+
+
+def test_list_review_queue_selects_dual_track_fields(monkeypatch) -> None:
+    class StrictReviewQueueConnection(_StubConnection):
+        def execute(self, query: str, *args, **kwargs) -> _StubResult:
+            if "from incident_logs" in query and "where status in" in query:
+                row = dict(self.incident_row)
+                if "publication_track" not in query:
+                    row.pop("publication_track")
+                    row.pop("evidence_tier")
+                    row.pop("source_family")
+                    row.pop("verification_summary")
+                return _StubResult(rows=[row])
+            return super().execute(query, *args, **kwargs)
+
+    connection = StrictReviewQueueConnection()
+    connection.incident_row["status"] = "pending_editor_review"
+    connection.incident_row["publication_track"] = "verified_accident"
+    connection.incident_row["evidence_tier"] = "official_documented"
+    connection.incident_row["source_family"] = "autonomous_vehicle"
+    connection.incident_row["verification_summary"] = "Fixed source accident."
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    queue = repository.list_review_queue()
+
+    assert queue[0]["status"] == "pending_editor_review"
+    assert queue[0]["publication_track"] == "verified_accident"
+    assert queue[0]["evidence_tier"] == "official_documented"
+    assert queue[0]["source_family"] == "autonomous_vehicle"
+    assert queue[0]["verification_summary"] == "Fixed source accident."
+
+
 def test_update_incident_translation_persists_company_name_translation(
     monkeypatch,
 ) -> None:
@@ -616,6 +749,68 @@ def test_update_incident_translation_persists_company_name_translation(
     assert incident["ai_failure_point_zh"] == "失败点"
     assert incident["why_it_matters_zh"] == "重要性说明"
     assert incident["evidence_summary_zh"] == "证据摘要"
+
+
+def test_update_incident_translation_selects_dual_track_fields(monkeypatch) -> None:
+    class StrictTranslationConnection(_StubConnection):
+        def execute(self, query: str, *args, **kwargs) -> _StubResult:
+            result = super().execute(query, *args, **kwargs)
+            if (
+                "from incident_logs" in query
+                and "where id = %s" in query
+                and "company_involved_zh" in query
+            ):
+                row = dict(result.fetchone() or {})
+                for field in (
+                    "publication_track",
+                    "evidence_tier",
+                    "source_family",
+                    "verification_summary",
+                ):
+                    if field not in query:
+                        row.pop(field, None)
+                return _StubResult(row)
+            return result
+
+    connection = StrictTranslationConnection()
+    connection.incident_row["publication_track"] = "verified_accident"
+    connection.incident_row["evidence_tier"] = "official_documented"
+    connection.incident_row["source_family"] = "autonomous_vehicle"
+    connection.incident_row["verification_summary"] = "Fixed source accident."
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    incident = repository.update_incident_translation(
+        incident_id="incident-1",
+        company_involved_zh="开放人工智能",
+        headline_zh="更新后的标题",
+        reality_summary_zh="更新后的摘要",
+        legitimacy_reasoning_zh="中文理由",
+        source_validation_summary_zh="中文证据摘要",
+        translation_status="completed",
+        translated_at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert incident is not None
+    assert incident["publication_track"] == "verified_accident"
+    assert incident["evidence_tier"] == "official_documented"
+    assert incident["source_family"] == "autonomous_vehicle"
+    assert incident["verification_summary"] == "Fixed source accident."
 
 
 def test_list_public_incident_feed_serializes_company_name_translation(

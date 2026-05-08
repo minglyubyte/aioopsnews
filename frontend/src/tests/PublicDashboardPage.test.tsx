@@ -46,7 +46,7 @@ function buildArchiveIncident(
     company_involved: overrides.company_involved ?? "AssistCo",
     company_involved_zh:
       "company_involved_zh" in overrides
-        ? overrides.company_involved_zh ?? null
+        ? (overrides.company_involved_zh ?? null)
         : "助理公司",
     claimant_name: overrides.claimant_name ?? "AssistCo",
     incident_topic: overrides.incident_topic ?? "privacy",
@@ -102,7 +102,8 @@ function buildIncidentDetail(
       ai_failure_point_zh: "该助手未能阻止内部支持上下文进入生成的回复。",
       why_it_matters_en:
         "Private account context escaped the support workflow and reached customers directly.",
-      why_it_matters_zh: "私密账户背景信息离开了支持工作流，并直接出现在客户对话中。",
+      why_it_matters_zh:
+        "私密账户背景信息离开了支持工作流，并直接出现在客户对话中。",
       evidence_summary_en:
         "The incident was validated through a primary report and corroborating coverage.",
       evidence_summary_zh: "这起事件已通过一手报告和补充报道完成核实。",
@@ -124,35 +125,38 @@ function buildFeedResponse(
     total_pages: overrides.total_pages ?? 1,
     has_next_page: overrides.has_next_page ?? false,
     has_previous_page: overrides.has_previous_page ?? false,
-    slice_summary:
-      overrides.slice_summary ?? {
-        total_matches: items.length,
-        newest_logged: items[0]?.date_logged ?? null,
-        oldest_logged: items.at(-1)?.date_logged ?? null,
-        highest_severity: Math.max(...items.map((item) => item.severity_score), 0),
-        top_categories: [
-          ...new Map(
-            items.flatMap((item) =>
-              item.categories.map((category) => [
-                category,
-                items.filter((candidate) =>
-                  candidate.categories.includes(category),
-                ).length,
-              ]),
-            ),
-          ).entries(),
-        ].map(([category, count]) => ({ category, count })),
-        top_companies: [
-          ...new Map(
-            items.map((item) => [
-              item.company_involved,
-              items.filter(
-                (candidate) => candidate.company_involved === item.company_involved,
+    slice_summary: overrides.slice_summary ?? {
+      total_matches: items.length,
+      newest_logged: items[0]?.date_logged ?? null,
+      oldest_logged: items.at(-1)?.date_logged ?? null,
+      highest_severity: Math.max(
+        ...items.map((item) => item.severity_score),
+        0,
+      ),
+      top_categories: [
+        ...new Map(
+          items.flatMap((item) =>
+            item.categories.map((category) => [
+              category,
+              items.filter((candidate) =>
+                candidate.categories.includes(category),
               ).length,
             ]),
-          ).entries(),
-        ].map(([company, count]) => ({ company, count })),
-      },
+          ),
+        ).entries(),
+      ].map(([category, count]) => ({ category, count })),
+      top_companies: [
+        ...new Map(
+          items.map((item) => [
+            item.company_involved,
+            items.filter(
+              (candidate) =>
+                candidate.company_involved === item.company_involved,
+            ).length,
+          ]),
+        ).entries(),
+      ].map(([company, count]) => ({ company, count })),
+    },
   };
 }
 
@@ -278,7 +282,9 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
 
     expect(screen.getByLabelText("Filter by track")).toBeInTheDocument();
-    expect(screen.getByLabelText("Filter by source family")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Filter by source family"),
+    ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Filter by track"), {
       target: { value: "verified_accident" },
@@ -369,7 +375,8 @@ describe("PublicDashboardPage", () => {
       analysis: {
         incident_summary_en:
           "A support automation release exposed private billing notes in customer replies.",
-        incident_summary_zh: "一次支持自动化发布在客户回复中暴露了私密账单备注。",
+        incident_summary_zh:
+          "一次支持自动化发布在客户回复中暴露了私密账单备注。",
         what_happened_en:
           "A support automation rollout leaked internal notes into user-facing replies.",
         what_happened_zh: "一次支持自动化发布将内部备注泄露给了用户。",
@@ -382,7 +389,8 @@ describe("PublicDashboardPage", () => {
           "敏感的账单背景信息出现在客户对话中，而不是留在支持工作流内部。",
         evidence_summary_en:
           "Ledger News documented the exposure and the company later disabled the feature.",
-        evidence_summary_zh: "Ledger News 记录了这次暴露，随后公司关闭了该功能。",
+        evidence_summary_zh:
+          "Ledger News 记录了这次暴露，随后公司关闭了该功能。",
       },
       matched_claim: {
         id: "claim-1",
@@ -429,8 +437,7 @@ describe("PublicDashboardPage", () => {
         "An urban robot pilot paused after repeated routing mistakes and multiple manual interventions.",
       reality_summary_en:
         "An urban robot pilot paused after repeated routing mistakes and multiple manual interventions.",
-      reality_summary_zh:
-        "城市机器人试点在多次路线错误和人工干预后被暂停。",
+      reality_summary_zh: "城市机器人试点在多次路线错误和人工干预后被暂停。",
       analysis: {
         incident_summary_en:
           "An urban robot pilot paused after repeated navigation failures.",
@@ -538,9 +545,9 @@ describe("PublicDashboardPage", () => {
       within(categorySignal).getAllByText("50% of current feed"),
     ).toHaveLength(2);
 
-    const spotlight = screen.getByRole("heading", { name: "Quick takeaway" }).closest(
-      "section",
-    );
+    const spotlight = screen
+      .getByRole("heading", { name: "Quick takeaway" })
+      .closest("section");
     expect(spotlight).not.toBeNull();
     expect(
       within(spotlight as HTMLElement).getByText("Slice-level view"),
@@ -573,10 +580,11 @@ describe("PublicDashboardPage", () => {
       within(archiveControls).getByLabelText("Filter by company"),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByRole("heading", { name: "Incident signals" }).closest("section") as HTMLElement).getByRole(
-        "heading",
-        { name: "Archive controls" },
-      ),
+      within(
+        screen
+          .getByRole("heading", { name: "Incident signals" })
+          .closest("section") as HTMLElement,
+      ).getByRole("heading", { name: "Archive controls" }),
     ).toBeInTheDocument();
 
     const archive = screen.getByRole("region", { name: "Browse incidents" });
@@ -587,9 +595,13 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
     expect(within(archive).getByText("Severity 3")).toBeInTheDocument();
     expect(within(archive).getByText("Autonomous Systems")).toBeInTheDocument();
-    expect(within(archive).queryByText("Claim vs. reality")).not.toBeInTheDocument();
+    expect(
+      within(archive).queryByText("Claim vs. reality"),
+    ).not.toBeInTheDocument();
     expect(within(archive).getByText("Page 1 of 2")).toBeInTheDocument();
-    expect(within(archive).getByText("Showing 2 of 8 incidents")).toBeInTheDocument();
+    expect(
+      within(archive).getByText("Showing 2 of 8 incidents"),
+    ).toBeInTheDocument();
     expect(within(archive).getByText("AssistCo")).toBeInTheDocument();
     expect(latestIncident.company_involved_zh).toBe("助理公司");
 
@@ -646,10 +658,14 @@ describe("PublicDashboardPage", () => {
       within(spotlight as HTMLElement).getByText("筛选摘要"),
     ).toBeInTheDocument();
     expect(
-      within(spotlight as HTMLElement).getByText("隐私 / 安全 (5)、自主系统 (3)"),
+      within(spotlight as HTMLElement).getByText(
+        "隐私 / 安全 (5)、自主系统 (3)",
+      ),
     ).toBeInTheDocument();
     expect(
-      within(spotlight as HTMLElement).getByText("助理公司 (5)、机器人舰队 (3)"),
+      within(spotlight as HTMLElement).getByText(
+        "助理公司 (5)、机器人舰队 (3)",
+      ),
     ).toBeInTheDocument();
     expect(
       await within(detail as HTMLElement).findByRole("heading", {
@@ -658,19 +674,23 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
     expect(within(archive).getByText("隐私 / 安全")).toBeInTheDocument();
     expect(within(archive).getByText("自主系统")).toBeInTheDocument();
+    expect(within(archive).getAllByText("事故观察")).toHaveLength(2);
+    expect(within(archive).getAllByText("报道未确认")).toHaveLength(2);
+    expect(within(archive).getAllByText("客户支持")).toHaveLength(2);
+    expect(
+      within(archive).getAllByText(
+        "这是一条自动发现的观察信号；需要官方、法院、监管、公司或固定高可信来源确认后，才会进入已验证事故档案。",
+      ),
+    ).toHaveLength(2);
     expect(
       screen.getByRole("heading", { name: "事件信号" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "档案筛选" }),
     ).toBeInTheDocument();
+    expect(screen.getByText("你是否也受够了这样的标题？")).toBeInTheDocument();
     expect(
-      screen.getByText("你是否也受够了这样的标题？"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "我们想提醒你，AI 并不完美，所以放轻松，不要恐慌。",
-      ),
+      screen.getByText("我们想提醒你，AI 并不完美，所以放轻松，不要恐慌。"),
     ).toBeInTheDocument();
 
     expect(
@@ -700,7 +720,9 @@ describe("PublicDashboardPage", () => {
       ),
     ).toBeInTheDocument();
     expect(within(archive).getByText("助理公司")).toBeInTheDocument();
-    expect(within(detail as HTMLElement).getByText("助理公司")).toBeInTheDocument();
+    expect(
+      within(detail as HTMLElement).getByText("助理公司"),
+    ).toBeInTheDocument();
 
     fireEvent.click(
       within(archive).getByRole("button", {
@@ -737,7 +759,9 @@ describe("PublicDashboardPage", () => {
       fireEvent.click(screen.getByRole("button", { name: "中文" }));
     });
 
-    const companyFilter = screen.getByLabelText("按公司筛选") as HTMLSelectElement;
+    const companyFilter = screen.getByLabelText(
+      "按公司筛选",
+    ) as HTMLSelectElement;
     const option = within(companyFilter).getByRole("option", {
       name: "助理公司",
     }) as HTMLOptionElement;
@@ -841,12 +865,11 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(
-      within(screen.getByRole("region", { name: "Browse incidents" })).getByRole(
-        "button",
-        {
+      within(
+        screen.getByRole("region", { name: "Browse incidents" }),
+      ).getByRole("button", {
         name: /Open full context for Warehouse classifier reroutes medical inventory/i,
-        },
-      ),
+      }),
     );
 
     await waitFor(() => {
@@ -881,7 +904,9 @@ describe("PublicDashboardPage", () => {
       date_logged: "2023-11-29",
     });
 
-    mockedFetchIncidentFeed.mockResolvedValue(buildFeedResponse([legacyIncident]));
+    mockedFetchIncidentFeed.mockResolvedValue(
+      buildFeedResponse([legacyIncident]),
+    );
     mockedFetchIncidentDetail.mockResolvedValue(
       buildIncidentDetail({
         ...legacyIncident,
@@ -979,12 +1004,14 @@ describe("PublicDashboardPage", () => {
 
     await screen.findByText("Page 2 of 2");
     expect(screen.getByText("Second page incident")).toBeInTheDocument();
-    expect(
-      mockedFetchIncidentFeed.mock.calls[0]?.[0],
-    ).toMatchObject({ page: 1, pageSize: 6 });
-    expect(
-      mockedFetchIncidentFeed.mock.calls[1]?.[0],
-    ).toMatchObject({ page: 2, pageSize: 6 });
+    expect(mockedFetchIncidentFeed.mock.calls[0]?.[0]).toMatchObject({
+      page: 1,
+      pageSize: 6,
+    });
+    expect(mockedFetchIncidentFeed.mock.calls[1]?.[0]).toMatchObject({
+      page: 2,
+      pageSize: 6,
+    });
     expect(
       screen.getByRole("heading", { name: "First page incident" }),
     ).toBeInTheDocument();
