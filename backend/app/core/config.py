@@ -110,15 +110,15 @@ def get_settings() -> Settings:
         review_concurrency=max(_get_int_env("REVIEW_CONCURRENCY", 10), 1),
         forensic_min_word_count_what_happened=max(
             _get_int_env("FORENSIC_MIN_WORD_COUNT_WHAT_HAPPENED", 100),
-            100,
+            1,
         ),
         forensic_min_word_count_ai_failure_point=max(
             _get_int_env("FORENSIC_MIN_WORD_COUNT_AI_FAILURE_POINT", 100),
-            100,
+            1,
         ),
         forensic_min_word_count_why_it_matters=max(
             _get_int_env("FORENSIC_MIN_WORD_COUNT_WHY_IT_MATTERS", 100),
-            100,
+            1,
         ),
         brave_search_api_key=_get_optional_env("BRAVE_SEARCH_API_KEY"),
         ai_news_daily_result_limit=max(

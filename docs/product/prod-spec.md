@@ -147,15 +147,11 @@ Use `pending_llm_escalation` when:
 
 High severity alone should not trigger escalation.
 
-## Editor Review Logic
+## Human Review Logic
 
-Use `pending_editor_review` when:
-
-- `suggested_severity_score >= 3`
-- or a high-risk severity flag is present
-- and the incident does not otherwise need LLM escalation
-
-Severity 3 and above always require editor review before publication.
+Use `pending_review` when an incident needs an operator decision before
+publication. High severity alone does not require a separate status; severity,
+confidence, and high-risk flags remain visible inside the review record.
 
 ## Duplicate Handling
 
@@ -191,7 +187,6 @@ Main workflow states include:
 - `pending_review`
 - `pending_llm_review`
 - `pending_llm_escalation`
-- `pending_editor_review`
 - `approved`
 - `rejected`
 - `duplicate_confirmed`

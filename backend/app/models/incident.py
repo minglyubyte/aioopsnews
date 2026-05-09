@@ -12,7 +12,6 @@ IncidentStatus = Literal[
     "pending_llm_escalation",
     "pending_duplicate_review",
     "pending_review",
-    "pending_editor_review",
     "approved",
     "rejected",
     "duplicate_confirmed",

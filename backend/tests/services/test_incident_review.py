@@ -29,6 +29,7 @@ from app.services.incident_review import (
     submit_incident_review_batch,
 )
 from app.services.incident_translation import IncidentTranslation
+from app.services.review_prompts import FORENSIC_MIN_WORD_COUNTS
 from app.services.source_evidence import FetchedIncidentSource
 from tests.support.fakes import InMemoryIncidentRepository
 from tests.support.incident_csv_fixtures import VALID_IMPORT_CSV
@@ -227,7 +228,83 @@ def _pending_review_result(*, incident_id: str = "incident-1") -> IncidentReview
     )
 
 
-def test_adaptive_review_rate_limiter_starts_at_one_rps_and_ramps_to_cap() -> None:
+def _official_fixed_source_incident() -> dict[str, object]:
+    return {
+        "id": "incident-official",
+        "external_id": "official-fixed-source-1",
+        "headline": "Court filing included AI-generated fake citations",
+        "date_logged": "2026-05-01",
+        "company_involved": "Example Firm",
+        "claimant_name": None,
+        "categories": ["Hallucinations"],
+        "severity_score": 1,
+        "reality_summary": "Court records document fabricated citations.",
+        "status": "pending_llm_review",
+        "translation_status": "not_requested",
+        "publication_track": "verified_accident",
+        "evidence_tier": "court_or_regulator",
+        "source_family": "legal_hallucination",
+        "verification_summary": "Court record from fixed source.",
+        "sources": [
+            {
+                "id": "source-official",
+                "source_url": "https://example.com/court-order.pdf",
+                "source_type": "official",
+                "publisher": "Court",
+                "title": "Court order",
+                "source_origin": "fixed_verified_source",
+                "fetch_status": "fetched",
+                "http_status": 200,
+                "evidence_text": "Court order text confirming fabricated citations.",
+            }
+        ],
+    }
+
+
+def _strict_approved_result(
+    *,
+    incident_id: str = "incident-official",
+    score: float = 0.98,
+    severity: int | None = 1,
+    severity_confidence: float | None = 0.96,
+    severity_flags: list[str] | None = None,
+    date_confirmed: bool = True,
+    company_confirmed: bool = True,
+    publication_track: str = "verified_accident",
+    evidence_tier: str = "court_or_regulator",
+) -> IncidentReviewResult:
+    return IncidentReviewResult(
+        incident_id=incident_id,
+        verdict="approved",
+        score=score,
+        reasoning="Official court source confirms a low-risk AI citation incident.",
+        source_quality_summary="Fixed court source includes fetched evidence text.",
+        date_confirmed=date_confirmed,
+        company_confirmed=company_confirmed,
+        headline_en="Court filing included AI-generated fake citations",
+        reality_summary_en="Court records document fabricated legal citations.",
+        incident_summary_en="A court filing included fabricated citations.",
+        what_happened_en="A filing relied on citations later found to be fabricated.",
+        ai_failure_point_en=(
+            "The drafting process failed to verify generated citations."
+        ),
+        why_it_matters_en="The court record documents a real but contained incident.",
+        evidence_summary_en="The fixed court source confirms the issue.",
+        categories=["Hallucinations"],
+        suggested_severity_score=severity,
+        severity_confidence=severity_confidence,
+        severity_reasoning="Contained legal filing issue with clear source support.",
+        severity_flags=severity_flags or [],
+        publication_track=publication_track,
+        evidence_tier=evidence_tier,
+        source_family="legal_hallucination",
+        verification_summary="Court record from fixed source.",
+        needs_escalation=False,
+        reviewed_model="deepseek-test",
+    )
+
+
+def test_adaptive_review_rate_limiter_does_not_sleep_before_successful_calls() -> None:
     clock = FakeClock()
     limiter = AdaptiveReviewRateLimiter(
         initial_rps=1,
@@ -243,15 +320,15 @@ def test_adaptive_review_rate_limiter_starts_at_one_rps_and_ramps_to_cap() -> No
         await limiter.wait_for_slot()
         await limiter.wait_for_slot()
         await limiter.wait_for_slot()
+        await limiter.record_success()
 
     asyncio.run(run())
 
-    assert clock.sleeps == [1.0, 0.5, 0.5]
-    assert limiter.snapshot()["peak_rps"] == 2.0
-    assert limiter.snapshot()["current_rps"] == 2.0
+    assert clock.sleeps == []
+    assert limiter.snapshot()["rate_limit_events"] == 0
 
 
-def test_adaptive_review_rate_limiter_backs_off_on_429_and_recovers_low() -> None:
+def test_adaptive_review_rate_limiter_uses_global_cooldown_after_429() -> None:
     clock = FakeClock()
     limiter = AdaptiveReviewRateLimiter(
         initial_rps=1,
@@ -266,12 +343,16 @@ def test_adaptive_review_rate_limiter_backs_off_on_429_and_recovers_low() -> Non
         await limiter.wait_for_slot()
         await limiter.record_rate_limit()
         await limiter.wait_for_slot()
+        await limiter.record_rate_limit()
+        await limiter.wait_for_slot()
+        await limiter.record_success()
+        await limiter.record_rate_limit()
+        await limiter.wait_for_slot()
 
     asyncio.run(run())
 
-    assert clock.sleeps == [1.0]
-    assert limiter.snapshot()["rate_limit_events"] == 1
-    assert limiter.snapshot()["current_rps"] == 1.0
+    assert clock.sleeps == [1.0, 2.0, 1.0]
+    assert limiter.snapshot()["rate_limit_events"] == 3
 
 
 def test_review_retries_rate_limits_with_adaptive_limiter() -> None:
@@ -368,7 +449,10 @@ def test_build_review_messages_include_json_guidance_example() -> None:
     assert '"verdict"' in messages[0]["content"]
     assert '"incident_summary_en"' in messages[0]["content"]
     assert '"ai_failure_point_en"' in messages[0]["content"]
-    assert "at least 100 words" in system_prompt
+    assert (
+        f"at least {FORENSIC_MIN_WORD_COUNTS['what_happened_en']} words"
+        in system_prompt
+    )
     assert '"needs_escalation"' in messages[0]["content"]
     assert user_payload["approved_categories"] == list(INCIDENT_CATEGORY_TAXONOMY)
 
@@ -520,7 +604,8 @@ def test_parse_review_result_reads_structured_forensic_fields() -> None:
     assert result.evidence_summary_en == _wordy("evidence", count=40)
 
 
-def test_parse_review_result_rejects_forensic_sections_under_100_words() -> None:
+def test_parse_review_result_rejects_short_forensic_sections() -> None:
+    min_words = FORENSIC_MIN_WORD_COUNTS["what_happened_en"]
     with pytest.raises(ReviewResponseParseError) as exc_info:
         _parse_review_result(
             incident_id="incident-1",
@@ -531,7 +616,7 @@ def test_parse_review_result_rejects_forensic_sections_under_100_words() -> None
                 '"date_confirmed":true,"company_confirmed":true,'
                 '"headline_en":"Incident headline","reality_summary_en":"Summary.",'
                 f'"incident_summary_en":"{_wordy("summary", count=40)}",'
-                f'"what_happened_en":"{_wordy("short", count=99)}",'
+                f'"what_happened_en":"{_wordy("short", count=min_words - 1)}",'
                 f'"ai_failure_point_en":"{_wordy("failure")}",'
                 f'"why_it_matters_en":"{_wordy("matters")}",'
                 f'"evidence_summary_en":"{_wordy("evidence", count=40)}",'
@@ -543,7 +628,7 @@ def test_parse_review_result_rejects_forensic_sections_under_100_words() -> None
         )
 
     assert "what_happened_en" in str(exc_info.value)
-    assert "100 words" in str(exc_info.value)
+    assert f"{min_words} words" in str(exc_info.value)
 
 
 def test_parse_review_result_marks_unknown_categories_for_escalation() -> None:
@@ -674,7 +759,201 @@ def test_autonomous_vehicle_review_with_generic_detail_stays_pending() -> None:
     assert summary.approved == 0
     assert summary.pending_review == 1
     assert translation_client.calls == []
-    assert repository.incidents["incident-av"]["status"] == "pending_editor_review"
+    assert repository.incidents["incident-av"]["status"] == "pending_review"
+
+
+def test_review_auto_approves_high_confidence_fixed_source_incident() -> None:
+    incident = _official_fixed_source_incident()
+    incident["sources"][0]["fetch_status"] = None  # type: ignore[index]
+    incident["sources"][0]["http_status"] = None  # type: ignore[index]
+    incident["sources"][0]["evidence_text"] = None  # type: ignore[index]
+    repository = InMemoryIncidentRepository(incidents=[incident])
+    translation_client = FakeTranslationClient()
+
+    summary = asyncio.run(
+        review_pending_incidents(
+            repository,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=FakeAsyncReviewRetryClient([_strict_approved_result()]),
+            escalation_client=FakeBatchReviewClient(),
+            translation_client=translation_client,
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            primary_model="deepseek-test",
+            escalation_model="deepseek-pro-test",
+            embedding_model="embedding-test",
+            duplicate_judge_model="duplicate-test",
+        )
+    )
+
+    incident = repository.incidents["incident-official"]
+    assert summary.approved == 1
+    assert summary.pending_review == 0
+    assert incident["status"] == "approved"
+    assert incident["severity_score"] == 1
+    assert incident["severity_decision_source"] == "primary_llm"
+    assert incident["translation_status"] == "completed"
+    assert translation_client.calls
+
+
+def test_review_auto_approves_high_confidence_higher_severity_incident() -> None:
+    repository = InMemoryIncidentRepository(
+        incidents=[_official_fixed_source_incident()]
+    )
+    translation_client = FakeTranslationClient()
+
+    summary = asyncio.run(
+        review_pending_incidents(
+            repository,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=FakeAsyncReviewRetryClient(
+                [
+                    _strict_approved_result(
+                        severity=4,
+                        severity_confidence=0.85,
+                        severity_flags=["legal_or_regulatory"],
+                    )
+                ]
+            ),
+            escalation_client=FakeBatchReviewClient(),
+            translation_client=translation_client,
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            primary_model="deepseek-test",
+            escalation_model="deepseek-pro-test",
+            embedding_model="embedding-test",
+            duplicate_judge_model="duplicate-test",
+        )
+    )
+
+    incident = repository.incidents["incident-official"]
+    assert summary.approved == 1
+    assert summary.pending_review == 0
+    assert incident["status"] == "approved"
+    assert incident["severity_score"] == 4
+    assert translation_client.calls
+
+
+@pytest.mark.parametrize(
+    ("result", "source_overrides"),
+    [
+        (_strict_approved_result(score=0.94), {}),
+        (_strict_approved_result(severity=None), {}),
+        (_strict_approved_result(severity_confidence=0.84), {}),
+        (_strict_approved_result(date_confirmed=False), {}),
+        (_strict_approved_result(company_confirmed=False), {}),
+        (_strict_approved_result(evidence_tier="reported_unconfirmed"), {}),
+        (
+            _strict_approved_result(),
+            {"source_origin": "search_discovery"},
+        ),
+    ],
+)
+def test_review_routes_uncertain_candidates_to_pending_review(
+    result: IncidentReviewResult,
+    source_overrides: dict[str, object],
+) -> None:
+    incident = _official_fixed_source_incident()
+    incident["sources"][0].update(source_overrides)  # type: ignore[index, union-attr]
+    repository = InMemoryIncidentRepository(incidents=[incident])
+    translation_client = FakeTranslationClient()
+
+    summary = asyncio.run(
+        review_pending_incidents(
+            repository,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=FakeAsyncReviewRetryClient([result]),
+            escalation_client=FakeBatchReviewClient(),
+            translation_client=translation_client,
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            primary_model="deepseek-test",
+            escalation_model="deepseek-pro-test",
+            embedding_model="embedding-test",
+            duplicate_judge_model="duplicate-test",
+        )
+    )
+
+    assert summary.approved == 0
+    assert summary.pending_review == 1
+    assert repository.incidents["incident-official"]["status"] == (
+        "pending_review"
+    )
+    assert translation_client.calls == []
+
+
+def test_review_requires_fetched_fixed_source_evidence_to_auto_approve() -> None:
+    class FailingSourceFetcher:
+        def fetch(self, source_url: str) -> FetchedIncidentSource:
+            return FetchedIncidentSource(
+                source_url=source_url,
+                canonical_url=source_url,
+                fetch_status="failed",
+                http_status=403,
+                evidence_text=None,
+                fetch_error="Forbidden",
+            )
+
+    incident = _official_fixed_source_incident()
+    incident["sources"][0]["fetch_status"] = None  # type: ignore[index]
+    incident["sources"][0]["http_status"] = None  # type: ignore[index]
+    incident["sources"][0]["evidence_text"] = None  # type: ignore[index]
+    repository = InMemoryIncidentRepository(incidents=[incident])
+    translation_client = FakeTranslationClient()
+
+    summary = asyncio.run(
+        review_pending_incidents(
+            repository,
+            source_fetcher=FailingSourceFetcher(),
+            review_client=FakeAsyncReviewRetryClient([_strict_approved_result()]),
+            escalation_client=FakeBatchReviewClient(),
+            translation_client=translation_client,
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            primary_model="deepseek-test",
+            escalation_model="deepseek-pro-test",
+            embedding_model="embedding-test",
+            duplicate_judge_model="duplicate-test",
+        )
+    )
+
+    assert summary.approved == 0
+    assert summary.pending_review == 1
+    assert repository.incidents["incident-official"]["status"] == (
+        "pending_review"
+    )
+    assert translation_client.calls == []
+
+
+def test_review_auto_approve_uses_legitimacy_floor_when_threshold_is_lower() -> None:
+    repository = InMemoryIncidentRepository(
+        incidents=[_official_fixed_source_incident()]
+    )
+    translation_client = FakeTranslationClient()
+
+    summary = asyncio.run(
+        review_pending_incidents(
+            repository,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=FakeAsyncReviewRetryClient(
+                [_strict_approved_result(score=0.96)]
+            ),
+            escalation_client=FakeBatchReviewClient(),
+            translation_client=translation_client,
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            primary_model="deepseek-test",
+            escalation_model="deepseek-pro-test",
+            embedding_model="embedding-test",
+            duplicate_judge_model="duplicate-test",
+            approval_threshold=0.90,
+        )
+    )
+
+    assert summary.approved == 1
+    assert summary.pending_review == 0
+    assert repository.incidents["incident-official"]["status"] == "approved"
+    assert translation_client.calls
 
 
 def test_sync_review_client_retries_malformed_json_and_uses_higher_max_tokens(
@@ -888,8 +1167,7 @@ def test_submit_incident_review_batch_fetches_source_evidence_and_marks_batch() 
     assert first_incident["sources"][0]["evidence_text"].startswith("Evidence for ")
 
 
-def test_reconcile_incident_review_batch_routes_primary_results_to_editor_review(  # noqa: E501
-) -> None:
+def test_reconcile_incident_review_batch_routes_non_fixed_results_to_review() -> None:
     repository = InMemoryIncidentRepository()
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
     batch_client = FakeBatchReviewClient()
@@ -993,7 +1271,7 @@ def test_reconcile_incident_review_batch_routes_primary_results_to_editor_review
     approved_incident = incidents_by_external_id["inc-openai-001"]
     queued_incident = incidents_by_external_id["inc-school-002"]
 
-    assert approved_incident["status"] == "pending_editor_review"
+    assert approved_incident["status"] == "pending_review"
     assert approved_incident["translation_status"] == "not_requested"
     assert approved_incident.get("company_involved_zh") is None
     assert approved_incident.get("headline_zh") is None
@@ -1015,7 +1293,7 @@ def test_reconcile_incident_review_batch_routes_primary_results_to_editor_review
     assert approved_incident["suggested_severity_score"] == 2
     assert approved_incident["severity_decision_source"] is None
 
-    assert queued_incident["status"] == "pending_editor_review"
+    assert queued_incident["status"] == "pending_review"
     assert queued_incident["categories"] == [
         "Autonomous Systems",
         "Missed Timelines",
@@ -1143,7 +1421,7 @@ def test_reconcile_incident_review_batch_skips_second_phase_for_low_confidence_r
     assert summary.pending_review == 1
     assert summary.rejected == 0
     assert summary.escalated == 0
-    assert target_incident["status"] == "pending_editor_review"
+    assert target_incident["status"] == "pending_review"
     assert target_incident["categories"] == [
         "Autonomous Systems",
         "Missed Timelines",
@@ -1155,7 +1433,7 @@ def test_reconcile_incident_review_batch_skips_second_phase_for_low_confidence_r
     assert target_incident["severity_decision_source"] is None
 
 
-def test_reconcile_incident_review_batch_routes_escalation_flag_to_editor_without_second_phase(  # noqa: E501
+def test_reconcile_incident_review_batch_routes_uncertain_rows_without_second_phase(  # noqa: E501
 ) -> None:
     repository = InMemoryIncidentRepository()
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
@@ -1242,13 +1520,13 @@ def test_reconcile_incident_review_batch_routes_escalation_flag_to_editor_withou
     )
 
     assert summary.approved == 0
-    assert summary.pending_review == 2
-    assert summary.rejected == 0
+    assert summary.pending_review == 1
+    assert summary.rejected == 1
     assert summary.escalated == 0
     assert incidents_by_external_id["inc-openai-001"]["status"] == (
-        "pending_editor_review"
+        "rejected"
     )
-    assert target_incident["status"] == "pending_editor_review"
+    assert target_incident["status"] == "pending_review"
     assert target_incident["review_model"] == "gpt-5.4-mini"
     assert target_incident["translation_status"] == "not_requested"
 
@@ -1397,7 +1675,7 @@ def test_reconcile_incident_review_batch_hides_confirmed_duplicates_and_skips_tr
     assert summary.approved == 0
     assert summary.pending_review == 2
     assert summary.rejected == 0
-    assert imported_incident["status"] == "pending_editor_review"
+    assert imported_incident["status"] == "pending_review"
     assert imported_incident["duplicate_of_incident_id"] is None
     assert imported_incident["translation_status"] == "not_requested"
     assert len(repository.incidents["incident-canonical"]["sources"]) == 1

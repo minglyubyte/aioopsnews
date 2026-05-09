@@ -120,16 +120,19 @@ class DeepSeekIncidentTranslationClient:
         content = payload["choices"][0]["message"]["content"]
         parsed = json.loads(content)
         return IncidentTranslation(
-            company_involved_zh=parsed["company_involved_zh"],
-            headline_zh=parsed["headline_zh"],
-            reality_summary_zh=parsed["reality_summary_zh"],
+            company_involved_zh=parsed.get("company_involved_zh", ""),
+            headline_zh=parsed.get("headline_zh", ""),
+            reality_summary_zh=parsed.get("reality_summary_zh", ""),
             incident_summary_zh=parsed.get("incident_summary_zh", ""),
             what_happened_zh=parsed.get("what_happened_zh", ""),
             ai_failure_point_zh=parsed.get("ai_failure_point_zh", ""),
             why_it_matters_zh=parsed.get("why_it_matters_zh", ""),
             evidence_summary_zh=parsed.get("evidence_summary_zh", ""),
-            legitimacy_reasoning_zh=parsed["legitimacy_reasoning_zh"],
-            source_validation_summary_zh=parsed["source_validation_summary_zh"],
+            legitimacy_reasoning_zh=parsed.get("legitimacy_reasoning_zh", ""),
+            source_validation_summary_zh=parsed.get(
+                "source_validation_summary_zh",
+                "",
+            ),
             status="completed",
         )
 

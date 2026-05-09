@@ -125,9 +125,12 @@ def refresh_source_evidence(
     *,
     incidents: list[dict[str, Any]],
     source_fetcher: IncidentSourceFetcher,
+    force: bool = False,
 ) -> None:
     for incident in incidents:
         for source in incident.get("sources", []):
+            if not force and _source_already_attempted(source):
+                continue
             fetched = source_fetcher.fetch(source["source_url"])
             repository.update_incident_source_evidence(
                 source_id=source["id"],
@@ -138,6 +141,10 @@ def refresh_source_evidence(
                 fetch_error=fetched.fetch_error,
                 fetched_at=_now_isoformat(),
             )
+
+
+def _source_already_attempted(source: dict[str, Any]) -> bool:
+    return bool(source.get("evidence_text")) or source.get("fetch_status") == "failed"
 
 
 def build_review_source_context(

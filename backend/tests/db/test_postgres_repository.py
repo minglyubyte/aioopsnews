@@ -244,6 +244,29 @@ class _StubConnection:
             )
         if "group by category.value" in query:
             return _StubResult(rows=[{"category": "Hallucinations", "count": 1}])
+        if "select distinct category.value as category" in query:
+            return _StubResult(rows=[{"category": "Hallucinations"}])
+        if "select distinct incident_logs.claimant_name" in query:
+            return _StubResult(rows=[])
+        if (
+            "incident_logs.company_involved as company" in query
+            and "max(incident_logs.company_involved_zh)" in query
+            and "count(*)" not in query
+        ):
+            return _StubResult(
+                rows=[
+                    {
+                        "company": "OpenAI",
+                        "company_zh": "开放人工智能",
+                    }
+                ]
+            )
+        if "select distinct incident_logs.publication_track" in query:
+            return _StubResult(rows=[{"publication_track": "verified_accident"}])
+        if "select distinct incident_logs.source_family" in query:
+            return _StubResult(rows=[{"source_family": "legal_hallucination"}])
+        if "select incident_logs.date_logged" in query:
+            return _StubResult(rows=[{"date_logged": "2026-04-30"}])
         if "group by incident_logs.company_involved" in query:
             return _StubResult(
                 rows=[
@@ -519,6 +542,63 @@ def test_postgres_repository_writes_native_postgres_values(monkeypatch) -> None:
     assert embedding_params[1] == [0.1, 0.9]
 
 
+def test_upsert_incident_import_row_wraps_raw_source_payload_as_jsonb(
+    monkeypatch,
+) -> None:
+    connection = _StubConnection()
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    repository.upsert_incident_import_row(
+        external_id="verified-source-1",
+        headline="Verified source incident",
+        date_logged="2026-05-09",
+        company_involved="Waymo",
+        incident_topic="autonomous_vehicle",
+        reality_summary="A fixed verified source reported an incident.",
+        status="pending_llm_review",
+        source_links=["https://example.com/report"],
+        legitimacy_score=None,
+        legitimacy_label=None,
+        legitimacy_reasoning=None,
+        source_validation_summary="Fixed verified source.",
+        legitimacy_flag="REVIEW",
+        confidence_level="high",
+        import_notes=None,
+        matched_claim_id=None,
+        headline_zh=None,
+        reality_summary_zh=None,
+        translation_status="not_requested",
+        source_origin="fixed_verified_source",
+        source_registry_key="ca_dmv_av_collisions",
+        raw_source_payloads=[{"source": "dmv", "case_id": "abc"}],
+    )
+
+    source_params = next(
+        args[0]
+        for query, args in connection.calls
+        if args and "insert into incident_sources" in query
+    )
+
+    assert type(source_params[14]).__name__ == "Jsonb"
+    assert source_params[14].obj == {"source": "dmv", "case_id": "abc"}
+
+
 def test_apply_admin_review_selects_translation_fields(monkeypatch) -> None:
     connection = _StubConnection()
 
@@ -592,7 +672,7 @@ def test_apply_admin_review_selects_dual_track_and_analysis_fields(
             return result
 
     connection = StrictAdminReviewConnection()
-    connection.incident_row["status"] = "pending_editor_review"
+    connection.incident_row["status"] = "pending_review"
     connection.incident_row["publication_track"] = "verified_accident"
     connection.incident_row["evidence_tier"] = "official_documented"
     connection.incident_row["source_family"] = "autonomous_vehicle"
@@ -659,7 +739,7 @@ def test_list_review_queue_selects_dual_track_fields(monkeypatch) -> None:
             return super().execute(query, *args, **kwargs)
 
     connection = StrictReviewQueueConnection()
-    connection.incident_row["status"] = "pending_editor_review"
+    connection.incident_row["status"] = "pending_review"
     connection.incident_row["publication_track"] = "verified_accident"
     connection.incident_row["evidence_tier"] = "official_documented"
     connection.incident_row["source_family"] = "autonomous_vehicle"
@@ -684,7 +764,7 @@ def test_list_review_queue_selects_dual_track_fields(monkeypatch) -> None:
 
     queue = repository.list_review_queue()
 
-    assert queue[0]["status"] == "pending_editor_review"
+    assert queue[0]["status"] == "pending_review"
     assert queue[0]["publication_track"] == "verified_accident"
     assert queue[0]["evidence_tier"] == "official_documented"
     assert queue[0]["source_family"] == "autonomous_vehicle"
@@ -912,3 +992,4 @@ def test_get_filter_values_returns_chinese_company_labels(monkeypatch) -> None:
 
     assert filters["companies"] == ["OpenAI"]
     assert filters["company_labels_zh"] == {"OpenAI": "开放人工智能"}
+    assert all("limit %s offset %s" not in query for query in connection.executed)

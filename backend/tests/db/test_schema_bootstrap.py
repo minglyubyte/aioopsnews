@@ -224,7 +224,7 @@ def test_incident_claim_and_source_models_capture_mvp_schema() -> None:
         reality_summary="A supervised launch produced repeated escalations.",
         reality_summary_en="A supervised launch produced repeated escalations.",
         reality_summary_zh="一次受监督的发布引发了反复升级。",
-        status="pending_editor_review",
+        status="pending_review",
         confidence_score=0.82,
         severity_confidence=0.88,
         severity_reasoning=(

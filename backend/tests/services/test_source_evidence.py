@@ -6,9 +6,11 @@ import httpx
 
 from app.services.source_evidence import (
     SOURCE_EVIDENCE_TEXT_MAX_CHARS,
+    FetchedIncidentSource,
     HttpIncidentSourceFetcher,
     build_review_source_context,
     extract_evidence_text,
+    refresh_source_evidence,
 )
 
 
@@ -265,6 +267,65 @@ def test_http_source_fetcher_returns_failed_source_on_http_error(monkeypatch) ->
     assert result.fetch_status == "failed"
     assert result.evidence_text is None
     assert result.fetch_error == "network unavailable"
+
+
+def test_refresh_source_evidence_skips_already_attempted_sources() -> None:
+    class FakeRepository:
+        def __init__(self) -> None:
+            self.updated_source_ids: list[str] = []
+
+        def update_incident_source_evidence(self, **kwargs: object) -> None:
+            self.updated_source_ids.append(str(kwargs["source_id"]))
+
+    class FakeFetcher:
+        def __init__(self) -> None:
+            self.fetched_urls: list[str] = []
+
+        def fetch(self, source_url: str) -> FetchedIncidentSource:
+            self.fetched_urls.append(source_url)
+            return FetchedIncidentSource(
+                source_url=source_url,
+                canonical_url=f"{source_url}?canonical",
+                fetch_status="fetched",
+                http_status=200,
+                evidence_text=f"Evidence for {source_url}",
+                fetch_error=None,
+            )
+
+    repository = FakeRepository()
+    fetcher = FakeFetcher()
+
+    refresh_source_evidence(
+        repository,  # type: ignore[arg-type]
+        incidents=[
+            {
+                "sources": [
+                    {
+                        "id": "source-existing",
+                        "source_url": "https://example.com/existing",
+                        "evidence_text": "Already in DB",
+                        "fetch_status": "fetched",
+                    },
+                    {
+                        "id": "source-failed",
+                        "source_url": "https://example.com/failed",
+                        "evidence_text": None,
+                        "fetch_status": "failed",
+                    },
+                    {
+                        "id": "source-missing",
+                        "source_url": "https://example.com/missing",
+                        "evidence_text": None,
+                        "fetch_status": None,
+                    },
+                ]
+            }
+        ],
+        source_fetcher=fetcher,
+    )
+
+    assert fetcher.fetched_urls == ["https://example.com/missing"]
+    assert repository.updated_source_ids == ["source-missing"]
 
 
 def test_review_source_context_caps_prompt_evidence_and_keeps_facts() -> None:

@@ -93,26 +93,27 @@ def main() -> int:
         "--adaptive-deepseek-rate",
         action="store_true",
         help=(
-            "Enable adaptive primary review request pacing for DeepSeek calls."
+            "Deprecated no-op. DeepSeek review now always uses concurrency-only "
+            "calling with global 429 cooldown."
         ),
     )
     parser.add_argument(
         "--adaptive-initial-rps",
         type=float,
         default=1.0,
-        help="Initial adaptive DeepSeek request rate. Defaults to 1.",
+        help="Deprecated no-op retained for CLI compatibility.",
     )
     parser.add_argument(
         "--adaptive-rps-step",
         type=float,
         default=1.0,
-        help="Requests per second to add after each successful second.",
+        help="Deprecated no-op retained for CLI compatibility.",
     )
     parser.add_argument(
         "--adaptive-max-rps",
         type=float,
         default=20.0,
-        help="Maximum adaptive DeepSeek request rate. Defaults to 20.",
+        help="Deprecated no-op retained for CLI compatibility.",
     )
     parser.add_argument(
         "--adaptive-backoff-max-seconds",

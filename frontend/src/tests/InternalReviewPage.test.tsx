@@ -67,7 +67,7 @@ function buildAdminIncident(
       overrides.reality_summary ??
       "A support automation rollout leaked internal notes into user-facing replies.",
     reality_summary_zh: overrides.reality_summary_zh ?? null,
-    status: overrides.status ?? "pending_editor_review",
+    status: overrides.status ?? "pending_review",
     translation_status: overrides.translation_status ?? "pending",
     matched_claim: overrides.matched_claim ?? null,
     sources: overrides.sources ?? [],
@@ -216,7 +216,7 @@ describe("InternalReviewPage", () => {
       within(selectedQueueCard).getByText("AssistCo exposed private account notes"),
     ).toBeInTheDocument();
     expect(
-      within(selectedQueueCard).getByText("Status: pending_editor_review"),
+      within(selectedQueueCard).getByText("Status: pending_review"),
     ).toBeInTheDocument();
     expect(within(selectedQueueCard).getByText("AssistCo")).toBeInTheDocument();
     expect(within(selectedQueueCard).getByText("Severity 3")).toBeInTheDocument();

@@ -137,13 +137,15 @@ cd backend
 - PostgreSQL-backed repository for local development
 - RSS ingestion with dedupe plus `pending_review` / `pending_llm_review` persistence
 - enrichment and heuristic claim matching
-- primary LLM review with strict structured output, taxonomy-bound categories, severity suggestion, and approval gating
+- primary LLM review with strict structured output, taxonomy-bound categories,
+  severity suggestion, and high-confidence fixed-source auto-approval
 - resumable historical backfill with checkpoint and audit files
 - daily ingestion orchestration with retry and run metrics
 - CSV claim import with UUID primary keys; omit `id` to generate one
 - fixed-source accident CSV generation with
   `python -m app.scripts.generate_verified_source_csv --sources all`
-- bounded concurrent DeepSeek review via
+- concurrency-bound DeepSeek review with no proactive qps cap and shared 429
+  cooldown via
   `python -m app.scripts.run_incident_csv_workflow --max-reviews 100 --review-concurrency 10`
 - incident daily runner commands documented in `docs/product/daily-runner.md`
 - canonical operator research prompt for ChatGPT Deep Research / Gemini Deep Research in `backend/app/services/case_search_prompt.py`

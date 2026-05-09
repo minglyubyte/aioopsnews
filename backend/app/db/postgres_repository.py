@@ -23,8 +23,10 @@ from app.services.incident_query import IncidentQueryFilters
 
 try:
     from psycopg.rows import dict_row
+    from psycopg.types.json import Jsonb
 except ModuleNotFoundError:
     dict_row = None
+    Jsonb = None
 
 try:
     from psycopg_pool import ConnectionPool
@@ -32,6 +34,12 @@ except ModuleNotFoundError:
     ConnectionPool = None
 
 _POSTGRES_SCHEMA = (Path(__file__).parent / "_schema.sql").read_text()
+
+
+def _jsonb_or_none(value: dict[str, object] | None) -> object | None:
+    if value is None or Jsonb is None:
+        return value
+    return Jsonb(value)
 
 
 class PostgresIncidentRepository:
@@ -355,12 +363,11 @@ class PostgresIncidentRepository:
                     duplicate_of_incident_id,
                     canonical_incident_id
                 from incident_logs
-                where status in (%s, %s, %s, %s)
+                where status in (%s, %s, %s)
                 order by date_logged desc, id asc
                 """,
                 (
                     "pending_review",
-                    "pending_editor_review",
                     "pending_llm_escalation",
                     "pending_duplicate_review",
                 ),
@@ -643,39 +650,82 @@ class PostgresIncidentRepository:
         ]
 
     def get_filter_values(self) -> dict[str, object]:
-        incidents = self.list_public_incidents(IncidentQueryFilters())
+        with self._connect() as connection:
+            category_rows = connection.execute(
+                """
+                select distinct category.value as category
+                from incident_logs
+                cross join lateral unnest(incident_logs.categories) as category(value)
+                where incident_logs.status = %s
+                order by category.value asc
+                """,
+                ("approved",),
+            ).fetchall()
+            claimant_rows = connection.execute(
+                """
+                select distinct incident_logs.claimant_name
+                from incident_logs
+                where incident_logs.status = %s
+                  and incident_logs.claimant_name is not null
+                order by incident_logs.claimant_name asc
+                """,
+                ("approved",),
+            ).fetchall()
+            company_rows = connection.execute(
+                """
+                select
+                    incident_logs.company_involved as company,
+                    max(incident_logs.company_involved_zh) as company_zh
+                from incident_logs
+                where incident_logs.status = %s
+                  and incident_logs.company_involved is not null
+                group by incident_logs.company_involved
+                order by incident_logs.company_involved asc
+                """,
+                ("approved",),
+            ).fetchall()
+            track_rows = connection.execute(
+                """
+                select distinct incident_logs.publication_track
+                from incident_logs
+                where incident_logs.status = %s
+                  and incident_logs.publication_track is not null
+                order by incident_logs.publication_track asc
+                """,
+                ("approved",),
+            ).fetchall()
+            family_rows = connection.execute(
+                """
+                select distinct incident_logs.source_family
+                from incident_logs
+                where incident_logs.status = %s
+                  and incident_logs.source_family is not null
+                order by incident_logs.source_family asc
+                """,
+                ("approved",),
+            ).fetchall()
+            date_rows = connection.execute(
+                """
+                select incident_logs.date_logged
+                from incident_logs
+                where incident_logs.status = %s
+                  and incident_logs.date_logged is not null
+                """,
+                ("approved",),
+            ).fetchall()
 
-        categories = sorted(
-            {category for incident in incidents for category in incident["categories"]}
-        )
-        claimants = sorted(
-            {
-                incident["claimant_name"]
-                for incident in incidents
-                if incident["claimant_name"]
-            }
-        )
-        companies = sorted({incident["company_involved"] for incident in incidents})
-        publication_tracks = sorted(
-            {incident["publication_track"] for incident in incidents}
-        )
-        source_families = sorted({incident["source_family"] for incident in incidents})
+        categories = [row["category"] for row in category_rows]
+        claimants = [row["claimant_name"] for row in claimant_rows]
+        companies = [row["company"] for row in company_rows]
         company_labels_zh = {
-            company: next(
-                (
-                    incident.get("company_involved_zh")
-                    for incident in incidents
-                    if incident["company_involved"] == company
-                    and incident.get("company_involved_zh")
-                ),
-                None,
-            )
-            for company in companies
+            row["company"]: row.get("company_zh") for row in company_rows
         }
+        publication_tracks = [row["publication_track"] for row in track_rows]
+        source_families = [row["source_family"] for row in family_rows]
         archive_pairs = sorted(
             {
-                tuple(map(int, str(incident["date_logged"]).split("-")[:2]))
-                for incident in incidents
+                tuple(map(int, str(row["date_logged"]).split("-")[:2]))
+                for row in date_rows
             },
             reverse=True,
         )
@@ -1409,7 +1459,7 @@ class PostgresIncidentRepository:
                         None,
                         source_origin or "manual_import",
                         source_registry_key,
-                        raw_source_payload,
+                        _jsonb_or_none(raw_source_payload),
                         display_order == 0,
                     )
                 )

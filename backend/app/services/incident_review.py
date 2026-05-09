@@ -40,18 +40,10 @@ _parse_review_result_from_provider_payload = (
     review_prompts.parse_review_result_from_provider_payload
 )
 
-AUTO_APPROVAL_SEVERITY_THRESHOLD = 2
-AUTO_APPROVAL_LEGITIMACY_THRESHOLD = 0.90
+AUTO_APPROVAL_LEGITIMACY_THRESHOLD = 0.95
 AUTO_APPROVAL_SEVERITY_CONFIDENCE_THRESHOLD = 0.85
+AUTO_APPROVAL_EVIDENCE_TIERS = {"official_documented", "court_or_regulator"}
 ESCALATION_SEVERITY_CONFIDENCE_THRESHOLD = 0.75
-HIGH_RISK_SEVERITY_FLAGS = {
-    "safety",
-    "privacy_breach",
-    "legal_or_regulatory",
-    "financial_harm",
-    "core_system_outage",
-    "unclear_real_world_impact",
-}
 @dataclass(frozen=True)
 class IncidentReviewBatchSubmission:
     batch_id: str
@@ -137,6 +129,8 @@ class IncidentReviewApplicationResult:
 
 
 class AdaptiveReviewRateLimiter:
+    """Compatibility wrapper for DeepSeek 429-driven global cooldown."""
+
     def __init__(
         self,
         *,
@@ -147,28 +141,16 @@ class AdaptiveReviewRateLimiter:
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        if initial_rps <= 0:
-            raise ValueError("initial_rps must be greater than 0")
-        if rps_step <= 0:
-            raise ValueError("rps_step must be greater than 0")
-        if max_rps < initial_rps:
-            raise ValueError("max_rps must be greater than or equal to initial_rps")
+        del initial_rps, rps_step, max_rps
         if backoff_max_seconds <= 0:
             raise ValueError("backoff_max_seconds must be greater than 0")
 
-        self._initial_rps = float(initial_rps)
-        self._rps_step = float(rps_step)
-        self._max_rps = float(max_rps)
         self._backoff_max_seconds = float(backoff_max_seconds)
         self._monotonic = monotonic
         self._sleep = sleep
         self._lock = asyncio.Lock()
         now = self._monotonic()
-        self._current_rps = self._initial_rps
-        self._peak_rps = self._initial_rps
-        self._next_slot_at = now
         self._cooldown_until = now
-        self._last_ramp_at = now
         self._next_backoff_seconds = 1.0
         self._rate_limit_events = 0
 
@@ -176,12 +158,9 @@ class AdaptiveReviewRateLimiter:
         while True:
             async with self._lock:
                 now = self._monotonic()
-                self._advance_rate_locked(now)
-                start_at = max(self._next_slot_at, self._cooldown_until)
-                if start_at <= now:
-                    self._next_slot_at = now + (1.0 / self._current_rps)
+                if self._cooldown_until <= now:
                     return
-                delay = start_at - now
+                delay = self._cooldown_until - now
             await self._sleep(delay)
 
     async def record_rate_limit(self) -> None:
@@ -192,33 +171,21 @@ class AdaptiveReviewRateLimiter:
                 self._backoff_max_seconds,
             )
             cooldown_until = now + cooldown_seconds
-            self._current_rps = self._initial_rps
-            self._cooldown_until = cooldown_until
-            self._next_slot_at = cooldown_until
-            self._last_ramp_at = cooldown_until
+            self._cooldown_until = max(self._cooldown_until, cooldown_until)
             self._next_backoff_seconds = min(
                 cooldown_seconds * 2,
                 self._backoff_max_seconds,
             )
             self._rate_limit_events += 1
 
+    async def record_success(self) -> None:
+        async with self._lock:
+            self._next_backoff_seconds = 1.0
+
     def snapshot(self) -> dict[str, float | int]:
         return {
             "rate_limit_events": self._rate_limit_events,
-            "peak_rps": self._peak_rps,
-            "current_rps": self._current_rps,
         }
-
-    def _advance_rate_locked(self, now: float) -> None:
-        elapsed_seconds = int(now - self._last_ramp_at)
-        if elapsed_seconds <= 0:
-            return
-        self._current_rps = min(
-            self._max_rps,
-            self._current_rps + (elapsed_seconds * self._rps_step),
-        )
-        self._peak_rps = max(self._peak_rps, self._current_rps)
-        self._last_ramp_at += elapsed_seconds
 
 
 class IncidentBatchReviewClient(Protocol):
@@ -587,9 +554,8 @@ async def review_pending_incidents(
             max_rps=adaptive_max_rps,
             backoff_max_seconds=adaptive_backoff_max_seconds,
         )
-        if adaptive_deepseek_rate
-        else None
     )
+    del adaptive_deepseek_rate
 
     async def _process_incident(
         incident: dict[str, Any],
@@ -787,14 +753,17 @@ def _should_escalate(
 def _resolve_final_status(
     result: IncidentReviewResult,
     *,
+    incident: dict[str, Any],
     approval_threshold: float,
 ) -> str:
     if result.verdict == "rejected":
         return "rejected"
-    if _can_auto_approve(result, approval_threshold=approval_threshold):
+    if _can_auto_approve(
+        result,
+        incident=incident,
+        approval_threshold=approval_threshold,
+    ):
         return "approved"
-    if _requires_editor_review(result):
-        return "pending_editor_review"
     return "pending_review"
 
 
@@ -827,6 +796,12 @@ def _normalize_review_result(
         severity_confidence=result.severity_confidence,
         severity_reasoning=result.severity_reasoning,
         severity_flags=list(result.severity_flags or []),
+        publication_track=result.publication_track or incident.get("publication_track"),
+        evidence_tier=result.evidence_tier or incident.get("evidence_tier"),
+        source_family=result.source_family or incident.get("source_family"),
+        verification_summary=(
+            result.verification_summary or incident.get("verification_summary")
+        ),
         needs_escalation=result.needs_escalation,
         reviewed_model=result.reviewed_model,
     )
@@ -835,15 +810,14 @@ def _normalize_review_result(
 def _can_auto_approve(
     result: IncidentReviewResult,
     *,
+    incident: dict[str, Any],
     approval_threshold: float,
 ) -> bool:
     if result.verdict != "approved":
         return False
-    if result.score < approval_threshold:
+    if result.score < max(approval_threshold, AUTO_APPROVAL_LEGITIMACY_THRESHOLD):
         return False
     if result.suggested_severity_score is None:
-        return result.date_confirmed and result.company_confirmed
-    if result.suggested_severity_score > AUTO_APPROVAL_SEVERITY_THRESHOLD:
         return False
     if result.severity_confidence is None:
         return False
@@ -851,20 +825,20 @@ def _can_auto_approve(
         return False
     if (not result.date_confirmed) or (not result.company_confirmed):
         return False
-    return not any(
-        flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or []
-    )
-
-
-def _requires_editor_review(result: IncidentReviewResult) -> bool:
-    if result.suggested_severity_score is None:
+    if (result.publication_track or incident.get("publication_track")) != (
+        "verified_accident"
+    ):
         return False
     if (
-        result.suggested_severity_score is not None
-        and result.suggested_severity_score >= 3
-    ):
-        return True
-    return any(flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or [])
+        result.evidence_tier or incident.get("evidence_tier")
+    ) not in AUTO_APPROVAL_EVIDENCE_TIERS:
+        return False
+    return any(
+        source.get("source_origin") == "fixed_verified_source"
+        and source.get("fetch_status") == "fetched"
+        and bool(source.get("evidence_text"))
+        for source in incident.get("sources", [])
+    )
 
 
 async def _review_incident_with_retries(
@@ -880,7 +854,10 @@ async def _review_incident_with_retries(
         try:
             if rate_limiter is not None:
                 await rate_limiter.wait_for_slot()
-            return await review_client.review_incident(incident=incident, model=model)
+            result = await review_client.review_incident(incident=incident, model=model)
+            if rate_limiter is not None:
+                await rate_limiter.record_success()
+            return result
         except ReviewResponseParseError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -915,12 +892,16 @@ def _resolve_review_decision(
     escalation_model: str,
     approval_threshold: float,
 ) -> IncidentReviewDecision:
-    del escalation_client, escalation_model, approval_threshold
+    del escalation_client, escalation_model
     normalized_result = _normalize_review_result(initial_result, incident=incident)
     return IncidentReviewDecision(
         result=normalized_result,
         escalated=False,
-        force_human_review=True,
+        force_human_review=not _can_auto_approve(
+            normalized_result,
+            incident=incident,
+            approval_threshold=approval_threshold,
+        ),
     )
 
 
@@ -939,13 +920,10 @@ def _apply_review_decision(
     review_batch_id: str | None,
 ) -> IncidentReviewApplicationResult:
     final_result = decision.result
-    final_status = (
-        "pending_editor_review"
-        if decision.force_human_review
-        else _resolve_final_status(
-            final_result,
-            approval_threshold=approval_threshold,
-        )
+    final_status = _resolve_final_status(
+        final_result,
+        incident=incident,
+        approval_threshold=approval_threshold,
     )
     if final_status == "approved" and _has_insufficient_autonomous_vehicle_detail(
         incident,

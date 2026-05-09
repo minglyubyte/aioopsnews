@@ -251,12 +251,18 @@ def test_get_settings_allows_explicit_review_runtime_overrides(
     monkeypatch.setenv("REVIEW_MAX_OUTPUT_TOKENS", "9000")
     monkeypatch.setenv("REVIEW_RESPONSE_PARSE_MAX_ATTEMPTS", "4")
     monkeypatch.setenv("REVIEW_CONCURRENCY", "12")
+    monkeypatch.setenv("FORENSIC_MIN_WORD_COUNT_WHAT_HAPPENED", "80")
+    monkeypatch.setenv("FORENSIC_MIN_WORD_COUNT_AI_FAILURE_POINT", "70")
+    monkeypatch.setenv("FORENSIC_MIN_WORD_COUNT_WHY_IT_MATTERS", "60")
 
     settings = get_settings()
 
     assert settings.review_max_output_tokens == 9000
     assert settings.review_response_parse_max_attempts == 4
     assert settings.review_concurrency == 12
+    assert settings.forensic_min_word_count_what_happened == 80
+    assert settings.forensic_min_word_count_ai_failure_point == 70
+    assert settings.forensic_min_word_count_why_it_matters == 60
 
 
 def test_get_settings_does_not_reuse_openai_key_for_primary_review(

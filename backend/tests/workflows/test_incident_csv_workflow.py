@@ -322,7 +322,7 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
         for incident in repository.incidents.values()
         if incident["external_id"] == "inc-openai-001"
     )
-    assert approved_incident["status"] == "pending_editor_review"
+    assert approved_incident["status"] == "pending_review"
     assert approved_incident.get("company_involved_zh") is None
     assert approved_incident.get("incident_summary_zh") is None
     assert approved_incident["incident_summary_en"] == (
@@ -709,7 +709,7 @@ def test_run_incident_csv_workflow_reports_unrecoverable_review_failures(
     assert school_incident["status"] == "pending_llm_review"
 
 
-def test_run_incident_csv_workflow_routes_escalation_flags_to_editor_review(
+def test_run_incident_csv_workflow_routes_uncertain_rows_to_pending_review(
     tmp_path,
 ) -> None:
     from app.workflows.incident_csv_workflow import run_incident_csv_workflow
@@ -800,7 +800,7 @@ def test_run_incident_csv_workflow_routes_escalation_flags_to_editor_review(
     assert summary["review_failures"] == []
     assert summary["approved"] == 0
     assert summary["pending_review"] == 2
-    assert school_incident["status"] == "pending_editor_review"
+    assert school_incident["status"] == "pending_review"
 
 
 def test_run_incident_csv_workflow_merges_confirmed_duplicates_without_publicizing_duplicate(  # noqa: E501
@@ -942,6 +942,6 @@ def test_run_incident_csv_workflow_merges_confirmed_duplicates_without_publicizi
         if incident.get("external_id") == "inc-openai-001"
     )
     assert summary["approved"] == 0
-    assert imported_incident["status"] == "pending_editor_review"
+    assert imported_incident["status"] == "pending_review"
     assert repository.get_public_incident(imported_incident["id"]) is None
     assert repository.get_public_incident("incident-canonical") is not None

@@ -190,7 +190,6 @@ export type AdminIncidentQueueResponse = {
 export type AdminIncidentUpdateRequest = {
   status:
     | "pending_review"
-    | "pending_editor_review"
     | "approved"
     | "rejected"
     | "needs_rework";

@@ -123,9 +123,9 @@ The daily runner moves incidents through these states:
 
 1. CSV import creates incidents in `pending_llm_review`
 2. primary review returns legitimacy plus severity suggestion
-3. low-risk incidents may become `approved`
-4. ambiguous incidents may become `pending_llm_escalation`
-5. serious but otherwise clear incidents become `pending_editor_review`
+3. high-confidence fixed-source incidents may become `approved`
+4. model-rejected incidents become `rejected`
+5. uncertain or incomplete incidents become `pending_review`
 6. approved incidents run duplicate review
 7. still-approved incidents run translation, including company-name localization
 8. only `approved` incidents appear in the public feed
@@ -144,8 +144,10 @@ By default this does all of the following:
 - scans the inbox directory for incident CSV files
 - validates and imports them
 - archives successfully imported CSV files
-- reviews pending incidents with bounded async primary-review concurrency
-- applies escalation, duplicate, translation, and editor-gating decisions
+- reviews pending incidents with bounded async primary-review concurrency and
+  global cooldown after provider 429s
+- applies approval, rejection, duplicate, translation, and human-review routing
+  decisions
 
 ## Bounded Review Runs
 
@@ -159,9 +161,9 @@ UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.run_incident_csv_workflow
   --review-concurrency 10
 ```
 
-DeepSeek applies dynamic server-side rate limits. Keep `--review-concurrency`
-near 10 for local operator runs, and lower it if the provider starts returning
-HTTP 429 responses.
+DeepSeek review no longer applies a proactive qps cap. Keep
+`--review-concurrency` near 10 for local operator runs; if the provider returns
+HTTP 429, all review workers share a short global cooldown and then continue.
 
 ## Dry Run
 
@@ -241,18 +243,20 @@ Primary review output must satisfy all of the following:
 
 ### 4. Approval Routing
 
-- auto-approves only low-risk, high-confidence incidents
-- runs a second LLM pass when phase 1 or server-side rules mark the result as
-  uncertain
-- routes serious incidents to `pending_editor_review`
-- routes low-confidence or ambiguous incidents to human review when the second
-  pass still returns `needs_escalation=true`
+- auto-approves fixed-source incidents when the primary model returns
+  `verdict="approved"`, `score >= 0.95`, `severity_confidence >= 0.85`,
+  confirmed date and company, `publication_track="verified_accident"`,
+  official/court evidence tier, and fetched fixed-source evidence text
+- rejects incidents when the primary model returns `verdict="rejected"`
+- routes low-confidence, missing-severity, weak-evidence, unconfirmed, or
+  otherwise ambiguous incidents to `pending_review` for the operator
 
 ### 5. Escalation
 
-- uses the stronger escalation model only when the incident is ambiguous
-- does not escalate just because an incident is high severity
-- also escalates when structured review output is invalid, including unknown categories or malformed severity fields
+- second-phase escalation is currently disabled for the daily review path
+- invalid structured review output, including unknown categories or malformed
+  severity fields, fails the row for operator follow-up instead of silently
+  approving it
 
 ### 6. Duplicate Review
 
@@ -270,8 +274,15 @@ Primary review output must satisfy all of the following:
 
 - This workflow is safe to run repeatedly because import and review are driven by current queue state.
 - `--max-reviews` keeps a run bounded; `--review-concurrency` controls simultaneous primary review API calls.
-- High-severity incidents will often stop in `pending_editor_review`; that is expected and is part of the product policy.
+- Review calls have no proactive qps cap; provider 429s trigger shared cooldown
+  and retry.
+- High-severity incidents can still auto-approve when evidence and model
+  confidence are strong; uncertainty stops in `pending_review`.
 - The workflow decides final persisted `severity_score` in Python and stores `suggested_severity_score` separately. A `null` model suggestion is valid and does not clear an existing final severity.
+- Public archive filter values are computed from the full approved archive in
+  PostgreSQL, not from a paginated archive page. After large approval sweeps,
+  refresh the frontend or refetch `/filters` to see new company/category/year
+  values.
 
 ## Recommended Modes
 
@@ -314,7 +325,5 @@ The runner prints a JSON summary containing fields such as:
 - `rejected`
 - `translations_completed`
 - `translations_failed`
-
-Treat `pending_review` here as a summary bucket that may include `pending_editor_review` outcomes.
 
 For translated incidents, the completed summary corresponds to rows whose translation step has already written `company_involved_zh` and the rest of the Chinese-language display fields.

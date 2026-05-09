@@ -15,7 +15,6 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 ReviewStatus = Literal[
     "pending_review",
-    "pending_editor_review",
     "approved",
     "rejected",
     "needs_rework",

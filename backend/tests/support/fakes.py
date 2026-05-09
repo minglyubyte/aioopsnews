@@ -207,7 +207,6 @@ class InMemoryIncidentRepository:
             if incident["status"]
             in {
                 "pending_review",
-                "pending_editor_review",
                 "pending_llm_escalation",
                 "pending_duplicate_review",
             }

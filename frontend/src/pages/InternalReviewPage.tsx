@@ -629,9 +629,6 @@ function createReviewDraft(incident: AdminIncident): ReviewDraft {
 }
 
 function formatQueueStatus(status: string): string {
-  if (status === "pending_editor_review") {
-    return "pending editor review";
-  }
   if (status === "pending_llm_escalation") {
     return "pending llm escalation";
   }
