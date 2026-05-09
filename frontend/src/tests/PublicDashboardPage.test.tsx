@@ -818,6 +818,42 @@ describe("PublicDashboardPage", () => {
     expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
   });
 
+  it("falls back to English analysis text when Chinese fields are empty strings", async () => {
+    const incident = buildArchiveIncident({
+      headline_zh: "Waymo 事故",
+      archive_summary_zh: "一份官方事故报告。",
+    });
+    mockedFetchIncidentFeed.mockResolvedValue(buildFeedResponse([incident]));
+    mockedFetchIncidentDetail.mockResolvedValue(
+      buildIncidentDetail({
+        ...incident,
+        analysis: {
+          what_happened_en: "English incident context remains available.",
+          what_happened_zh: "",
+          ai_failure_point_en: "English failure point remains available.",
+          ai_failure_point_zh: "",
+          evidence_summary_en: "Official DMV report confirms the incident.",
+          evidence_summary_zh: "",
+        },
+      }),
+    );
+
+    render(<PublicDashboardPage />);
+
+    await screen.findByRole("heading", { name: "Quick takeaway" });
+    fireEvent.click(screen.getByRole("button", { name: "中文" }));
+
+    expect(
+      await screen.findByText("English incident context remains available."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("English failure point remains available."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Official DMV report confirms the incident."),
+    ).toBeInTheDocument();
+  });
+
   it("shows a localized detail failure and lets readers retry the same incident", async () => {
     const incident = buildArchiveIncident({
       id: "incident-3",
@@ -956,6 +992,68 @@ describe("PublicDashboardPage", () => {
         "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
       ),
     ).toHaveLength(1);
+  });
+
+  it("shows official-detail-pending copy for thin autonomous vehicle records", async () => {
+    const thinIncident = buildArchiveIncident({
+      id: "incident-thin-av",
+      headline: "California DMV published Waymo collision report",
+      headline_en: "California DMV published Waymo collision report",
+      company_involved: "Waymo",
+      categories: ["Autonomous Systems"],
+      publication_track: "verified_accident",
+      evidence_tier: "official_documented",
+      source_family: "autonomous_vehicle",
+      archive_summary:
+        "California DMV published an autonomous vehicle collision report.",
+    });
+
+    mockedFetchIncidentFeed.mockResolvedValue(buildFeedResponse([thinIncident]));
+    mockedFetchIncidentDetail.mockResolvedValue(
+      buildIncidentDetail({
+        ...thinIncident,
+        reality_summary:
+          "California DMV published an autonomous vehicle collision report.",
+        analysis: {
+          incident_summary_en:
+            "California DMV published an autonomous vehicle collision report.",
+          ai_failure_point_en: null,
+          evidence_summary_en: "Official DMV collision report.",
+          detail_quality: "insufficient",
+          detail_quality_reasons: [
+            "missing_evidence_text",
+            "missing_ai_failure_point",
+          ],
+          source_fact_summary: null,
+        },
+        sources: [
+          {
+            id: "source-thin-av",
+            source_url: "https://www.dmv.ca.gov/report.pdf",
+            source_type: "official",
+            publisher: "California DMV",
+            title: "Waymo collision report",
+          },
+        ],
+      }),
+    );
+
+    render(<PublicDashboardPage />);
+
+    expect(
+      await screen.findByText("Official report, detail pending"),
+    ).toBeInTheDocument();
+    const detail = screen.getByRole("heading", { name: "Full context" });
+    const detailSection = detail.closest("section");
+    expect(detailSection).not.toBeNull();
+    expect(
+      within(detailSection as HTMLElement).queryByText("AI failure point"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(detailSection as HTMLElement).getByRole("link", {
+        name: "Waymo collision report",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("paginates archive results and keeps the selected detail visible across page changes", async () => {

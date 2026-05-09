@@ -64,3 +64,36 @@ def test_create_app_preserves_provider_neutral_primary_review_settings(
     assert app.state.settings.escalation_review_model == "deepseek-v4-pro"
     assert app.state.settings.review_max_output_tokens == 8000
     assert app.state.settings.review_response_parse_max_attempts == 3
+
+
+def test_create_app_uses_primary_review_base_url_for_default_translation_client(
+    monkeypatch,
+) -> None:
+    captured_kwargs: dict[str, str] = {}
+
+    class CapturingTranslationClient:
+        def __init__(self, **kwargs: str) -> None:
+            captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.app_factory.get_settings",
+        lambda: Settings(
+            database_url="postgresql://example/db",
+            primary_review_api_key="primary-key",
+            primary_review_base_url="https://deepseek.example/v1",
+            primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
+            deepseek_api_key="deepseek-key",
+            deepseek_translation_model="deepseek-v4-flash",
+        ),
+    )
+    monkeypatch.setattr(
+        "app.app_factory.DeepSeekIncidentTranslationClient",
+        CapturingTranslationClient,
+    )
+
+    create_app(incident_repository=object())
+
+    assert captured_kwargs["api_key"] == "deepseek-key"
+    assert captured_kwargs["model"] == "deepseek-v4-flash"
+    assert captured_kwargs["base_url"] == "https://deepseek.example/v1"

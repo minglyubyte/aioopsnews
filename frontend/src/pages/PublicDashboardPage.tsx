@@ -933,12 +933,24 @@ export default function PublicDashboardPage() {
                   <div>
                     <h3>{copy.whatRemainsUncertainTitle}</h3>
                     <p className="body-copy">
-                      {uncertaintySummary(incidentDetail)}
+                      {uncertaintySummary(incidentDetail, readerLocale)}
                     </p>
                   </div>
                 </section>
                 <div className="public-detail-analysis">
-                  {localizedAnalysisText(
+                  {hasInsufficientDetail(incidentDetail) ? (
+                    <section className="public-detail-block">
+                      <p className="public-claim-kicker">
+                        {copy.officialDetailPendingTitle}
+                      </p>
+                      <p className="body-copy">
+                        {incidentDetail.analysis.source_fact_summary ??
+                          copy.officialDetailPendingBody}
+                      </p>
+                    </section>
+                  ) : null}
+                  {!hasInsufficientDetail(incidentDetail) &&
+                  localizedAnalysisText(
                     incidentDetail.analysis,
                     "what_happened",
                     readerLocale,
@@ -956,19 +968,22 @@ export default function PublicDashboardPage() {
                       </p>
                     </section>
                   ) : null}
-                  <section className="public-detail-block">
-                    <p className="public-claim-kicker">
-                      {copy.aiFailurePointTitle}
-                    </p>
-                    <p className="body-copy">
-                      {localizedAnalysisText(
-                        incidentDetail.analysis,
-                        "ai_failure_point",
-                        readerLocale,
-                      ) ?? copy.aiFailurePointUnavailable}
-                    </p>
-                  </section>
-                  {localizedAnalysisText(
+                  {!hasInsufficientDetail(incidentDetail) ? (
+                    <section className="public-detail-block">
+                      <p className="public-claim-kicker">
+                        {copy.aiFailurePointTitle}
+                      </p>
+                      <p className="body-copy">
+                        {localizedAnalysisText(
+                          incidentDetail.analysis,
+                          "ai_failure_point",
+                          readerLocale,
+                        ) ?? copy.aiFailurePointUnavailable}
+                      </p>
+                    </section>
+                  ) : null}
+                  {!hasInsufficientDetail(incidentDetail) &&
+                  localizedAnalysisText(
                     incidentDetail.analysis,
                     "why_it_matters",
                     readerLocale,
@@ -1164,6 +1179,10 @@ function localizedDetailSummary(
   incident: IncidentDetail,
   locale: ReaderLocale,
 ) {
+  if (hasInsufficientDetail(incident)) {
+    return incident.reality_summary_en ?? incident.reality_summary;
+  }
+
   const incidentSummary = localizedAnalysisText(
     incident.analysis,
     "incident_summary",
@@ -1184,6 +1203,13 @@ function localizedDetailSummary(
   return incident.reality_summary_en ?? incident.reality_summary;
 }
 
+function hasInsufficientDetail(incident: IncidentDetail) {
+  return (
+    incident.source_family === "autonomous_vehicle" &&
+    incident.analysis.detail_quality === "insufficient"
+  );
+}
+
 function localizedAnalysisText(
   analysis: IncidentAnalysis,
   key:
@@ -1199,12 +1225,24 @@ function localizedAnalysisText(
   const baseKey = key as keyof IncidentAnalysis;
 
   if (locale === "zh") {
-    return (
-      analysis[chineseKey] ?? analysis[baseKey] ?? analysis[englishKey] ?? null
+    return firstNonBlankText(
+      analysis[chineseKey],
+      analysis[baseKey],
+      analysis[englishKey],
     );
   }
 
-  return analysis[englishKey] ?? analysis[baseKey] ?? null;
+  return firstNonBlankText(analysis[englishKey], analysis[baseKey]);
+}
+
+function firstNonBlankText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return null;
 }
 
 const TRACK_LABELS_ZH: Record<string, string> = {
@@ -1281,9 +1319,20 @@ function localizedVerificationSummary(
   );
 }
 
-function uncertaintySummary(incident: IncidentDetail) {
+function uncertaintySummary(incident: IncidentDetail, locale: ReaderLocale) {
   if (incident.publication_track === "verified_accident") {
+    if (locale === "zh") {
+      return "编辑审核仍会检查 AI 相关性、重复风险和严重程度。";
+    }
+
     return "Editorial review still checks AI relevance, duplicate risk, and severity.";
+  }
+
+  if (locale === "zh") {
+    return (
+      "这仍是一条观察信号；需要官方、法院、监管、公司或固定高可信来源" +
+      "确认后，才会进入已验证事故档案。"
+    );
   }
 
   return (

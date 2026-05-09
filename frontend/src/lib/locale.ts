@@ -116,6 +116,9 @@ export const PUBLIC_COPY = {
     detailLoading: "Loading incident details...",
     aiFailurePointTitle: "AI failure point",
     aiFailurePointUnavailable: "Not yet structured for this incident.",
+    officialDetailPendingTitle: "Official report, detail pending",
+    officialDetailPendingBody:
+      "This record is backed by an official source, but the collision-specific narrative is still being enriched from the linked report.",
     whatHappenedTitle: "What happened",
     whyItMattersTitle: "Why it matters",
     evidenceSummaryTitle: "Evidence summary",
@@ -245,6 +248,9 @@ export const PUBLIC_COPY = {
     detailLoading: "正在加载事件详情...",
     aiFailurePointTitle: "AI 失效点",
     aiFailurePointUnavailable: "这起事件的 AI 失效点尚未整理出来。",
+    officialDetailPendingTitle: "官方记录已收录，细节待补充",
+    officialDetailPendingBody:
+      "这条记录有官方来源支撑，但具体碰撞叙事仍在从链接报告中补充。",
     whatHappenedTitle: "发生了什么",
     whyItMattersTitle: "为什么重要",
     evidenceSummaryTitle: "证据摘要",
@@ -363,6 +369,8 @@ export const PUBLIC_COPY = {
     detailLoading: string;
     aiFailurePointTitle: string;
     aiFailurePointUnavailable: string;
+    officialDetailPendingTitle: string;
+    officialDetailPendingBody: string;
     whatHappenedTitle: string;
     whyItMattersTitle: string;
     evidenceSummaryTitle: string;

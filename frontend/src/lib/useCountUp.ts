@@ -23,7 +23,15 @@ export function useCountUp(
   const startTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!isNumeric || !active) return;
+    if (!isNumeric) {
+      setDisplay(target);
+      return;
+    }
+
+    if (!active) {
+      setDisplay(target);
+      return;
+    }
 
     // Reset if target changes while already animating
     if (rafRef.current !== null) {

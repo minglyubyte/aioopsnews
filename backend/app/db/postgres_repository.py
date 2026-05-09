@@ -276,7 +276,11 @@ class PostgresIncidentRepository:
                     source_registry_key,
                     raw_source_payload,
                     publisher,
-                    title
+                    title,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error
                 from incident_sources
                 where incident_id = %s
                 order by published_at desc, id asc
@@ -371,7 +375,14 @@ class PostgresIncidentRepository:
                     canonical_url,
                     source_type,
                     publisher,
-                    title
+                    title,
+                    fetch_status,
+                    http_status,
+                    evidence_text,
+                    fetch_error,
+                    source_origin,
+                    source_registry_key,
+                    raw_source_payload
                 from incident_sources
                 order by published_at desc, id asc
                 """
@@ -382,7 +393,7 @@ class PostgresIncidentRepository:
         return [
             serialize_review_queue_row(
                 row,
-                sources=sources_by_incident[row["id"]],
+                sources=sources_by_incident[str(row["id"])],
                 duplicate_candidates=self._list_duplicate_candidates(row["id"]),
             )
             for row in incident_rows
@@ -462,7 +473,7 @@ class PostgresIncidentRepository:
         return [
             serialize_llm_pending_row(
                 row,
-                sources=sources_by_incident[row["id"]],
+                sources=sources_by_incident[str(row["id"])],
             )
             for row in incident_rows
         ]
@@ -626,7 +637,7 @@ class PostgresIncidentRepository:
         return [
             serialize_duplicate_search_row(
                 row,
-                sources=sources_by_incident[row["id"]],
+                    sources=sources_by_incident[str(row["id"])],
             )
             for row in incident_rows
         ]
@@ -1122,7 +1133,7 @@ class PostgresIncidentRepository:
         assert row is not None
         return serialize_review_queue_row(
             row,
-            sources=sources_by_incident[row["id"]],
+            sources=sources_by_incident[str(row["id"])],
             duplicate_candidates=self._list_duplicate_candidates(row["id"]),
         )
 
@@ -1888,7 +1899,7 @@ class PostgresIncidentRepository:
         assert row is not None
         return serialize_review_result_row(
             row,
-            sources=sources_by_incident[row["id"]],
+            sources=sources_by_incident[str(row["id"])],
             duplicate_candidates=self._list_duplicate_candidates(row["id"]),
         )
 
@@ -2029,7 +2040,7 @@ class PostgresIncidentRepository:
         assert row is not None
         return serialize_translation_result_row(
             row,
-            sources=sources_by_incident[row["id"]],
+            sources=sources_by_incident[str(row["id"])],
             duplicate_candidates=self._list_duplicate_candidates(row["id"]),
         )
 

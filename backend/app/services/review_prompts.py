@@ -5,17 +5,22 @@ Extracted from incident_review.py to separate the LLM protocol layer
 from the orchestration layer (batch submission, decision logic, escalation).
 """
 
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
 import textwrap
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from app.core.config import get_settings
 from app.core.incident_taxonomy import (
     INCIDENT_CATEGORY_TAXONOMY,
     normalize_incident_categories,
 )
-from app.core.config import get_settings
+from app.services.source_evidence import build_review_source_context
+
+if TYPE_CHECKING:
+    from app.services.incident_review import IncidentReviewResult
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -68,6 +73,12 @@ def build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                 - `what_happened_en`: at least {FORENSIC_MIN_WORD_COUNTS['what_happened_en']} words
                 - `ai_failure_point_en`: at least {FORENSIC_MIN_WORD_COUNTS['ai_failure_point_en']} words
                 - `why_it_matters_en`: at least {FORENSIC_MIN_WORD_COUNTS['why_it_matters_en']} words
+                
+                # AUTONOMOUS VEHICLE INCIDENTS
+                - For autonomous vehicle incidents, ground the narrative in concrete report facts: accident scene, collision object or road user, automation state, human takeover or safety driver role, and known injury or damage outcome.
+                - Use structured source facts when they are present in evidence text.
+                - If the report does not support one of those details, say the detail is not available from the linked report.
+                - Do not write generic autonomous-vehicle copy such as "the autonomous vehicle system failed" unless the evidence identifies the actual failure point.
                 
                 # EVALUATION RULES
                 - `score`: A float between 0.0 and 1.0 indicating your confidence that the incident is a legitimate, real-world AI failure (0.0=fake/spam/unrelated, 1.0=definitely legitimate).
@@ -132,20 +143,9 @@ def build_review_messages(incident: dict[str, Any]) -> list[dict[str, str]]:
                         "confidence_level": incident.get("confidence_level"),
                         "import_notes": incident.get("import_notes"),
                     },
-                    "sources": [
-                        {
-                            "source_url": source["source_url"],
-                            "canonical_url": source.get("canonical_url"),
-                            "fetch_status": source.get("fetch_status"),
-                            "http_status": source.get("http_status"),
-                            "evidence_text": source.get("evidence_text"),
-                            "source_origin": source.get("source_origin"),
-                            "source_registry_key": source.get(
-                                "source_registry_key"
-                            ),
-                        }
-                        for source in incident.get("sources", [])
-                    ],
+                    "sources": build_review_source_context(
+                        incident.get("sources", [])
+                    ),
                 }
             ),
         },

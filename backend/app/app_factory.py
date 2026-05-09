@@ -70,6 +70,7 @@ def create_app(
             DeepSeekIncidentTranslationClient(
                 api_key=effective_settings.deepseek_api_key,
                 model=effective_settings.deepseek_translation_model,
+                base_url=effective_settings.primary_review_base_url,
             )
             if effective_settings.deepseek_api_key
             else DisabledIncidentTranslationClient()

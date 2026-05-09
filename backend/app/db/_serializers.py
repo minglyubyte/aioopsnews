@@ -12,6 +12,10 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
+from app.services.autonomous_vehicle_details import (
+    assess_autonomous_vehicle_detail_quality,
+)
+
 # ---------------------------------------------------------------------------
 # Low-level field helpers
 # ---------------------------------------------------------------------------
@@ -157,6 +161,7 @@ def serialize_review_queue_row(
             "why_it_matters_zh": row.get("why_it_matters_zh"),
             "evidence_summary_en": row.get("evidence_summary_en"),
             "evidence_summary_zh": row.get("evidence_summary_zh"),
+            **_detail_quality_fields(row, sources),
         },
     }
 
@@ -271,6 +276,7 @@ def serialize_review_result_row(
             "why_it_matters_zh": row.get("why_it_matters_zh"),
             "evidence_summary_en": row.get("evidence_summary_en"),
             "evidence_summary_zh": row.get("evidence_summary_zh"),
+            **_detail_quality_fields(row, sources),
         },
     }
 
@@ -316,6 +322,7 @@ def serialize_translation_result_row(
             "why_it_matters_zh": row.get("why_it_matters_zh"),
             "evidence_summary_en": row.get("evidence_summary_en"),
             "evidence_summary_zh": row.get("evidence_summary_zh"),
+            **_detail_quality_fields(row, sources),
         },
     }
 
@@ -498,6 +505,7 @@ def serialize_public_detail_row(
                 row.get("source_validation_summary_zh"),
             )
             or _fallback_public_evidence_summary(sources, locale="zh"),
+            **_detail_quality_fields(row, sources),
         },
         "matched_claim": build_public_claim_payload(
             row, match_threshold=match_threshold
@@ -523,3 +531,15 @@ def _fallback_public_evidence_summary(
     if source_count == 1:
         return "Supported by 1 linked source."
     return f"Supported by {source_count} linked sources."
+
+
+def _detail_quality_fields(
+    row: dict[str, Any],
+    sources: list[dict[str, Any]],
+) -> dict[str, Any]:
+    assessment = assess_autonomous_vehicle_detail_quality({**row, "sources": sources})
+    return {
+        "detail_quality": assessment.detail_quality,
+        "detail_quality_reasons": assessment.detail_quality_reasons,
+        "source_fact_summary": assessment.source_fact_summary,
+    }

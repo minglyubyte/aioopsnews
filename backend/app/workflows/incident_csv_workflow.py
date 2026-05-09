@@ -17,10 +17,10 @@ from app.services.incident_import import (
 from app.services.incident_review import (
     AsyncIncidentReviewClient,
     IncidentEscalationReviewClient,
-    IncidentSourceFetcher,
     review_pending_incidents,
 )
 from app.services.incident_translation import IncidentTranslationClient
+from app.services.source_evidence import IncidentSourceFetcher
 
 
 async def run_incident_csv_workflow(
@@ -40,12 +40,18 @@ async def run_incident_csv_workflow(
     duplicate_judge_model: str | None = None,
     dry_run: bool = False,
     import_only: bool = False,
+    review_only: bool = False,
     max_reviews: int | None = None,
     review_concurrency: int = 10,
+    adaptive_deepseek_rate: bool = False,
+    adaptive_initial_rps: float = 1.0,
+    adaptive_rps_step: float = 1.0,
+    adaptive_max_rps: float = 20.0,
+    adaptive_backoff_max_seconds: float = 60.0,
 ) -> dict[str, Any]:
     csv_paths = (
         sorted(path for path in inbox_dir.glob("*.csv"))
-        if inbox_dir.exists()
+        if inbox_dir.exists() and not review_only
         else []
     )
 
@@ -63,6 +69,9 @@ async def run_incident_csv_workflow(
         "rejected": 0,
         "translations_completed": 0,
         "translations_failed": 0,
+        "adaptive_rate_limit_events": 0,
+        "adaptive_peak_rps": None,
+        "adaptive_final_rps": None,
         "file_results": [],
     }
 
@@ -115,6 +124,11 @@ async def run_incident_csv_workflow(
         duplicate_judge_model=duplicate_judge_model or escalation_model,
         max_reviews=max_reviews,
         concurrency=review_concurrency,
+        adaptive_deepseek_rate=adaptive_deepseek_rate,
+        adaptive_initial_rps=adaptive_initial_rps,
+        adaptive_rps_step=adaptive_rps_step,
+        adaptive_max_rps=adaptive_max_rps,
+        adaptive_backoff_max_seconds=adaptive_backoff_max_seconds,
     )
     summary["reviews_attempted"] = review_summary.reviews_attempted
     summary["reviews_completed"] = review_summary.reviews_completed
@@ -132,6 +146,11 @@ async def run_incident_csv_workflow(
     summary["rejected"] = review_summary.rejected
     summary["translations_completed"] = review_summary.translations_completed
     summary["translations_failed"] = review_summary.translations_failed
+    summary["adaptive_rate_limit_events"] = (
+        review_summary.adaptive_rate_limit_events
+    )
+    summary["adaptive_peak_rps"] = review_summary.adaptive_peak_rps
+    summary["adaptive_final_rps"] = review_summary.adaptive_final_rps
     return summary
 
 

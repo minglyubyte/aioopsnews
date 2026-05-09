@@ -453,6 +453,25 @@ export default function InternalReviewPage() {
                   {activeIncident.source_validation_summary ? (
                     <p className="body-copy">{activeIncident.source_validation_summary}</p>
                   ) : null}
+                  {activeIncident.analysis?.detail_quality &&
+                  activeIncident.analysis.detail_quality !== "not_applicable" ? (
+                    <div className="body-copy">
+                      <p>
+                        Detail quality: {activeIncident.analysis.detail_quality}
+                      </p>
+                      {activeIncident.analysis.detail_quality_reasons &&
+                      activeIncident.analysis.detail_quality_reasons.length > 0 ? (
+                        <p>
+                          {formatDetailQualityReasons(
+                            activeIncident.analysis.detail_quality_reasons,
+                          )}
+                        </p>
+                      ) : null}
+                      {activeIncident.analysis.source_fact_summary ? (
+                        <p>{activeIncident.analysis.source_fact_summary}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {activeIncident.sources.length > 0 ? (
                     <section className="source-list internal-review-source-list">
                       <h4 className="internal-review-source-heading">Sources</h4>
@@ -631,6 +650,25 @@ function formatSourceTypeLabel(sourceType: string): string {
   }
 
   return `${sourceType.split("_").join(" ")} source`;
+}
+
+function formatDetailQualityReasons(reasons: string[]): string {
+  return reasons.map(formatDetailQualityReason).join(", ");
+}
+
+function formatDetailQualityReason(reason: string): string {
+  const labels: Record<string, string> = {
+    missing_evidence_text: "Missing evidence text",
+    missing_collision_object: "missing collision object",
+    missing_location_context: "missing location context",
+    missing_automation_state: "missing automation state",
+    missing_narrative_excerpt: "missing narrative excerpt",
+    missing_what_happened: "missing what happened",
+    missing_ai_failure_point: "missing AI failure point",
+    missing_why_it_matters: "missing why it matters",
+    template_forensic_copy: "template forensic copy",
+  };
+  return labels[reason] ?? reason.split("_").join(" ");
 }
 
 function sortAdminIncidents(

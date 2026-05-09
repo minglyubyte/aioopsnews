@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.services.incident_query import (
     IncidentQueryFilters,
@@ -71,6 +71,9 @@ class IncidentAnalysisResponse(BaseModel):
     why_it_matters_zh: str | None = None
     evidence_summary_en: str | None = None
     evidence_summary_zh: str | None = None
+    detail_quality: str | None = None
+    detail_quality_reasons: list[str] = Field(default_factory=list)
+    source_fact_summary: str | None = None
 
 
 class IncidentDetailResponse(PublicIncidentBaseResponse):

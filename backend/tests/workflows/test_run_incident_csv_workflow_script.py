@@ -83,8 +83,14 @@ def test_workflow_script_logs_start_and_finish(
             archive_dir=archive_dir,
             dry_run=False,
             import_only=False,
+            review_only=True,
             max_reviews=25,
             review_concurrency=12,
+            adaptive_deepseek_rate=True,
+            adaptive_initial_rps=1.0,
+            adaptive_rps_step=1.0,
+            adaptive_max_rps=20.0,
+            adaptive_backoff_max_seconds=60.0,
         ),
     )
     monkeypatch.setattr(
@@ -96,11 +102,6 @@ def test_workflow_script_logs_start_and_finish(
         workflow_script,
         "AsyncCompatibleIncidentReviewClient",
         lambda **kwargs: review_client_calls.append(kwargs) or object(),
-    )
-    monkeypatch.setattr(
-        workflow_script,
-        "CompatibleIncidentReviewClient",
-        lambda **kwargs: escalation_client_calls.append(kwargs) or object(),
     )
     monkeypatch.setattr(
         workflow_script,
@@ -139,14 +140,7 @@ def test_workflow_script_logs_start_and_finish(
             "response_parse_max_attempts": 3,
         }
     ]
-    assert escalation_client_calls == [
-        {
-            "api_key": "test-primary-key",
-            "base_url": "https://deepseek.example/v1",
-            "max_output_tokens": 8000,
-            "response_parse_max_attempts": 3,
-        }
-    ]
+    assert escalation_client_calls == []
     assert embedding_client_calls == [{"api_key": "test-openai-key"}]
     assert duplicate_judge_client_calls == [
         {
@@ -158,13 +152,20 @@ def test_workflow_script_logs_start_and_finish(
         {
             "api_key": "test-deepseek-key",
             "model": "deepseek-v4-flash",
+            "base_url": "https://deepseek.example/v1",
         }
     ]
     assert workflow_calls[0]["primary_model"] == "deepseek-v4-flash"
     assert workflow_calls[0]["escalation_model"] == "deepseek-v4-pro"
     assert workflow_calls[0]["import_only"] is False
+    assert workflow_calls[0]["review_only"] is True
     assert workflow_calls[0]["max_reviews"] == 25
     assert workflow_calls[0]["review_concurrency"] == 12
+    assert workflow_calls[0]["adaptive_deepseek_rate"] is True
+    assert workflow_calls[0]["adaptive_initial_rps"] == 1.0
+    assert workflow_calls[0]["adaptive_rps_step"] == 1.0
+    assert workflow_calls[0]["adaptive_max_rps"] == 20.0
+    assert workflow_calls[0]["adaptive_backoff_max_seconds"] == 60.0
     stdout = capsys.readouterr().out
     assert json.loads(stdout) == summary
 
@@ -209,11 +210,6 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
         workflow_script,
         "HttpIncidentSourceFetcher",
         lambda: object(),
-    )
-    monkeypatch.setattr(
-        workflow_script,
-        "CompatibleIncidentReviewClient",
-        lambda **kwargs: object(),
     )
     monkeypatch.setattr(
         workflow_script,

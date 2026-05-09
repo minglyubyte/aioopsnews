@@ -81,17 +81,23 @@ def _build_repository() -> InMemoryIncidentRepository:
                     "A customer-support automation release exposed internal billing "
                     "notes in live replies."
                 ),
-                "incident_summary_zh": "一次客户支持自动化发布在实时回复中暴露了内部账单备注。",
+                "incident_summary_zh": (
+                    "一次客户支持自动化发布在实时回复中暴露了内部账单备注。"
+                ),
                 "what_happened_en": (
                     "The rollout surfaced internal account notes directly in "
                     "customer-facing assistant messages."
                 ),
-                "what_happened_zh": "这次发布让内部账户备注直接出现在面向客户的助手消息中。",
+                "what_happened_zh": (
+                    "这次发布让内部账户备注直接出现在面向客户的助手消息中。"
+                ),
                 "ai_failure_point_en": (
                     "The assistant failed to separate private support context from "
                     "reply-generation context."
                 ),
-                "ai_failure_point_zh": "该助手未能将私密支持上下文与回复生成上下文隔离开。",
+                "ai_failure_point_zh": (
+                    "该助手未能将私密支持上下文与回复生成上下文隔离开。"
+                ),
                 "status": "approved",
                 "translation_status": "completed",
                 "publication_track": "accident_watch",
@@ -108,7 +114,9 @@ def _build_repository() -> InMemoryIncidentRepository:
                     "The failure matters because internal account data appeared in "
                     "customer-facing replies."
                 ),
-                "legitimacy_reasoning_zh": "问题之所以重要，是因为内部账户数据出现在面向客户的回复中。",
+                "legitimacy_reasoning_zh": (
+                    "问题之所以重要，是因为内部账户数据出现在面向客户的回复中。"
+                ),
                 "source_validation_summary": (
                     "Validated with a primary report and supporting publication."
                 ),
@@ -209,7 +217,9 @@ def _build_repository() -> InMemoryIncidentRepository:
                 "publication_track": "accident_watch",
                 "evidence_tier": "reported_unconfirmed",
                 "source_family": "model_governance",
-                "verification_summary": "Older imported item with watch-level evidence.",
+                "verification_summary": (
+                    "Older imported item with watch-level evidence."
+                ),
                 "matched_claim_id": None,
                 "claim_match_confidence": None,
                 "review_notes": "editor reviewed",
@@ -441,6 +451,9 @@ def test_get_incident_detail_returns_public_record_with_analysis_and_sources() -
             "Validated with a primary report and supporting publication."
         ),
         "evidence_summary_zh": "已通过一手报告和补充报道完成核实。",
+        "detail_quality": "not_applicable",
+        "detail_quality_reasons": [],
+        "source_fact_summary": None,
     }
     assert detail_response.json()["matched_claim"] == {
         "id": "claim-1",
@@ -464,6 +477,20 @@ def test_get_incident_detail_returns_public_record_with_analysis_and_sources() -
         }
     ]
     assert hidden_response.status_code == 404
+
+
+def test_get_autonomous_vehicle_detail_returns_quality_metadata() -> None:
+    repository = _build_repository()
+    client = TestClient(create_app(incident_repository=repository))
+
+    response = client.get("/incidents/incident-2")
+
+    assert response.status_code == 200
+    analysis = response.json()["analysis"]
+    assert analysis["detail_quality"] == "insufficient"
+    assert "missing_evidence_text" in analysis["detail_quality_reasons"]
+    assert "missing_ai_failure_point" in analysis["detail_quality_reasons"]
+    assert analysis["source_fact_summary"] is None
 
 
 def test_get_filters_reads_distinct_values_from_repository() -> None:

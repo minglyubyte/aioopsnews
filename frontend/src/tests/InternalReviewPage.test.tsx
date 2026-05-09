@@ -105,6 +105,7 @@ function buildAdminIncident(
         status: "pending_review",
       },
     ],
+    analysis: overrides.analysis ?? null,
   };
 }
 
@@ -279,6 +280,44 @@ describe("InternalReviewPage", () => {
         }),
       );
     });
+  });
+
+  it("shows autonomous vehicle detail quality gaps to reviewers", async () => {
+    mockedFetchAdminIncidentQueue.mockResolvedValue({
+      items: [
+        buildAdminIncident({
+          id: "incident-av",
+          headline: "California DMV published Waymo collision report",
+          company_involved: "Waymo",
+          source_family: "autonomous_vehicle",
+          publication_track: "verified_accident",
+          evidence_tier: "official_documented",
+          analysis: {
+            incident_summary_en:
+              "California DMV published an autonomous vehicle collision report.",
+            detail_quality: "insufficient",
+            detail_quality_reasons: [
+              "missing_evidence_text",
+              "missing_ai_failure_point",
+            ],
+            source_fact_summary: null,
+          },
+        }),
+      ],
+    });
+
+    render(<InternalReviewPage />);
+    fireEvent.change(screen.getByLabelText("Admin token"), {
+      target: { value: "test-admin-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Unlock admin" }));
+
+    expect(
+      await screen.findByText("Detail quality: insufficient"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Missing evidence text, missing AI failure point"),
+    ).toBeInTheDocument();
   });
 
   it("shows the locked state and surfaces a rejected admin token", async () => {

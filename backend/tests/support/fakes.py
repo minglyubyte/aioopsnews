@@ -13,6 +13,9 @@ from app.core.incident_metadata import (
 )
 from app.models.claim import ClaimRecord
 from app.scrapers.rss import RSSArticle
+from app.services.autonomous_vehicle_details import (
+    assess_autonomous_vehicle_detail_quality,
+)
 from app.services.claim_matcher import PUBLIC_CLAIM_MATCH_THRESHOLD
 from app.services.incident_query import IncidentQueryFilters
 
@@ -909,6 +912,7 @@ class InMemoryIncidentRepository:
         self,
         incident: dict[str, Any],
     ) -> dict[str, Any]:
+        detail_quality = assess_autonomous_vehicle_detail_quality(incident)
         payload = {
             "id": incident["id"],
             "headline": incident["headline"],
@@ -972,6 +976,9 @@ class InMemoryIncidentRepository:
                 "evidence_summary_zh": _sanitize_reader_text(
                     incident.get("source_validation_summary_zh")
                 ),
+                "detail_quality": detail_quality.detail_quality,
+                "detail_quality_reasons": detail_quality.detail_quality_reasons,
+                "source_fact_summary": detail_quality.source_fact_summary,
             },
             "matched_claim": None,
             "sources": deepcopy(incident.get("sources", [])),
@@ -999,6 +1006,7 @@ class InMemoryIncidentRepository:
         return payload
 
     def _serialize_admin_incident(self, incident: dict[str, Any]) -> dict[str, Any]:
+        detail_quality = assess_autonomous_vehicle_detail_quality(incident)
         return {
             "id": incident["id"],
             "external_id": incident.get("external_id"),
@@ -1069,6 +1077,21 @@ class InMemoryIncidentRepository:
                 self.duplicate_candidates.get(incident["id"], [])
             ),
             "sources": deepcopy(incident.get("sources", [])),
+            "analysis": {
+                "incident_summary_en": incident.get("incident_summary_en"),
+                "incident_summary_zh": incident.get("incident_summary_zh"),
+                "what_happened_en": incident.get("what_happened_en"),
+                "what_happened_zh": incident.get("what_happened_zh"),
+                "ai_failure_point_en": incident.get("ai_failure_point_en"),
+                "ai_failure_point_zh": incident.get("ai_failure_point_zh"),
+                "why_it_matters_en": incident.get("why_it_matters_en"),
+                "why_it_matters_zh": incident.get("why_it_matters_zh"),
+                "evidence_summary_en": incident.get("evidence_summary_en"),
+                "evidence_summary_zh": incident.get("evidence_summary_zh"),
+                "detail_quality": detail_quality.detail_quality,
+                "detail_quality_reasons": detail_quality.detail_quality_reasons,
+                "source_fact_summary": detail_quality.source_fact_summary,
+            },
         }
 
     def _filter_public_incidents(

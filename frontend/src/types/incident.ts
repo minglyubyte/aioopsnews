@@ -61,6 +61,9 @@ export type IncidentAnalysis = {
   ai_failure_point?: string | null;
   why_it_matters?: string | null;
   evidence_summary?: string | null;
+  detail_quality?: "not_applicable" | "insufficient" | "sufficient" | string | null;
+  detail_quality_reasons?: string[];
+  source_fact_summary?: string | null;
 };
 
 export type FeedSummaryCount = {

@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Awaitable, Callable, Protocol
 
 import httpx
 
 from app.db.repository_protocol import IncidentRepository
 from app.services import review_prompts
+from app.services.autonomous_vehicle_details import (
+    assess_autonomous_vehicle_detail_quality,
+)
 from app.services.incident_deduplication import (
     IncidentDuplicateJudgeClient,
     IncidentEmbeddingClient,
@@ -18,6 +22,10 @@ from app.services.incident_deduplication import (
 from app.services.incident_translation import (
     IncidentTranslationClient,
     translate_incident_copy,
+)
+from app.services.source_evidence import (
+    IncidentSourceFetcher,
+    refresh_source_evidence,
 )
 
 ReviewResponseParseError = review_prompts.ReviewResponseParseError
@@ -44,31 +52,6 @@ HIGH_RISK_SEVERITY_FLAGS = {
     "core_system_outage",
     "unclear_real_world_impact",
 }
-DEFAULT_SOURCE_FETCH_HEADERS = {"User-Agent": "AIRealityCheckBot/1.0"}
-BROWSER_SOURCE_FETCH_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/136.0.0.0 Safari/537.36"
-    ),
-    "Accept": (
-        "text/html,application/xhtml+xml,application/xml;q=0.9,"
-        "image/avif,image/webp,*/*;q=0.8"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-}
-
-
-@dataclass(frozen=True)
-class FetchedIncidentSource:
-    source_url: str
-    canonical_url: str | None
-    fetch_status: str
-    http_status: int | None
-    evidence_text: str | None
-    fetch_error: str | None = None
-
-
 @dataclass(frozen=True)
 class IncidentReviewBatchSubmission:
     batch_id: str
@@ -120,7 +103,6 @@ class IncidentReviewFailure:
     error: str
 
 
-
 @dataclass(frozen=True)
 class IncidentReviewRunSummary:
     reviews_attempted: int
@@ -133,6 +115,9 @@ class IncidentReviewRunSummary:
     translations_completed: int
     translations_failed: int
     review_failures: list[IncidentReviewFailure]
+    adaptive_rate_limit_events: int = 0
+    adaptive_peak_rps: float | None = None
+    adaptive_final_rps: float | None = None
 
 
 @dataclass(frozen=True)
@@ -151,8 +136,89 @@ class IncidentReviewApplicationResult:
     translations_failed: int
 
 
-class IncidentSourceFetcher(Protocol):
-    def fetch(self, source_url: str) -> FetchedIncidentSource: ...
+class AdaptiveReviewRateLimiter:
+    def __init__(
+        self,
+        *,
+        initial_rps: float,
+        rps_step: float,
+        max_rps: float,
+        backoff_max_seconds: float,
+        monotonic: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        if initial_rps <= 0:
+            raise ValueError("initial_rps must be greater than 0")
+        if rps_step <= 0:
+            raise ValueError("rps_step must be greater than 0")
+        if max_rps < initial_rps:
+            raise ValueError("max_rps must be greater than or equal to initial_rps")
+        if backoff_max_seconds <= 0:
+            raise ValueError("backoff_max_seconds must be greater than 0")
+
+        self._initial_rps = float(initial_rps)
+        self._rps_step = float(rps_step)
+        self._max_rps = float(max_rps)
+        self._backoff_max_seconds = float(backoff_max_seconds)
+        self._monotonic = monotonic
+        self._sleep = sleep
+        self._lock = asyncio.Lock()
+        now = self._monotonic()
+        self._current_rps = self._initial_rps
+        self._peak_rps = self._initial_rps
+        self._next_slot_at = now
+        self._cooldown_until = now
+        self._last_ramp_at = now
+        self._next_backoff_seconds = 1.0
+        self._rate_limit_events = 0
+
+    async def wait_for_slot(self) -> None:
+        while True:
+            async with self._lock:
+                now = self._monotonic()
+                self._advance_rate_locked(now)
+                start_at = max(self._next_slot_at, self._cooldown_until)
+                if start_at <= now:
+                    self._next_slot_at = now + (1.0 / self._current_rps)
+                    return
+                delay = start_at - now
+            await self._sleep(delay)
+
+    async def record_rate_limit(self) -> None:
+        async with self._lock:
+            now = self._monotonic()
+            cooldown_seconds = min(
+                self._next_backoff_seconds,
+                self._backoff_max_seconds,
+            )
+            cooldown_until = now + cooldown_seconds
+            self._current_rps = self._initial_rps
+            self._cooldown_until = cooldown_until
+            self._next_slot_at = cooldown_until
+            self._last_ramp_at = cooldown_until
+            self._next_backoff_seconds = min(
+                cooldown_seconds * 2,
+                self._backoff_max_seconds,
+            )
+            self._rate_limit_events += 1
+
+    def snapshot(self) -> dict[str, float | int]:
+        return {
+            "rate_limit_events": self._rate_limit_events,
+            "peak_rps": self._peak_rps,
+            "current_rps": self._current_rps,
+        }
+
+    def _advance_rate_locked(self, now: float) -> None:
+        elapsed_seconds = int(now - self._last_ramp_at)
+        if elapsed_seconds <= 0:
+            return
+        self._current_rps = min(
+            self._max_rps,
+            self._current_rps + (elapsed_seconds * self._rps_step),
+        )
+        self._peak_rps = max(self._peak_rps, self._current_rps)
+        self._last_ramp_at += elapsed_seconds
 
 
 class IncidentBatchReviewClient(Protocol):
@@ -184,53 +250,6 @@ class IncidentEscalationReviewClient(Protocol):
         incident: dict[str, Any],
         model: str,
     ) -> IncidentReviewResult: ...
-
-
-class HttpIncidentSourceFetcher:
-    def __init__(self, *, timeout_seconds: float = 15.0) -> None:
-        self._timeout_seconds = timeout_seconds
-
-    def fetch(self, source_url: str) -> FetchedIncidentSource:
-        try:
-            response = self._get(source_url, headers=DEFAULT_SOURCE_FETCH_HEADERS)
-            if response.status_code == 403:
-                response = self._get(
-                    source_url,
-                    headers=BROWSER_SOURCE_FETCH_HEADERS,
-                )
-        except httpx.HTTPError as exc:
-            return FetchedIncidentSource(
-                source_url=source_url,
-                canonical_url=None,
-                fetch_status="failed",
-                http_status=None,
-                evidence_text=None,
-                fetch_error=str(exc),
-            )
-
-        evidence_text = _extract_evidence_text(response.text)
-        fetch_status = "fetched" if response.is_success else "failed"
-        return FetchedIncidentSource(
-            source_url=source_url,
-            canonical_url=str(response.url),
-            fetch_status=fetch_status,
-            http_status=response.status_code,
-            evidence_text=evidence_text if response.is_success else None,
-            fetch_error=None if response.is_success else response.reason_phrase,
-        )
-
-    def _get(
-        self,
-        source_url: str,
-        *,
-        headers: dict[str, str],
-    ) -> httpx.Response:
-        return httpx.get(
-            source_url,
-            follow_redirects=True,
-            timeout=self._timeout_seconds,
-            headers=headers,
-        )
 
 
 class OpenAIIncidentReviewClient:
@@ -476,7 +495,7 @@ def submit_incident_review_batch(
         for incident in repository.list_incidents_pending_llm_review()
         if not incident.get("review_batch_id")
     ]
-    _refresh_source_evidence(
+    refresh_source_evidence(
         repository,
         incidents=incidents,
         source_fetcher=source_fetcher,
@@ -525,6 +544,11 @@ async def review_pending_incidents(
     max_attempts: int = 3,
     max_reviews: int | None = None,
     approval_threshold: float = AUTO_APPROVAL_LEGITIMACY_THRESHOLD,
+    adaptive_deepseek_rate: bool = False,
+    adaptive_initial_rps: float = 1.0,
+    adaptive_rps_step: float = 1.0,
+    adaptive_max_rps: float = 20.0,
+    adaptive_backoff_max_seconds: float = 60.0,
 ) -> IncidentReviewRunSummary:
     incidents = repository.list_incidents_pending_llm_review()
     if max_reviews is not None:
@@ -543,7 +567,7 @@ async def review_pending_incidents(
             review_failures=[],
         )
 
-    _refresh_source_evidence(
+    refresh_source_evidence(
         repository,
         incidents=incidents,
         source_fetcher=source_fetcher,
@@ -556,6 +580,16 @@ async def review_pending_incidents(
         if str(incident["id"]) in refreshed_incident_ids
     ]
     semaphore = asyncio.Semaphore(concurrency)
+    rate_limiter = (
+        AdaptiveReviewRateLimiter(
+            initial_rps=adaptive_initial_rps,
+            rps_step=adaptive_rps_step,
+            max_rps=adaptive_max_rps,
+            backoff_max_seconds=adaptive_backoff_max_seconds,
+        )
+        if adaptive_deepseek_rate
+        else None
+    )
 
     async def _process_incident(
         incident: dict[str, Any],
@@ -590,6 +624,7 @@ async def review_pending_incidents(
                     incident=incident,
                     model=primary_model,
                     max_attempts=max_attempts,
+                    rate_limiter=rate_limiter,
                 )
             except Exception as exc:
                 return _failure_result(exc)
@@ -641,6 +676,7 @@ async def review_pending_incidents(
         if failure is not None:
             review_failures.append(failure)
 
+    limiter_snapshot = rate_limiter.snapshot() if rate_limiter is not None else {}
     return IncidentReviewRunSummary(
         reviews_attempted=len(refreshed_incidents),
         reviews_completed=len(refreshed_incidents) - len(review_failures),
@@ -652,6 +688,19 @@ async def review_pending_incidents(
         translations_completed=translations_completed,
         translations_failed=translations_failed,
         review_failures=review_failures,
+        adaptive_rate_limit_events=int(
+            limiter_snapshot.get("rate_limit_events", 0)
+        ),
+        adaptive_peak_rps=(
+            float(limiter_snapshot["peak_rps"])
+            if "peak_rps" in limiter_snapshot
+            else None
+        ),
+        adaptive_final_rps=(
+            float(limiter_snapshot["current_rps"])
+            if "current_rps" in limiter_snapshot
+            else None
+        ),
     )
 
 
@@ -818,53 +867,44 @@ def _requires_editor_review(result: IncidentReviewResult) -> bool:
     return any(flag in HIGH_RISK_SEVERITY_FLAGS for flag in result.severity_flags or [])
 
 
-def _extract_evidence_text(html: str) -> str:
-    text = html.replace("\x00", " ").replace("\r", " ").replace("\n", " ")
-    collapsed = " ".join(text.split())
-    return collapsed[:4000]
-
-
-def _refresh_source_evidence(
-    repository: IncidentRepository,
-    *,
-    incidents: list[dict[str, Any]],
-    source_fetcher: IncidentSourceFetcher,
-) -> None:
-    for incident in incidents:
-        for source in incident.get("sources", []):
-            fetched = source_fetcher.fetch(source["source_url"])
-            repository.update_incident_source_evidence(
-                source_id=source["id"],
-                canonical_url=fetched.canonical_url,
-                fetch_status=fetched.fetch_status,
-                http_status=fetched.http_status,
-                evidence_text=fetched.evidence_text,
-                fetch_error=fetched.fetch_error,
-                fetched_at=_now_isoformat(),
-            )
-
-
 async def _review_incident_with_retries(
     review_client: AsyncIncidentReviewClient,
     *,
     incident: dict[str, Any],
     model: str,
     max_attempts: int,
+    rate_limiter: AdaptiveReviewRateLimiter | None = None,
 ) -> IncidentReviewResult:
     last_error: Exception | None = None
     for attempt in range(max_attempts):
         try:
+            if rate_limiter is not None:
+                await rate_limiter.wait_for_slot()
             return await review_client.review_incident(incident=incident, model=model)
         except ReviewResponseParseError:
             raise
         except Exception as exc:  # noqa: BLE001
             last_error = exc
+            if rate_limiter is not None and _is_rate_limit_error(exc):
+                await rate_limiter.record_rate_limit()
+                if attempt == max_attempts - 1:
+                    break
+                continue
             if attempt == max_attempts - 1:
                 break
             await asyncio.sleep(2**attempt)
     if last_error is None:
         raise RuntimeError("Review failed without an exception")
     raise last_error
+
+
+def _is_rate_limit_error(exc: BaseException | Any) -> bool:
+    if getattr(exc, "status_code", None) == 429:
+        return True
+    response = getattr(exc, "response", None)
+    if getattr(response, "status_code", None) == 429:
+        return True
+    return exc.__class__.__name__ == "RateLimitError"
 
 
 def _resolve_review_decision(
@@ -875,29 +915,12 @@ def _resolve_review_decision(
     escalation_model: str,
     approval_threshold: float,
 ) -> IncidentReviewDecision:
+    del escalation_client, escalation_model, approval_threshold
     normalized_result = _normalize_review_result(initial_result, incident=incident)
-    if not _should_escalate(
-        normalized_result,
-        approval_threshold=approval_threshold,
-    ):
-        return IncidentReviewDecision(
-            result=normalized_result,
-            escalated=False,
-            force_human_review=False,
-        )
-
-    escalation_result = escalation_client.review_incident(
-        incident=incident,
-        model=escalation_model,
-    )
-    normalized_escalation_result = _normalize_review_result(
-        escalation_result,
-        incident=incident,
-    )
     return IncidentReviewDecision(
-        result=normalized_escalation_result,
-        escalated=True,
-        force_human_review=normalized_escalation_result.needs_escalation,
+        result=normalized_result,
+        escalated=False,
+        force_human_review=True,
     )
 
 
@@ -924,6 +947,11 @@ def _apply_review_decision(
             approval_threshold=approval_threshold,
         )
     )
+    if final_status == "approved" and _has_insufficient_autonomous_vehicle_detail(
+        incident,
+        final_result,
+    ):
+        final_status = "pending_review"
     final_severity_score = (
         final_result.suggested_severity_score
         if final_status == "approved"
@@ -1102,3 +1130,20 @@ def _apply_review_decision(
 
 def _now_isoformat() -> str:
     return datetime.now(tz=UTC).replace(microsecond=0).isoformat()
+
+
+def _has_insufficient_autonomous_vehicle_detail(
+    incident: dict[str, Any],
+    result: IncidentReviewResult,
+) -> bool:
+    assessment = assess_autonomous_vehicle_detail_quality(
+        {
+            **incident,
+            "incident_summary_en": result.incident_summary_en,
+            "what_happened_en": result.what_happened_en,
+            "ai_failure_point_en": result.ai_failure_point_en,
+            "why_it_matters_en": result.why_it_matters_en,
+            "evidence_summary_en": result.evidence_summary_en,
+        }
+    )
+    return assessment.detail_quality == "insufficient"

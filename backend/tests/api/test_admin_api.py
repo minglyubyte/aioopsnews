@@ -21,6 +21,11 @@ class StaticTranslationClient:
         legitimacy_reasoning_en: str,
         source_validation_summary_en: str,
         company_involved_en: str,
+        incident_summary_en: str = "",
+        what_happened_en: str = "",
+        ai_failure_point_en: str = "",
+        why_it_matters_en: str = "",
+        evidence_summary_en: str = "",
     ) -> IncidentTranslation:
         return IncidentTranslation(
             headline_zh=f"ZH:{headline_en}",
@@ -28,6 +33,11 @@ class StaticTranslationClient:
             legitimacy_reasoning_zh=f"ZH:{legitimacy_reasoning_en}",
             source_validation_summary_zh=f"ZH:{source_validation_summary_en}",
             company_involved_zh=f"ZH:{company_involved_en}",
+            incident_summary_zh=f"ZH:{incident_summary_en}",
+            what_happened_zh=f"ZH:{what_happened_en}",
+            ai_failure_point_zh=f"ZH:{ai_failure_point_en}",
+            why_it_matters_zh=f"ZH:{why_it_matters_en}",
+            evidence_summary_zh=f"ZH:{evidence_summary_en}",
         )
 
 
@@ -144,6 +154,55 @@ def test_patch_admin_incident_applies_editor_overrides() -> None:
     assert payload["headline_zh"] == "ZH:AssistCo assistant exposes billing notes"
     assert repository.incidents[incident_id]["review_notes"] == (
         "Approved after editor verification."
+    )
+
+
+def test_patch_admin_incident_translates_forensic_analysis_fields() -> None:
+    client, repository = _build_review_queue_client(admin_api_token="secret-token")
+    incident_id = repository.list_review_queue()[0]["id"]
+    repository.incidents[incident_id].update(
+        {
+            "incident_summary_en": "The support assistant leaked billing notes.",
+            "what_happened_en": "The assistant inserted private billing notes.",
+            "ai_failure_point_en": "The model failed to separate internal context.",
+            "why_it_matters_en": "Customers saw information meant for staff.",
+            "evidence_summary_en": "The incident was confirmed by source logs.",
+        }
+    )
+
+    response = client.patch(
+        f"/admin/incidents/{incident_id}",
+        headers={"X-Admin-Token": "secret-token"},
+        json={
+            "status": "approved",
+            "company_involved": "AssistCo",
+            "claimant_name": "AssistCo",
+            "categories": ["Privacy/Security"],
+            "severity_score": 5,
+            "reality_summary": "Editors confirmed the leak and approved the item.",
+            "matched_claim_id": "claim-1",
+            "claim_match_confidence": 0.95,
+            "review_notes": "Approved after editor verification.",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["translation_status"] == "completed"
+    assert payload["analysis"]["incident_summary_zh"] == (
+        "ZH:The support assistant leaked billing notes."
+    )
+    assert payload["analysis"]["what_happened_zh"] == (
+        "ZH:The assistant inserted private billing notes."
+    )
+    assert payload["analysis"]["ai_failure_point_zh"] == (
+        "ZH:The model failed to separate internal context."
+    )
+    assert payload["analysis"]["why_it_matters_zh"] == (
+        "ZH:Customers saw information meant for staff."
+    )
+    assert payload["analysis"]["evidence_summary_zh"] == (
+        "ZH:The incident was confirmed by source logs."
     )
 
 

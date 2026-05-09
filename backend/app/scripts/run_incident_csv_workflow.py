@@ -14,10 +14,9 @@ from app.services.incident_deduplication import (
 )
 from app.services.incident_review import (
     AsyncCompatibleIncidentReviewClient,
-    CompatibleIncidentReviewClient,
-    HttpIncidentSourceFetcher,
 )
 from app.services.incident_translation import DeepSeekIncidentTranslationClient
+from app.services.source_evidence import HttpIncidentSourceFetcher
 from app.workflows.incident_csv_workflow import run_incident_csv_workflow
 
 LOGGER = logging.getLogger(__name__)
@@ -71,6 +70,11 @@ def main() -> int:
         help="Import and archive valid CSV files without running review.",
     )
     parser.add_argument(
+        "--review-only",
+        action="store_true",
+        help="Review existing pending incidents without scanning inbox CSV files.",
+    )
+    parser.add_argument(
         "--max-reviews",
         type=int,
         default=None,
@@ -84,6 +88,37 @@ def main() -> int:
             "Maximum primary review API calls to run at the same time. "
             "Defaults to REVIEW_CONCURRENCY."
         ),
+    )
+    parser.add_argument(
+        "--adaptive-deepseek-rate",
+        action="store_true",
+        help=(
+            "Enable adaptive primary review request pacing for DeepSeek calls."
+        ),
+    )
+    parser.add_argument(
+        "--adaptive-initial-rps",
+        type=float,
+        default=1.0,
+        help="Initial adaptive DeepSeek request rate. Defaults to 1.",
+    )
+    parser.add_argument(
+        "--adaptive-rps-step",
+        type=float,
+        default=1.0,
+        help="Requests per second to add after each successful second.",
+    )
+    parser.add_argument(
+        "--adaptive-max-rps",
+        type=float,
+        default=20.0,
+        help="Maximum adaptive DeepSeek request rate. Defaults to 20.",
+    )
+    parser.add_argument(
+        "--adaptive-backoff-max-seconds",
+        type=float,
+        default=60.0,
+        help="Maximum 429 exponential backoff delay. Defaults to 60 seconds.",
     )
     args = parser.parse_args()
     _configure_logging()
@@ -120,14 +155,7 @@ def main() -> int:
                     settings.review_response_parse_max_attempts
                 ),
             )
-            escalation_client = CompatibleIncidentReviewClient(
-                api_key=settings.primary_review_api_key,
-                base_url=settings.primary_review_base_url,
-                max_output_tokens=settings.review_max_output_tokens,
-                response_parse_max_attempts=(
-                    settings.review_response_parse_max_attempts
-                ),
-            )
+            escalation_client = object()
             embedding_client = OpenAIIncidentEmbeddingClient(
                 api_key=settings.openai_api_key or ""
             )
@@ -138,6 +166,7 @@ def main() -> int:
             translation_client = DeepSeekIncidentTranslationClient(
                 api_key=settings.deepseek_api_key or "",
                 model=settings.deepseek_translation_model,
+                base_url=settings.primary_review_base_url,
             )
 
         summary = asyncio.run(
@@ -156,8 +185,22 @@ def main() -> int:
                 embedding_model=settings.openai_embedding_model,
                 dry_run=args.dry_run,
                 import_only=args.import_only,
+                review_only=getattr(args, "review_only", False),
                 max_reviews=args.max_reviews,
                 review_concurrency=review_concurrency,
+                adaptive_deepseek_rate=getattr(
+                    args,
+                    "adaptive_deepseek_rate",
+                    False,
+                ),
+                adaptive_initial_rps=getattr(args, "adaptive_initial_rps", 1.0),
+                adaptive_rps_step=getattr(args, "adaptive_rps_step", 1.0),
+                adaptive_max_rps=getattr(args, "adaptive_max_rps", 20.0),
+                adaptive_backoff_max_seconds=getattr(
+                    args,
+                    "adaptive_backoff_max_seconds",
+                    60.0,
+                ),
             )
         )
         LOGGER.info(

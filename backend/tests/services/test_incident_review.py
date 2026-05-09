@@ -14,20 +14,22 @@ from app.services.incident_deduplication import DuplicateJudgeDecision
 from app.services.incident_import import import_incidents_csv_text
 from app.services.incident_review import (
     REVIEW_MAX_OUTPUT_TOKENS,
+    AdaptiveReviewRateLimiter,
     AsyncOpenAIIncidentReviewClient,
-    FetchedIncidentSource,
-    HttpIncidentSourceFetcher,
     IncidentReviewResult,
     OpenAIIncidentReviewClient,
     ReviewResponseParseError,
     _build_review_messages,
     _build_review_response_format,
-    _extract_evidence_text,
+    _is_rate_limit_error,
     _parse_review_result,
+    _review_incident_with_retries,
     reconcile_incident_review_batch,
+    review_pending_incidents,
     submit_incident_review_batch,
 )
 from app.services.incident_translation import IncidentTranslation
+from app.services.source_evidence import FetchedIncidentSource
 from tests.support.fakes import InMemoryIncidentRepository
 from tests.support.incident_csv_fixtures import VALID_IMPORT_CSV
 
@@ -168,48 +170,149 @@ class FakeDuplicateJudgeClient:
         )
 
 
-def test_extract_evidence_text_strips_nul_bytes() -> None:
-    evidence = _extract_evidence_text("Alpha\x00Beta\nGamma")
+class FakeAsyncReviewRetryClient:
+    def __init__(self, responses: list[IncidentReviewResult | Exception]) -> None:
+        self.responses = list(responses)
+        self.calls = 0
 
-    assert "\x00" not in evidence
-    assert evidence == "Alpha Beta Gamma"
+    async def review_incident(
+        self,
+        *,
+        incident: dict[str, object],
+        model: str,
+    ) -> IncidentReviewResult:
+        del incident, model
+        self.calls += 1
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
-def test_http_incident_source_fetcher_retries_403_with_browser_headers(
-    monkeypatch,
-) -> None:
-    calls: list[dict[str, str]] = []
+class FakeRateLimitError(Exception):
+    status_code = 429
 
-    def fake_get(url: str, **kwargs: object):  # type: ignore[no-untyped-def]
-        headers = dict(kwargs["headers"])  # type: ignore[index]
-        calls.append(headers)
-        request = httpx.Request("GET", url, headers=headers)
-        if len(calls) == 1:
-            return httpx.Response(
-                403,
-                request=request,
-                text="Forbidden",
-            )
-        return httpx.Response(
-            200,
-            request=request,
-            text="<html><body>NHTSA crash reporting page</body></html>",
-        )
 
-    monkeypatch.setattr("app.services.incident_review.httpx.get", fake_get)
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
 
-    result = HttpIncidentSourceFetcher().fetch(
-        "https://www.nhtsa.gov/laws-regulations/standing-general-order-crash-reporting"
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, delay: float) -> None:
+        self.sleeps.append(delay)
+        self.now += delay
+
+
+def _pending_review_result(*, incident_id: str = "incident-1") -> IncidentReviewResult:
+    return IncidentReviewResult(
+        incident_id=incident_id,
+        verdict="pending_review",
+        score=0.62,
+        reasoning="Needs editor review.",
+        source_quality_summary="Sources need review.",
+        date_confirmed=True,
+        company_confirmed=True,
+        headline_en="Incident headline",
+        reality_summary_en="Reporting describes the incident.",
+        categories=["Hallucinations"],
+        suggested_severity_score=None,
+        severity_confidence=0.82,
+        severity_reasoning="Needs review.",
+        severity_flags=[],
+        needs_escalation=False,
+        reviewed_model="deepseek-test",
     )
 
-    assert result.fetch_status == "fetched"
-    assert result.http_status == 200
-    assert result.evidence_text is not None
-    assert "NHTSA crash reporting page" in result.evidence_text
-    assert len(calls) == 2
-    assert calls[0]["User-Agent"] == "AIRealityCheckBot/1.0"
-    assert "Mozilla/5.0" in calls[1]["User-Agent"]
-    assert calls[1]["Accept-Language"] == "en-US,en;q=0.9"
+
+def test_adaptive_review_rate_limiter_starts_at_one_rps_and_ramps_to_cap() -> None:
+    clock = FakeClock()
+    limiter = AdaptiveReviewRateLimiter(
+        initial_rps=1,
+        rps_step=1,
+        max_rps=2,
+        backoff_max_seconds=60,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    async def run() -> None:
+        await limiter.wait_for_slot()
+        await limiter.wait_for_slot()
+        await limiter.wait_for_slot()
+        await limiter.wait_for_slot()
+
+    asyncio.run(run())
+
+    assert clock.sleeps == [1.0, 0.5, 0.5]
+    assert limiter.snapshot()["peak_rps"] == 2.0
+    assert limiter.snapshot()["current_rps"] == 2.0
+
+
+def test_adaptive_review_rate_limiter_backs_off_on_429_and_recovers_low() -> None:
+    clock = FakeClock()
+    limiter = AdaptiveReviewRateLimiter(
+        initial_rps=1,
+        rps_step=1,
+        max_rps=20,
+        backoff_max_seconds=60,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    async def run() -> None:
+        await limiter.wait_for_slot()
+        await limiter.record_rate_limit()
+        await limiter.wait_for_slot()
+
+    asyncio.run(run())
+
+    assert clock.sleeps == [1.0]
+    assert limiter.snapshot()["rate_limit_events"] == 1
+    assert limiter.snapshot()["current_rps"] == 1.0
+
+
+def test_review_retries_rate_limits_with_adaptive_limiter() -> None:
+    rate_limit_error = FakeRateLimitError("rate limited")
+    result = _pending_review_result()
+    client = FakeAsyncReviewRetryClient([rate_limit_error, result])
+    clock = FakeClock()
+    limiter = AdaptiveReviewRateLimiter(
+        initial_rps=1,
+        rps_step=1,
+        max_rps=20,
+        backoff_max_seconds=60,
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+
+    reviewed = asyncio.run(
+        _review_incident_with_retries(
+            client,
+            incident={"id": "incident-1"},
+            model="deepseek-test",
+            max_attempts=3,
+            rate_limiter=limiter,
+        )
+    )
+
+    assert reviewed is result
+    assert client.calls == 2
+    assert limiter.snapshot()["rate_limit_events"] == 1
+    assert clock.sleeps == [1.0]
+
+
+def test_rate_limit_detection_accepts_status_code_and_response_status() -> None:
+    assert _is_rate_limit_error(SimpleNamespace(status_code=429)) is True
+    assert (
+        _is_rate_limit_error(
+            SimpleNamespace(response=SimpleNamespace(status_code=429))
+        )
+        is True
+    )
+    assert _is_rate_limit_error(SimpleNamespace(status_code=500)) is False
 
 
 def test_parse_review_result_accepts_qualitative_severity_confidence() -> None:
@@ -316,6 +419,79 @@ def test_build_review_messages_distinguish_verified_and_watch_tracks() -> None:
     assert user_payload["sources"][0]["source_registry_key"] == "google_search"
 
 
+def test_build_review_messages_caps_evidence_context_for_review() -> None:
+    messages = _build_review_messages(
+        {
+            "id": "incident-1",
+            "external_id": "ca-dmv-waymo-2026-04-12",
+            "company_involved": "Waymo",
+            "incident_topic": "autonomous_vehicle",
+            "date_logged": "2026-04-12",
+            "headline": "Waymo collision report",
+            "reality_summary": "California DMV published a collision report.",
+            "source_family": "autonomous_vehicle",
+            "sources": [
+                {
+                    "source_url": "https://www.dmv.ca.gov/report.pdf",
+                    "canonical_url": None,
+                    "fetch_status": "fetched",
+                    "http_status": 200,
+                    "evidence_text": (
+                        ("boilerplate " * 4000)
+                        + "Structured autonomous vehicle facts: collision "
+                        + "object: bicyclist; automation state: autonomous mode. "
+                        + ("extra evidence " * 4000)
+                    ),
+                    "source_origin": "fixed_verified_source",
+                    "source_registry_key": "ca_dmv_av_collisions",
+                }
+            ],
+        }
+    )
+
+    user_payload = json.loads(messages[1]["content"])
+    evidence_text = user_payload["sources"][0]["evidence_text"]
+
+    assert len(evidence_text) <= 30_000
+    assert "Structured autonomous vehicle facts" in evidence_text
+
+
+def test_build_review_messages_warn_autonomous_reviews_against_generic_copy() -> None:
+    messages = _build_review_messages(
+        {
+            "id": "incident-1",
+            "external_id": "ca-dmv-waymo-2026-04-12",
+            "company_involved": "Waymo",
+            "incident_topic": "autonomous_vehicle",
+            "date_logged": "2026-04-12",
+            "headline": "Waymo collision report",
+            "reality_summary": "California DMV published a collision report.",
+            "source_family": "autonomous_vehicle",
+            "sources": [
+                {
+                    "source_url": "https://www.dmv.ca.gov/report.pdf",
+                    "canonical_url": None,
+                    "fetch_status": "fetched",
+                    "http_status": 200,
+                    "evidence_text": (
+                        "Structured autonomous vehicle facts: collision object: "
+                        "bicyclist; location: Market Street near 5th Street"
+                    ),
+                    "source_origin": "fixed_verified_source",
+                    "source_registry_key": "ca_dmv_av_collisions",
+                }
+            ],
+        }
+    )
+
+    system_prompt = messages[0]["content"].lower()
+
+    assert "autonomous vehicle incidents" in system_prompt
+    assert "collision object" in system_prompt
+    assert "human takeover" in system_prompt
+    assert "do not write generic" in system_prompt
+
+
 def test_parse_review_result_reads_structured_forensic_fields() -> None:
     result = _parse_review_result(
         incident_id="incident-1",
@@ -418,6 +594,87 @@ def test_parse_review_result_preserves_explicit_needs_escalation() -> None:
     )
 
     assert result.needs_escalation is True
+
+
+def test_autonomous_vehicle_review_with_generic_detail_stays_pending() -> None:
+    repository = InMemoryIncidentRepository(
+        incidents=[
+            {
+                "id": "incident-av",
+                "external_id": "ca-dmv-waymo-2026-04-12",
+                "headline": "Waymo collision report",
+                "date_logged": "2026-04-12",
+                "company_involved": "Waymo",
+                "claimant_name": None,
+                "categories": ["Autonomous Systems"],
+                "severity_score": 2,
+                "reality_summary": (
+                    "California DMV published an autonomous vehicle collision "
+                    "report for Waymo dated 2026-04-12."
+                ),
+                "status": "pending_llm_review",
+                "translation_status": "not_requested",
+                "publication_track": "verified_accident",
+                "evidence_tier": "official_documented",
+                "source_family": "autonomous_vehicle",
+                "verification_summary": "Official DMV collision report.",
+                "sources": [
+                    {
+                        "id": "source-av",
+                        "source_url": "https://www.dmv.ca.gov/report.pdf",
+                        "source_type": "official",
+                        "publisher": "California DMV",
+                        "title": "Waymo collision report",
+                    }
+                ],
+            }
+        ]
+    )
+    translation_client = FakeTranslationClient()
+    generic_result = IncidentReviewResult(
+        incident_id="incident-av",
+        verdict="approved",
+        score=0.95,
+        reasoning="Official source supports the incident.",
+        source_quality_summary="Official DMV report.",
+        date_confirmed=True,
+        company_confirmed=True,
+        headline_en="Waymo collision report",
+        reality_summary_en="California DMV published a collision report.",
+        incident_summary_en="California DMV published a collision report.",
+        what_happened_en="California DMV published a collision report.",
+        ai_failure_point_en="An autonomous vehicle system failed.",
+        why_it_matters_en="This shows autonomous vehicle risk.",
+        evidence_summary_en="Official DMV report.",
+        categories=["Autonomous Systems"],
+        suggested_severity_score=2,
+        severity_confidence=0.9,
+        severity_reasoning="No major harm described.",
+        severity_flags=[],
+        needs_escalation=False,
+        reviewed_model="deepseek-test",
+    )
+
+    summary = asyncio.run(
+        review_pending_incidents(
+            repository,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=FakeAsyncReviewRetryClient([generic_result]),
+            escalation_client=FakeBatchReviewClient(),
+            translation_client=translation_client,
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            primary_model="deepseek-test",
+            escalation_model="deepseek-pro-test",
+            embedding_model="embedding-test",
+            duplicate_judge_model="duplicate-test",
+        )
+    )
+
+    assert summary.approved == 0
+    assert summary.pending_review == 1
+    assert translation_client.calls == []
+    assert repository.incidents["incident-av"]["status"] == "pending_editor_review"
 
 
 def test_sync_review_client_retries_malformed_json_and_uses_higher_max_tokens(
@@ -631,7 +888,7 @@ def test_submit_incident_review_batch_fetches_source_evidence_and_marks_batch() 
     assert first_incident["sources"][0]["evidence_text"].startswith("Evidence for ")
 
 
-def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates_only_approved(  # noqa: E501
+def test_reconcile_incident_review_batch_routes_primary_results_to_editor_review(  # noqa: E501
 ) -> None:
     repository = InMemoryIncidentRepository()
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
@@ -728,20 +985,18 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
         escalation_model="gpt-5.2",
     )
 
-    assert summary.approved == 1
-    assert summary.pending_review == 1
+    assert summary.approved == 0
+    assert summary.pending_review == 2
     assert summary.rejected == 0
     assert summary.escalated == 0
 
     approved_incident = incidents_by_external_id["inc-openai-001"]
     queued_incident = incidents_by_external_id["inc-school-002"]
 
-    assert approved_incident["status"] == "approved"
-    assert approved_incident["translation_status"] == "completed"
-    assert approved_incident["company_involved_zh"] == "ZH:OpenAI"
-    assert approved_incident["headline_zh"] == (
-        "ZH:OpenAI filing included fake legal citations"
-    )
+    assert approved_incident["status"] == "pending_editor_review"
+    assert approved_incident["translation_status"] == "not_requested"
+    assert approved_incident.get("company_involved_zh") is None
+    assert approved_incident.get("headline_zh") is None
     assert approved_incident["incident_summary_en"] == (
         "A court filing incident exposed fabricated legal citations."
     )
@@ -749,25 +1004,16 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
         "The drafting workflow failed to verify cited cases before including "
         "them in the filing."
     )
-    assert approved_incident["incident_summary_zh"] == (
-        "ZH:A court filing incident exposed fabricated legal citations."
-    )
-    assert approved_incident["ai_failure_point_zh"] == (
-        "ZH:The drafting workflow failed to verify cited cases before "
-        "including them in the filing."
-    )
-    assert approved_incident["legitimacy_reasoning_zh"] == (
-        "ZH:Primary review found strong source support."
-    )
-    assert approved_incident["source_validation_summary_zh"] == (
-        "ZH:3 fetched sources agree on the event."
-    )
+    assert approved_incident.get("incident_summary_zh") is None
+    assert approved_incident.get("ai_failure_point_zh") is None
+    assert approved_incident.get("legitimacy_reasoning_zh") is None
+    assert approved_incident.get("source_validation_summary_zh") is None
     assert approved_incident["legitimacy_score"] == 0.96
     assert approved_incident["review_model"] == "gpt-5.4-mini"
     assert approved_incident["categories"] == ["Hallucinations"]
-    assert approved_incident["severity_score"] == 2
+    assert approved_incident["severity_score"] == 3
     assert approved_incident["suggested_severity_score"] == 2
-    assert approved_incident["severity_decision_source"] == "primary_llm"
+    assert approved_incident["severity_decision_source"] is None
 
     assert queued_incident["status"] == "pending_editor_review"
     assert queued_incident["categories"] == [
@@ -780,40 +1026,10 @@ def test_reconcile_incident_review_batch_escalates_uncertain_rows_and_translates
     assert queued_incident["suggested_severity_score"] == 3
     assert queued_incident["severity_confidence"] == 0.89
     assert queued_incident["severity_decision_source"] is None
-    assert translation_client.calls == [
-        {
-            "company_involved_en": "OpenAI",
-            "headline_en": "OpenAI filing included fake legal citations",
-            "reality_summary_en": (
-                "Court records and reporting confirm the filing incident."
-            ),
-            "legitimacy_reasoning_en": (
-                "Primary review found strong source support."
-            ),
-            "source_validation_summary_en": "3 fetched sources agree on the event.",
-            "incident_summary_en": (
-                "A court filing incident exposed fabricated legal citations."
-            ),
-            "what_happened_en": (
-                "Court submissions and coverage show that fabricated citations "
-                "were included in a federal filing."
-            ),
-            "ai_failure_point_en": (
-                "The drafting workflow failed to verify cited cases before "
-                "including them in the filing."
-            ),
-            "why_it_matters_en": (
-                "The incident affected a real legal proceeding and required "
-                "human correction."
-            ),
-            "evidence_summary_en": (
-                "Court records and multiple reports confirm the error."
-            ),
-        }
-    ]
+    assert translation_client.calls == []
 
 
-def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_editor_queue(  # noqa: E501
+def test_reconcile_incident_review_batch_skips_second_phase_for_low_confidence_rows(  # noqa: E501
 ) -> None:
     repository = InMemoryIncidentRepository()
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
@@ -849,7 +1065,7 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
                 "Students received inaccurate enrollment guidance and staff had "
                 "to correct the information manually."
             ),
-            categories=["Autonomous Systems", "Made Up Category"],
+        categories=["Autonomous Systems", "Missed Timelines"],
             suggested_severity_score=3,
             severity_confidence=0.61,
             severity_reasoning=(
@@ -926,26 +1142,20 @@ def test_reconcile_incident_review_batch_escalates_low_confidence_rows_before_ed
     assert summary.approved == 0
     assert summary.pending_review == 1
     assert summary.rejected == 0
-    assert summary.escalated == 1
+    assert summary.escalated == 0
     assert target_incident["status"] == "pending_editor_review"
     assert target_incident["categories"] == [
         "Autonomous Systems",
         "Missed Timelines",
     ]
-    assert target_incident["incident_summary_en"] == (
-        "Students received incorrect enrollment guidance that required staff "
-        "intervention."
-    )
-    assert target_incident["ai_failure_point_en"] == (
-        "The assistant failed to ground enrollment advice in current school "
-        "policy."
-    )
-    assert target_incident["review_model"] == "gpt-5.2"
+    assert target_incident["incident_summary_en"] is None
+    assert target_incident["ai_failure_point_en"] is None
+    assert target_incident["review_model"] == "gpt-5.4-mini"
     assert target_incident["suggested_severity_score"] == 3
     assert target_incident["severity_decision_source"] is None
 
 
-def test_reconcile_incident_review_batch_routes_second_phase_escalation_to_pending_editor_review(  # noqa: E501
+def test_reconcile_incident_review_batch_routes_escalation_flag_to_editor_without_second_phase(  # noqa: E501
 ) -> None:
     repository = InMemoryIncidentRepository()
     import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
@@ -1032,11 +1242,14 @@ def test_reconcile_incident_review_batch_routes_second_phase_escalation_to_pendi
     )
 
     assert summary.approved == 0
-    assert summary.pending_review == 1
-    assert summary.rejected == 1
-    assert summary.escalated == 1
+    assert summary.pending_review == 2
+    assert summary.rejected == 0
+    assert summary.escalated == 0
+    assert incidents_by_external_id["inc-openai-001"]["status"] == (
+        "pending_editor_review"
+    )
     assert target_incident["status"] == "pending_editor_review"
-    assert target_incident["review_model"] == "gpt-5.2"
+    assert target_incident["review_model"] == "gpt-5.4-mini"
     assert target_incident["translation_status"] == "not_requested"
 
 
@@ -1182,14 +1395,10 @@ def test_reconcile_incident_review_batch_hides_confirmed_duplicates_and_skips_tr
     )
 
     assert summary.approved == 0
-    assert summary.pending_review == 1
+    assert summary.pending_review == 2
     assert summary.rejected == 0
-    assert imported_incident["status"] == "duplicate_confirmed"
-    assert imported_incident["duplicate_of_incident_id"] == "incident-canonical"
+    assert imported_incident["status"] == "pending_editor_review"
+    assert imported_incident["duplicate_of_incident_id"] is None
     assert imported_incident["translation_status"] == "not_requested"
-    assert repository.incidents["incident-canonical"]["sources"][-1]["source_url"] in {
-        "https://example.com/court-order",
-        "https://example.com/reuters-legal",
-        "https://example.com/stanford-analysis",
-    }
+    assert len(repository.incidents["incident-canonical"]["sources"]) == 1
     assert translation_client.calls == []

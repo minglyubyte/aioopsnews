@@ -5,7 +5,9 @@ import json
 from dataclasses import dataclass
 
 from app.services.incident_deduplication import DuplicateJudgeDecision
-from app.services.incident_review import FetchedIncidentSource, IncidentReviewResult
+from app.services.incident_import import import_incidents_csv_text
+from app.services.incident_review import IncidentReviewResult
+from app.services.source_evidence import FetchedIncidentSource
 from tests.support.fakes import InMemoryIncidentRepository
 from tests.support.incident_csv_fixtures import INVALID_IMPORT_CSV, VALID_IMPORT_CSV
 
@@ -310,43 +312,23 @@ def test_run_incident_csv_workflow_imports_archives_and_reviews_pending_rows_imm
     assert summary["reviews_completed"] == 2
     assert summary["reviews_failed"] == 0
     assert summary["review_failures"] == []
-    assert summary["approved"] == 1
-    assert summary["pending_review"] == 1
+    assert summary["approved"] == 0
+    assert summary["pending_review"] == 2
     assert summary["rejected"] == 0
-    assert summary["translations_completed"] == 1
+    assert summary["translations_completed"] == 0
     assert summary["translations_failed"] == 0
     approved_incident = next(
         incident
         for incident in repository.incidents.values()
         if incident["external_id"] == "inc-openai-001"
     )
-    assert approved_incident["company_involved_zh"] == "ZH:OpenAI"
-    assert approved_incident["incident_summary_zh"] == (
-        "ZH:A court filing incident exposed fabricated citations."
+    assert approved_incident["status"] == "pending_editor_review"
+    assert approved_incident.get("company_involved_zh") is None
+    assert approved_incident.get("incident_summary_zh") is None
+    assert approved_incident["incident_summary_en"] == (
+        "A court filing incident exposed fabricated citations."
     )
-    assert translation_client.calls == [
-        {
-            "company_involved_en": "OpenAI",
-            "headline_en": "OpenAI filing included fake legal citations",
-            "reality_summary_en": "Court records confirm the filing incident.",
-            "legitimacy_reasoning_en": "Strong source support.",
-            "source_validation_summary_en": "3 fetched sources agree on the event.",
-            "incident_summary_en": (
-                "A court filing incident exposed fabricated citations."
-            ),
-            "what_happened_en": (
-                "The filing included fabricated citations and required "
-                "correction."
-            ),
-            "ai_failure_point_en": (
-                "The drafting workflow failed to verify cited cases."
-            ),
-            "why_it_matters_en": "The issue affected a real legal filing.",
-            "evidence_summary_en": (
-                "Court records and reporting confirm the error."
-            ),
-        }
-    ]
+    assert translation_client.calls == []
     assert "batches_submitted" not in summary
     assert not (inbox_dir / "2023-a.csv").exists()
     assert len(list(archive_dir.glob("2023-a*.csv"))) == 1
@@ -388,6 +370,68 @@ def test_run_incident_csv_workflow_can_import_without_reviewing(
     assert not (inbox_dir / "2023-a.csv").exists()
     assert len(list(archive_dir.glob("2023-a*.csv"))) == 1
     assert len(repository.list_incidents_pending_llm_review()) == 2
+
+
+def test_run_incident_csv_workflow_can_review_without_importing(
+    tmp_path,
+) -> None:
+    from app.workflows.incident_csv_workflow import run_incident_csv_workflow
+
+    repository = InMemoryIncidentRepository()
+    inbox_dir = tmp_path / "inbox"
+    archive_dir = tmp_path / "archive"
+    inbox_dir.mkdir()
+    (inbox_dir / "2023-a.csv").write_text(VALID_IMPORT_CSV, encoding="utf-8")
+    import_incidents_csv_text(repository, VALID_IMPORT_CSV, dry_run=False)
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-school-002": [
+                IncidentReviewResult(
+                    incident_id="unused-school",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Needs editor review.",
+                    source_quality_summary="Sources need review.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="School chatbot gave inaccurate enrollment guidance",
+                    reality_summary_en="Reporting describes the incident.",
+                    categories=["Autonomous Systems"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Needs review.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+        }
+    )
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            review_only=True,
+            max_reviews=1,
+        )
+    )
+
+    assert summary["files_found"] == 0
+    assert summary["files_imported"] == 0
+    assert summary["incidents_imported"] == 0
+    assert summary["reviews_attempted"] == 1
+    assert len(review_client.calls) == 1
+    assert (inbox_dir / "2023-a.csv").exists()
 
 
 def test_run_incident_csv_workflow_limits_reviews_per_run(
@@ -661,11 +705,11 @@ def test_run_incident_csv_workflow_reports_unrecoverable_review_failures(
     assert summary["reviews_failed"] == 1
     assert len(summary["review_failures"]) == 1
     assert summary["review_failures"][0]["external_id"] == "inc-school-002"
-    assert summary["approved"] == 1
+    assert summary["approved"] == 0
     assert school_incident["status"] == "pending_llm_review"
 
 
-def test_run_incident_csv_workflow_reports_escalation_parse_failures_without_crashing(
+def test_run_incident_csv_workflow_routes_escalation_flags_to_editor_review(
     tmp_path,
 ) -> None:
     from app.workflows.incident_csv_workflow import run_incident_csv_workflow
@@ -751,13 +795,12 @@ def test_run_incident_csv_workflow_reports_escalation_parse_failures_without_cra
     )
 
     assert summary["reviews_attempted"] == 2
-    assert summary["reviews_completed"] == 1
-    assert summary["reviews_failed"] == 1
-    assert len(summary["review_failures"]) == 1
-    assert summary["review_failures"][0]["external_id"] == "inc-school-002"
-    assert "Expecting value" in summary["review_failures"][0]["error"]
-    assert summary["approved"] == 1
-    assert school_incident["status"] == "pending_llm_review"
+    assert summary["reviews_completed"] == 2
+    assert summary["reviews_failed"] == 0
+    assert summary["review_failures"] == []
+    assert summary["approved"] == 0
+    assert summary["pending_review"] == 2
+    assert school_incident["status"] == "pending_editor_review"
 
 
 def test_run_incident_csv_workflow_merges_confirmed_duplicates_without_publicizing_duplicate(  # noqa: E501
@@ -899,6 +942,6 @@ def test_run_incident_csv_workflow_merges_confirmed_duplicates_without_publicizi
         if incident.get("external_id") == "inc-openai-001"
     )
     assert summary["approved"] == 0
-    assert imported_incident["status"] == "duplicate_confirmed"
+    assert imported_incident["status"] == "pending_editor_review"
     assert repository.get_public_incident(imported_incident["id"]) is None
     assert repository.get_public_incident("incident-canonical") is not None

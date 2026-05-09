@@ -21,8 +21,6 @@ should use ``.get()`` for those fields.
 
 from __future__ import annotations
 
-from typing import Any
-
 try:
     from typing import NotRequired, TypedDict
 except ImportError:
@@ -216,6 +214,9 @@ class IncidentAnalysisDict(TypedDict):
     why_it_matters_zh: str | None
     evidence_summary_en: str | None
     evidence_summary_zh: str | None
+    detail_quality: NotRequired[str | None]
+    detail_quality_reasons: NotRequired[list[str]]
+    source_fact_summary: NotRequired[str | None]
 
 
 class PublicDetailDict(TypedDict):
