@@ -116,36 +116,20 @@ The primary review contract is strict structured output:
 An incident may auto-approve only when all of the following are true:
 
 - legitimacy verdict is `approved`
-- `legitimacy_score >= 0.90`
-- `suggested_severity_score <= 2`
+- `legitimacy_score >= 0.95`
+- `suggested_severity_score` is present
 - `severity_confidence >= 0.85`
 - date is confirmed
 - company is confirmed
-- no high-risk severity flags are present
-
-High-risk severity flags include:
-
-- `safety`
-- `privacy_breach`
-- `legal_or_regulatory`
-- `financial_harm`
-- `core_system_outage`
-- `unclear_real_world_impact`
+- `publication_track` is `verified_accident`
+- `evidence_tier` is `official_documented` or `court_or_regulator`
+- at least one fixed verified source has fetched evidence text
 
 ## Escalation Logic
 
-The stronger escalation model is reserved for ambiguity, not just seriousness.
-
-Use `pending_llm_escalation` when:
-
-- the model explicitly needs escalation
-- the date or company is not confirmed
-- legitimacy is too uncertain to approve or reject
-- severity confidence is low
-- structured output is invalid, including unknown categories
-- source evidence is conflicting or incomplete
-
-High severity alone should not trigger escalation.
+Second-phase escalation is disabled for the normal daily review path.
+`pending_llm_escalation` is retained as a legacy/manual queue state, but new
+uncertain incidents should route to `pending_review`.
 
 ## Human Review Logic
 
@@ -186,10 +170,17 @@ Main workflow states include:
 
 - `pending_review`
 - `pending_llm_review`
-- `pending_llm_escalation`
 - `approved`
 - `rejected`
 - `duplicate_confirmed`
+
+Legacy/manual queue compatibility also recognizes `pending_llm_escalation`.
+
+## Reader Detail Quality
+
+Autonomous-vehicle incidents include a computed `detail_quality` signal. A value
+of `insufficient` means the source fact extractor could not confirm enough AV
+specifics, not that the incident lacks LLM-written detail sections.
 
 Only `approved` incidents are public.
 

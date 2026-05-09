@@ -164,6 +164,8 @@ UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.run_incident_csv_workflow
 DeepSeek review no longer applies a proactive qps cap. Keep
 `--review-concurrency` near 10 for local operator runs; if the provider returns
 HTTP 429, all review workers share a short global cooldown and then continue.
+The legacy adaptive RPS flags are still accepted for CLI compatibility, but
+they do not impose proactive request-per-second pacing.
 
 ## Dry Run
 
@@ -245,15 +247,17 @@ Primary review output must satisfy all of the following:
 
 - auto-approves fixed-source incidents when the primary model returns
   `verdict="approved"`, `score >= 0.95`, `severity_confidence >= 0.85`,
-  confirmed date and company, `publication_track="verified_accident"`,
-  official/court evidence tier, and fetched fixed-source evidence text
+  a non-null severity suggestion, confirmed date and company,
+  `publication_track="verified_accident"`, official/court evidence tier, and
+  fetched fixed-source evidence text
 - rejects incidents when the primary model returns `verdict="rejected"`
 - routes low-confidence, missing-severity, weak-evidence, unconfirmed, or
   otherwise ambiguous incidents to `pending_review` for the operator
 
 ### 5. Escalation
 
-- second-phase escalation is currently disabled for the daily review path
+- second-phase escalation is currently disabled for the daily review path;
+  `pending_llm_escalation` is retained only as a legacy/manual queue state
 - invalid structured review output, including unknown categories or malformed
   severity fields, fails the row for operator follow-up instead of silently
   approving it
@@ -283,6 +287,9 @@ Primary review output must satisfy all of the following:
   PostgreSQL, not from a paginated archive page. After large approval sweeps,
   refresh the frontend or refetch `/filters` to see new company/category/year
   values.
+- For autonomous-vehicle records, `detail_quality="insufficient"` is a reader
+  quality warning based on source fact extraction. It does not mean the row
+  lacks LLM-written detail sections.
 
 ## Recommended Modes
 

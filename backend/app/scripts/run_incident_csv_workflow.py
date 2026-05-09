@@ -37,9 +37,9 @@ def _require_non_dry_run_credentials(settings) -> None:
     raise ValueError(
         "Workflow credentials are missing for non-dry runs: "
         + ", ".join(missing)
-        + ". DeepSeek credentials are required for primary review, second-phase "
-        "review, duplicate checks, and translation. OPENAI_API_KEY is required "
-        "only for embeddings."
+        + ". DeepSeek-compatible credentials are required for primary review, "
+        "duplicate checks, and translation. OPENAI_API_KEY is required only "
+        "for embeddings."
     )
 
 
