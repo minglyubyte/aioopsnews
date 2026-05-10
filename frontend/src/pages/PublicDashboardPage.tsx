@@ -16,6 +16,7 @@ import type {
   IncidentFeedFilters,
   IncidentFeedResponse,
   IncidentFilters,
+  IncidentSource,
   IncidentSliceSummary,
   PublicIncidentBase,
 } from "../types/incident";
@@ -107,6 +108,9 @@ export default function PublicDashboardPage() {
     ? (filters?.months_by_year[String(readerFilters.year)] ?? [])
     : [];
   const copy = PUBLIC_COPY[readerLocale];
+  const visibleDetailSources = incidentDetail
+    ? publicDetailSources(incidentDetail)
+    : [];
   const monthlySignals = buildMonthlySignals(incidents, readerLocale);
   const categorySignals = buildCategorySignals(incidents, readerLocale);
   const heroMetrics = buildHeroMetrics(feed, categorySignals, readerLocale);
@@ -970,8 +974,7 @@ export default function PublicDashboardPage() {
                       </p>
                     </section>
                   ) : null}
-                  {!hasInsufficientDetail(incidentDetail) &&
-                  localizedAnalysisText(
+                  {localizedAnalysisText(
                     incidentDetail.analysis,
                     "what_happened",
                     readerLocale,
@@ -989,7 +992,12 @@ export default function PublicDashboardPage() {
                       </p>
                     </section>
                   ) : null}
-                  {!hasInsufficientDetail(incidentDetail) ? (
+                  {!hasInsufficientDetail(incidentDetail) ||
+                  localizedAnalysisText(
+                    incidentDetail.analysis,
+                    "ai_failure_point",
+                    readerLocale,
+                  ) ? (
                     <section className="public-detail-block">
                       <p className="public-claim-kicker">
                         {copy.aiFailurePointTitle}
@@ -1003,8 +1011,7 @@ export default function PublicDashboardPage() {
                       </p>
                     </section>
                   ) : null}
-                  {!hasInsufficientDetail(incidentDetail) &&
-                  localizedAnalysisText(
+                  {localizedAnalysisText(
                     incidentDetail.analysis,
                     "why_it_matters",
                     readerLocale,
@@ -1077,10 +1084,10 @@ export default function PublicDashboardPage() {
                   data-inview={sourceListInView ? "true" : "false"}
                   ref={sourceListRef}
                 >
-                  {incidentDetail.sources.length === 0 ? (
+                  {visibleDetailSources.length === 0 ? (
                     <p className="body-copy">{copy.noSources}</p>
                   ) : (
-                    incidentDetail.sources.map((source, srcIdx) => (
+                    visibleDetailSources.map((source, srcIdx) => (
                       <article
                         className="public-source-item"
                         key={source.id}
@@ -1228,6 +1235,25 @@ function hasInsufficientDetail(incident: IncidentDetail) {
   return (
     incident.source_family === "autonomous_vehicle" &&
     incident.analysis.detail_quality === "insufficient"
+  );
+}
+
+function publicDetailSources(incident: IncidentDetail): IncidentSource[] {
+  if (incident.source_family !== "autonomous_vehicle") {
+    return incident.sources;
+  }
+  return incident.sources.filter((source) =>
+    looksLikeIncidentDocumentUrl(source.source_url),
+  );
+}
+
+function looksLikeIncidentDocumentUrl(sourceUrl: string) {
+  const normalized = sourceUrl.toLowerCase();
+  return (
+    normalized.endsWith(".pdf") ||
+    normalized.includes("/portal/file/") ||
+    normalized.endsWith("-pdf/") ||
+    normalized.endsWith("-pdf")
   );
 }
 

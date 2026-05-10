@@ -437,6 +437,7 @@ def serialize_public_detail_row(
     match_threshold: float,
 ) -> dict[str, Any]:
     """Serialize a row for public incident detail view."""
+    public_sources = _public_detail_sources(row, sources)
     return {
         "id": json_safe_scalar(row["id"]),
         "headline": row["headline"],
@@ -497,21 +498,34 @@ def serialize_public_detail_row(
             or sanitize_reader_text(
                 row.get("source_validation_summary"),
             )
-            or _fallback_public_evidence_summary(sources, locale="en"),
+            or _fallback_public_evidence_summary(public_sources, locale="en"),
             "evidence_summary_zh": sanitize_reader_text(
                 row.get("evidence_summary_zh"),
             )
             or sanitize_reader_text(
                 row.get("source_validation_summary_zh"),
             )
-            or _fallback_public_evidence_summary(sources, locale="zh"),
-            **_detail_quality_fields(row, sources),
+            or _fallback_public_evidence_summary(public_sources, locale="zh"),
+            **_detail_quality_fields(row, public_sources),
         },
         "matched_claim": build_public_claim_payload(
             row, match_threshold=match_threshold
         ),
-        "sources": sources,
+        "sources": public_sources,
     }
+
+
+def _public_detail_sources(
+    row: dict[str, Any],
+    sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if row.get("source_family") != "autonomous_vehicle":
+        return sources
+    return [
+        source
+        for source in sources
+        if _looks_like_incident_document_url(str(source.get("source_url") or ""))
+    ]
 
 
 def _fallback_public_evidence_summary(
@@ -543,3 +557,13 @@ def _detail_quality_fields(
         "detail_quality_reasons": assessment.detail_quality_reasons,
         "source_fact_summary": assessment.source_fact_summary,
     }
+
+
+def _looks_like_incident_document_url(source_url: str) -> bool:
+    normalized = source_url.lower()
+    return (
+        normalized.endswith(".pdf")
+        or "/portal/file/" in normalized
+        or normalized.endswith("-pdf/")
+        or normalized.endswith("-pdf")
+    )

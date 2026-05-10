@@ -1146,6 +1146,105 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps existing autonomous vehicle detail visible when source evidence is incomplete", async () => {
+    const autonomousIncident = buildArchiveIncident({
+      id: "incident-av-rich",
+      headline: "California DMV published Waymo collision report",
+      headline_en: "California DMV published Waymo collision report",
+      company_involved: "Waymo",
+      categories: ["Autonomous Systems"],
+      publication_track: "verified_accident",
+      evidence_tier: "official_documented",
+      source_family: "autonomous_vehicle",
+      archive_summary:
+        "California DMV published an autonomous vehicle collision report.",
+    });
+
+    mockedFetchIncidentFeed.mockResolvedValue(
+      buildFeedResponse([autonomousIncident]),
+    );
+    mockedFetchIncidentDetail.mockResolvedValue(
+      buildIncidentDetail({
+        ...autonomousIncident,
+        reality_summary:
+          "California DMV published an autonomous vehicle collision report.",
+        analysis: {
+          incident_summary_en:
+            "The DMV report documents a Waymo collision in autonomous mode.",
+          what_happened_en:
+            "The Waymo vehicle stopped on a narrow street before another vehicle passed closely and made contact with its rear left side.",
+          ai_failure_point_en:
+            "The autonomous driving system did not preserve enough clearance or negotiate the tight passing scenario before contact occurred.",
+          why_it_matters_en:
+            "The incident matters because low-speed urban conflicts still test autonomous vehicle prediction and planning behavior.",
+          evidence_summary_en: "Official DMV collision report.",
+          detail_quality: "insufficient",
+          detail_quality_reasons: ["missing_evidence_text"],
+          source_fact_summary: null,
+        },
+        sources: [
+          {
+            id: "source-pdf",
+            source_url: "https://www.dmv.ca.gov/portal/file/waymo_031826-pdf/",
+            source_type: "official",
+            publisher: "California DMV",
+            title: "Waymo collision report",
+          },
+          {
+            id: "source-index",
+            source_url:
+              "https://www.dmv.ca.gov/portal/vehicle-industry-services/autonomous-vehicles/autonomous-vehicle-collision-reports/",
+            source_type: "official",
+            publisher: "California DMV",
+            title: "Autonomous Vehicle Collision Reports",
+          },
+          {
+            id: "source-nhtsa",
+            source_url:
+              "https://www.nhtsa.gov/laws-regulations/standing-general-order-crash-reporting",
+            source_type: "official",
+            publisher: "NHTSA",
+            title: "Standing General Order Crash Reporting",
+          },
+        ],
+      }),
+    );
+
+    render(<PublicDashboardPage />);
+
+    expect(
+      await screen.findByText("Official report, detail pending"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The Waymo vehicle stopped on a narrow street before another vehicle passed closely and made contact with its rear left side.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The autonomous driving system did not preserve enough clearance or negotiate the tight passing scenario before contact occurred.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The incident matters because low-speed urban conflicts still test autonomous vehicle prediction and planning behavior.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Waymo collision report" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", {
+        name: "Autonomous Vehicle Collision Reports",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", {
+        name: "Standing General Order Crash Reporting",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
   it("paginates archive results and keeps the selected detail visible across page changes", async () => {
     const firstPageIncident = buildArchiveIncident({
       id: "incident-page-1",

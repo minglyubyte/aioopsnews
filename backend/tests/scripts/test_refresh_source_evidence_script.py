@@ -81,6 +81,85 @@ def test_refresh_pending_source_evidence_respects_source_limit() -> None:
     assert fetcher.fetched_urls == ["https://example.com/one"]
 
 
+def test_refresh_pending_source_evidence_filters_source_registry_keys() -> None:
+    repository = InMemoryIncidentRepository(
+        incidents=[
+            _incident(
+                "incident-1",
+                [
+                    _source(
+                        "source-1",
+                        "https://example.com/ftc",
+                        None,
+                        source_registry_key="ftc_ai_enforcement",
+                    ),
+                    _source(
+                        "source-2",
+                        "https://example.com/dmv",
+                        None,
+                        source_registry_key="ca_dmv_av_collisions",
+                    ),
+                ],
+            )
+        ]
+    )
+    fetcher = FakeSourceFetcher()
+
+    summary = refresh_pending_source_evidence(
+        repository,
+        source_fetcher=fetcher,
+        source_registry_keys={"ftc_ai_enforcement"},
+    )
+
+    assert summary["sources_seen"] == 1
+    assert summary["fetched"] == 1
+    assert fetcher.fetched_urls == ["https://example.com/ftc"]
+
+
+def test_refresh_source_evidence_can_target_approved_incident_documents() -> None:
+    repository = InMemoryIncidentRepository(
+        incidents=[
+            _incident(
+                "incident-approved",
+                [
+                    _source(
+                        "source-pdf",
+                        "https://www.dmv.ca.gov/portal/file/waymo_031826-pdf/",
+                        None,
+                    ),
+                    _source(
+                        "source-index",
+                        "https://www.dmv.ca.gov/portal/vehicle-industry-services/autonomous-vehicles/autonomous-vehicle-collision-reports/",
+                        None,
+                    ),
+                    _source(
+                        "source-nhtsa",
+                        "https://www.nhtsa.gov/laws-regulations/standing-general-order-crash-reporting",
+                        None,
+                    ),
+                ],
+                status="approved",
+            )
+        ]
+    )
+    fetcher = FakeSourceFetcher()
+
+    summary = refresh_pending_source_evidence(
+        repository,
+        source_fetcher=fetcher,
+        statuses={"approved"},
+        source_url_kind="incident_document",
+        source_registry_keys={"ca_dmv_av_collisions"},
+    )
+
+    assert summary["incidents_seen"] == 1
+    assert summary["sources_seen"] == 1
+    assert summary["fetched"] == 1
+    assert fetcher.fetched_urls == [
+        "https://www.dmv.ca.gov/portal/file/waymo_031826-pdf/"
+    ]
+
+
 def test_refresh_pending_source_evidence_force_refetches_existing_evidence() -> None:
     repository = InMemoryIncidentRepository(
         incidents=[
@@ -165,7 +244,12 @@ def test_refresh_pending_source_evidence_skips_existing_failed_source() -> None:
     assert fetcher.fetched_urls == ["https://example.com/missing"]
 
 
-def _incident(incident_id: str, sources: list[dict[str, object]]) -> dict[str, object]:
+def _incident(
+    incident_id: str,
+    sources: list[dict[str, object]],
+    *,
+    status: str = "pending_llm_review",
+) -> dict[str, object]:
     return {
         "id": incident_id,
         "external_id": incident_id,
@@ -182,7 +266,7 @@ def _incident(incident_id: str, sources: list[dict[str, object]]) -> dict[str, o
         "reality_summary": "Summary",
         "reality_summary_en": "Summary",
         "reality_summary_zh": None,
-        "status": "pending_llm_review",
+        "status": status,
         "ingestion_run_id": None,
         "confidence_score": None,
         "severity_confidence": None,
@@ -224,6 +308,7 @@ def _source(
     evidence_text: str | None,
     *,
     fetch_status: str | None = None,
+    source_registry_key: str = "ca_dmv_av_collisions",
 ) -> dict[str, object]:
     return {
         "id": source_id,
@@ -237,7 +322,7 @@ def _source(
         "evidence_text": evidence_text,
         "fetch_error": None,
         "source_origin": "fixed_verified_source",
-        "source_registry_key": "ca_dmv_av_collisions",
+        "source_registry_key": source_registry_key,
         "raw_source_payload": None,
         "is_primary": True,
     }

@@ -222,8 +222,6 @@ def _has_template_forensic_copy(incident: dict[str, Any]) -> bool:
     text = " ".join(
         str(incident.get(key) or "")
         for key in (
-            "reality_summary",
-            "incident_summary_en",
             "what_happened_en",
             "ai_failure_point_en",
             "why_it_matters_en",

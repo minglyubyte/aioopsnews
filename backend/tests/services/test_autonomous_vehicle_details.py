@@ -50,6 +50,48 @@ def test_assess_av_detail_quality_marks_template_records_insufficient() -> None:
     assert assessment.source_fact_summary is None
 
 
+def test_assess_av_detail_quality_ignores_template_summary_for_specific_fields(
+) -> None:
+    incident = {
+        "source_family": "autonomous_vehicle",
+        "reality_summary": (
+            "California DMV published an autonomous vehicle collision report "
+            "for Waymo dated 2026-04-12."
+        ),
+        "what_happened_en": (
+            "The vehicle was traveling westbound on Market Street near 5th "
+            "Street when a bicyclist entered the intersection and the vehicle "
+            "made contact with the bicycle before the specialist intervened."
+        ),
+        "ai_failure_point_en": (
+            "The autonomy stack did not avoid a bicyclist entering the vehicle "
+            "path, and the report indicates manual control came only after the "
+            "impact rather than preventing contact."
+        ),
+        "why_it_matters_en": (
+            "The incident matters because it exposes a vulnerable-road-user "
+            "edge case in a city intersection, even though the report says no "
+            "injuries were recorded."
+        ),
+        "sources": [
+            {
+                "evidence_text": (
+                    "Waymo autonomous vehicle operating in autonomous mode was "
+                    "traveling westbound on Market Street near 5th Street when "
+                    "a bicyclist entered the intersection. The AV made contact "
+                    "with the bicycle. The autonomous vehicle specialist took "
+                    "manual control after impact. No injuries were reported."
+                )
+            }
+        ],
+    }
+
+    assessment = assess_autonomous_vehicle_detail_quality(incident)
+
+    assert assessment.detail_quality == "sufficient"
+    assert "template_forensic_copy" not in assessment.detail_quality_reasons
+
+
 def test_assess_autonomous_vehicle_detail_quality_accepts_fact_rich_records() -> None:
     incident = {
         "source_family": "autonomous_vehicle",

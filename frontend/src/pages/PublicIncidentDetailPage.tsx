@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 import { fetchIncidentDetail } from "../lib/api";
 import { PUBLIC_COPY } from "../lib/locale";
 import { buildIncidentPath } from "../lib/publicIncidentRoutes";
-import type { IncidentAnalysis, IncidentDetail } from "../types/incident";
+import type {
+  IncidentAnalysis,
+  IncidentDetail,
+  IncidentSource,
+} from "../types/incident";
 import "./public-dashboard.css";
 
 type PublicIncidentDetailPageProps = {
@@ -74,6 +78,8 @@ export default function PublicIncidentDetailPage({
     setCanonicalLink(canonicalUrl);
     setStructuredData(buildIncidentStructuredData(incident, canonicalUrl));
   }, [copy.brand, copy.positioning, incident]);
+
+  const visibleSources = incident ? publicDetailSources(incident) : [];
 
   return (
     <main className="public-dashboard" data-theme="light">
@@ -149,10 +155,10 @@ export default function PublicIncidentDetailPage({
                 <p className="public-kicker">{copy.reportingTrailKicker}</p>
                 <h2>{copy.primarySourceTrailTitle}</h2>
                 <div className="public-source-list">
-                  {incident.sources.length === 0 ? (
+                  {visibleSources.length === 0 ? (
                     <p className="body-copy">{copy.noSources}</p>
                   ) : (
-                    incident.sources.map((source) => (
+                    visibleSources.map((source) => (
                       <article className="public-source-item" key={source.id}>
                         <p className="public-source-publisher">
                           {source.publisher ?? source.source_type}
@@ -205,6 +211,25 @@ function localizedAnalysisText(
   const baseKey = key as keyof IncidentAnalysis;
 
   return firstNonBlankText(analysis[englishKey], analysis[baseKey]);
+}
+
+function publicDetailSources(incident: IncidentDetail): IncidentSource[] {
+  if (incident.source_family !== "autonomous_vehicle") {
+    return incident.sources;
+  }
+  return incident.sources.filter((source) =>
+    looksLikeIncidentDocumentUrl(source.source_url),
+  );
+}
+
+function looksLikeIncidentDocumentUrl(sourceUrl: string) {
+  const normalized = sourceUrl.toLowerCase();
+  return (
+    normalized.endsWith(".pdf") ||
+    normalized.includes("/portal/file/") ||
+    normalized.endsWith("-pdf/") ||
+    normalized.endsWith("-pdf")
+  );
 }
 
 function firstNonBlankText(...values: unknown[]) {
