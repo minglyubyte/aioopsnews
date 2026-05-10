@@ -7,6 +7,7 @@ import {
   fetchIncidentFeed,
   fetchIncidentFilters,
 } from "../lib/api";
+import { buildIncidentPath } from "../lib/publicIncidentRoutes";
 import { localizePublicCategory } from "../lib/publicDashboardLocalization";
 import type {
   IncidentAnalysis,
@@ -302,14 +303,14 @@ export default function PublicDashboardPage() {
             </span>
           ))}
         </div>
-        <button
+        <a
           aria-pressed={isSelected}
           className="secondary-action public-detail-button"
-          type="button"
-          onClick={() => showIncidentDetail(incident.id)}
+          href={buildIncidentPath(incident)}
+          onClick={(event) => handleIncidentLinkClick(event, incident)}
         >
           {copy.detailActionLabel(localizedHeadline(incident, readerLocale))}
-        </button>
+        </a>
       </article>
     );
   }
@@ -344,6 +345,26 @@ export default function PublicDashboardPage() {
 
       return incidentId;
     });
+  }
+
+  function handleIncidentLinkClick(
+    event: React.MouseEvent<HTMLAnchorElement>,
+    incident: IncidentArchiveItem,
+  ) {
+    if (
+      event.defaultPrevented ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      event.button !== 0
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    window.history.pushState({}, "", buildIncidentPath(incident));
+    showIncidentDetail(incident.id);
   }
 
   return (
