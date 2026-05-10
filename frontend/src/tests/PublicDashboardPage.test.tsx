@@ -13,6 +13,7 @@ import {
   fetchIncidentFeed,
   fetchIncidentFilters,
 } from "../lib/api";
+import { RouteEntry } from "../main";
 import type {
   IncidentArchiveItem,
   IncidentDetail,
@@ -185,6 +186,7 @@ describe("PublicDashboardPage", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    window.history.pushState({}, "", "/");
   });
 
   it("renders dual-track sections, evidence metadata, filters, and detail evidence block", async () => {
@@ -280,6 +282,14 @@ describe("PublicDashboardPage", () => {
     expect(
       within(watchSection as HTMLElement).getByText("Coding failure"),
     ).toBeInTheDocument();
+    expect(
+      within(verifiedSection as HTMLElement).getByRole("link", {
+        name: /Open full context for DMV collision report documents autonomous vehicle crash/i,
+      }),
+    ).toHaveAttribute(
+      "href",
+      "/incidents/incident-verified/dmv-collision-report-documents-autonomous-vehicle-crash",
+    );
 
     expect(screen.getByLabelText("Filter by track")).toBeInTheDocument();
     expect(
@@ -345,6 +355,86 @@ describe("PublicDashboardPage", () => {
         "No AI news items in this slice yet.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("renders an incident detail page from a shareable incident URL", async () => {
+    const incident = buildIncidentDetail({
+      id: "incident-routed",
+      headline: "Court sanctions brief with fake AI citations",
+      headline_en: "Court sanctions brief with fake AI citations",
+      date_logged: "2026-05-06",
+      company_involved: "Court filing",
+      categories: ["Legal Hallucination"],
+      severity_score: 4,
+      reality_summary:
+        "A court sanctioned a filing after it included fake AI-generated citations.",
+      reality_summary_en:
+        "A court sanctioned a filing after it included fake AI-generated citations.",
+      verification_summary:
+        "A court record confirms the sanctions and fake citations.",
+      analysis: {
+        what_happened_en:
+          "The brief included cases the court could not verify.",
+        ai_failure_point_en:
+          "The AI-assisted workflow produced fake legal citations.",
+        why_it_matters_en:
+          "The incident shows why legal AI output needs source verification.",
+        evidence_summary_en:
+          "The court order documents the sanctions and citation failures.",
+      },
+      sources: [
+        {
+          id: "source-court",
+          source_url: "https://example.com/court-order.pdf",
+          source_type: "court",
+          publisher: "Court order",
+          title: "Sanctions order",
+        },
+      ],
+    });
+
+    mockedFetchIncidentDetail.mockResolvedValue(incident);
+    window.history.pushState(
+      {},
+      "",
+      "/incidents/incident-routed/court-sanctions-brief-with-fake-ai-citations",
+    );
+
+    render(<RouteEntry />);
+
+    await waitFor(() => {
+      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith(
+        "incident-routed",
+      );
+    });
+    expect(
+      await screen.findByRole("heading", {
+        name: "Court sanctions brief with fake AI citations",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("What happened")).toBeInTheDocument();
+    expect(screen.getByText("Primary source trail")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Sanctions order" }),
+    ).toHaveAttribute("href", "https://example.com/court-order.pdf");
+    expect(
+      document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
+    ).toBe(
+      `${window.location.origin}/incidents/incident-routed/court-sanctions-brief-with-fake-ai-citations`,
+    );
+    const structuredData = JSON.parse(
+      document.querySelector<HTMLScriptElement>(
+        'script[type="application/ld+json"]',
+      )?.textContent ?? "{}",
+    ) as Record<string, unknown>;
+    expect(structuredData).toMatchObject({
+      "@context": "https://schema.org",
+      "@type": "NewsArticle",
+      headline: "Court sanctions brief with fake AI citations",
+      datePublished: "2026-05-06",
+      dateModified: "2026-05-06",
+      mainEntityOfPage: `${window.location.origin}/incidents/incident-routed/court-sanctions-brief-with-fake-ai-citations`,
+    });
   });
 
   it("renders slice-level highlights, localized archive cards, and source-backed detail", async () => {
@@ -725,7 +815,7 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(
-      within(archive).getByRole("button", {
+      within(archive).getByRole("link", {
         name: /打开 RoboFleet 机器人试点因导航失误而回滚 的完整背景/i,
       }),
     );
@@ -903,7 +993,7 @@ describe("PublicDashboardPage", () => {
     fireEvent.click(
       within(
         screen.getByRole("region", { name: "Browse incidents" }),
-      ).getByRole("button", {
+      ).getByRole("link", {
         name: /Open full context for Warehouse classifier reroutes medical inventory/i,
       }),
     );
@@ -968,7 +1058,7 @@ describe("PublicDashboardPage", () => {
     render(<PublicDashboardPage />);
 
     fireEvent.click(
-      await screen.findByRole("button", {
+      await screen.findByRole("link", {
         name: /Open full context for Mercedes Benz: An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles./i,
       }),
     );
