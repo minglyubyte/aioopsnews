@@ -1,8 +1,10 @@
-export const MAX_INCIDENT_SLUG_LENGTH = 120;
+import { buildIncidentDisplayTitle } from "./publicIncidentTitleCore.js";
+
+export const MAX_INCIDENT_SLUG_LENGTH = 80;
 
 export function buildIncidentPath(incident) {
   return `/incidents/${encodeURIComponent(incident.id)}/${slugifyIncidentHeadline(
-    incident.headline_en ?? incident.headline,
+    buildIncidentDisplayTitle(incident, "en"),
   )}`;
 }
 

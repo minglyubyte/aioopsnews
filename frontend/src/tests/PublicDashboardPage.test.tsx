@@ -279,7 +279,7 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
     expect(
       within(verifiedSection as HTMLElement).getByRole("link", {
-        name: /Open full context for DMV collision report documents autonomous vehicle crash/i,
+        name: /Open case file/i,
       }),
     ).toHaveAttribute(
       "href",
@@ -352,16 +352,19 @@ describe("PublicDashboardPage", () => {
         y: 0,
         toJSON: () => ({}),
       });
+    const originalHeadline =
+      "Legal filing: Damien Charlotin's AI hallucination tracker records Amanda Adams v. Allen Butler Construction, Inc. in CA Texas with Pro Se Litigant linked to alleged or found AI legal hallucination. Nature: Fabricated: Case Law | Appellant cited several cases that do not exist.";
     const incident = buildIncidentDetail({
       id: "incident-routed",
-      headline: "Court sanctions brief with fake AI citations",
-      headline_en: "Court sanctions brief with fake AI citations",
+      headline: originalHeadline,
+      headline_en: originalHeadline,
       date_logged: "2026-05-06",
       company_involved: "Court filing",
       categories: ["Legal Hallucination"],
       severity_score: 4,
       publication_track: "verified_accident",
       evidence_tier: "court_or_regulator",
+      source_family: "legal_hallucination",
       reality_summary:
         "A court sanctioned a filing after it included fake AI-generated citations.",
       reality_summary_en:
@@ -414,11 +417,11 @@ describe("PublicDashboardPage", () => {
     expect(
       await screen.findByRole("heading", {
         level: 1,
-        name: "Court sanctions brief with fake AI citations",
+        name: "AI legal hallucination: Amanda Adams v. Allen Butler Construction, Inc.",
       }),
     ).toBeInTheDocument();
     expect(document.title).toBe(
-      "Court sanctions brief with fake AI citations | AI Oops News",
+      "AI legal hallucination: Amanda Adams v. Allen Butler Construction, Inc. | AI Oops News",
     );
     expect(
       document.querySelector<HTMLMetaElement>('meta[name="description"]')
@@ -467,6 +470,8 @@ describe("PublicDashboardPage", () => {
         .every((link) => link.getAttribute("href") === "/"),
     ).toBe(true);
     expect(screen.getByText("Continue reading")).toBeInTheDocument();
+    expect(screen.getByText("Original record title")).toBeInTheDocument();
+    expect(screen.getByText(originalHeadline)).toBeInTheDocument();
     expect(screen.getAllByText("Legal Hallucination").length).toBeGreaterThan(
       0,
     );
@@ -481,7 +486,9 @@ describe("PublicDashboardPage", () => {
     expect(structuredData).toMatchObject({
       "@context": "https://schema.org",
       "@type": "NewsArticle",
-      headline: "Court sanctions brief with fake AI citations",
+      headline:
+        "AI legal hallucination: Amanda Adams v. Allen Butler Construction, Inc.",
+      alternativeHeadline: originalHeadline,
       datePublished: "2026-05-06",
       dateModified: "2026-05-06",
       mainEntityOfPage: buildIncidentUrl(incident, window.location.origin),
@@ -885,6 +892,9 @@ describe("PublicDashboardPage", () => {
 
     const archive = screen.getByRole("region", { name: "Browse incidents" });
     expect(
+      archive.querySelector(".public-archive-scroll"),
+    ).toBeInTheDocument();
+    expect(
       within(archive).getByText(
         "An urban robot pilot paused after repeated routing mistakes.",
       ),
@@ -903,7 +913,7 @@ describe("PublicDashboardPage", () => {
 
     expect(
       within(archive).getByRole("link", {
-        name: /Open full context for AssistCo assistant exposes private billing notes/i,
+        name: /Open case file: AssistCo assistant exposes private billing notes/i,
       }),
     ).toHaveAttribute(
       "href",
@@ -953,7 +963,7 @@ describe("PublicDashboardPage", () => {
     expect(within(archive).getByText("助理公司")).toBeInTheDocument();
     expect(
       within(archive).getByRole("link", {
-        name: /打开 AssistCo 助手泄露了私密账单备注 的完整背景/i,
+        name: /打开完整背景: AssistCo 助手泄露了私密账单备注/i,
       }),
     ).toHaveAttribute(
       "href",
@@ -1012,7 +1022,7 @@ describe("PublicDashboardPage", () => {
     ).toHaveAttribute("href", "/disclaimer");
     expect(
       screen.getByRole("link", {
-        name: /Open full context for Court warns litigant about fake AI citations/i,
+        name: /Open case file/i,
       }),
     ).toHaveAttribute(
       "href",

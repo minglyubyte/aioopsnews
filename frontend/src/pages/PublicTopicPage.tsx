@@ -3,6 +3,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { fetchIncidentFeed } from "../lib/api";
 import { PUBLIC_COPY, type ReaderLocale, type ReaderTheme } from "../lib/locale";
 import { buildIncidentPath, buildIncidentUrl } from "../lib/publicIncidentRoutes";
+import { buildIncidentDisplayTitle } from "../lib/publicIncidentTitleCore.js";
 import {
   getTopicDefinition,
   topicDefinitions,
@@ -243,15 +244,17 @@ export default function PublicTopicPage({ kind, slug }: PublicTopicPageProps) {
           ) : null}
           {!isLoading && !feedError && feed.items.length > 0 ? (
             <>
-              <div className="public-archive-list" data-inview="true">
-                {feed.items.map((incident, cardIndex) => (
-                  <TopicIncidentCard
-                    incident={incident}
-                    key={incident.id}
-                    readerLocale={readerLocale}
-                    styleIndex={cardIndex}
-                  />
-                ))}
+              <div className="public-archive-scroll">
+                <div className="public-archive-list" data-inview="true">
+                  {feed.items.map((incident, cardIndex) => (
+                    <TopicIncidentCard
+                      incident={incident}
+                      key={incident.id}
+                      readerLocale={readerLocale}
+                      styleIndex={cardIndex}
+                    />
+                  ))}
+                </div>
               </div>
               <div className="public-archive-pagination">
                 <span className="body-copy public-pagination-summary">
@@ -404,10 +407,9 @@ function TopicIncidentCard({
   readerLocale: ReaderLocale;
   styleIndex: number;
 }) {
-  const headline =
-    readerLocale === "zh"
-      ? (incident.headline_zh ?? incident.headline_en ?? incident.headline)
-      : (incident.headline_en ?? incident.headline);
+  const headline = buildIncidentDisplayTitle(incident, readerLocale);
+  const actionLabel =
+    readerLocale === "zh" ? "打开完整背景" : "Open case file";
   const summary =
     readerLocale === "zh"
       ? (incident.archive_summary_zh ??
@@ -427,9 +429,12 @@ function TopicIncidentCard({
       <h3>{headline}</h3>
       <p className="body-copy">{summary}</p>
       <a
+        aria-label={`${actionLabel}: ${headline}`}
         className="secondary-action"
         href={buildIncidentPath(incident)}
-      >{`Open full context for ${headline}`}</a>
+      >
+        {actionLabel}
+      </a>
     </article>
   );
 }
@@ -530,7 +535,7 @@ function setTopicMetadata({
     mainEntityOfPage: canonicalUrl,
     mainEntity: incidents.map((incident) => ({
       "@type": "NewsArticle",
-      headline: incident.headline_en ?? incident.headline,
+      headline: buildIncidentDisplayTitle(incident),
       url: buildIncidentUrl(incident, getSiteUrl()),
     })),
   });

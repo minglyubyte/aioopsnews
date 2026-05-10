@@ -1,6 +1,6 @@
 import type { PublicIncidentBase } from "../types/incident";
 
-export const MAX_INCIDENT_SLUG_LENGTH: 120;
+export const MAX_INCIDENT_SLUG_LENGTH: 80;
 
 export function buildIncidentPath(incident: PublicIncidentBase): string;
 

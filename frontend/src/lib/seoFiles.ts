@@ -3,6 +3,10 @@ import {
   buildIncidentUrl,
   normalizeSiteUrl,
 } from "./publicIncidentRoutes";
+import {
+  buildIncidentDisplayTitle,
+  buildOriginalIncidentTitle,
+} from "./publicIncidentTitleCore.js";
 import { buildTopicUrl, type TopicKind } from "./publicTopicRoutes";
 import type { IncidentDetail, PublicIncidentBase } from "../types/incident";
 
@@ -93,13 +97,15 @@ export function buildIncidentPrerenderHtml({
   incident: IncidentDetail;
   siteUrl: string;
 }) {
-  const headline = incident.headline_en ?? incident.headline;
+  const headline = buildIncidentDisplayTitle(incident);
+  const originalHeadline = buildOriginalIncidentTitle(incident);
   const description = incident.reality_summary_en ?? incident.reality_summary;
   const canonicalUrl = buildIncidentUrl(incident, siteUrl);
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "NewsArticle",
     headline,
+    alternativeHeadline: originalHeadline,
     description,
     datePublished: incident.date_logged,
     dateModified: incident.date_logged,
@@ -169,14 +175,14 @@ export function buildTopicPrerenderHtml({
     mainEntityOfPage: canonicalUrl,
     mainEntity: incidents.slice(0, 20).map((incident) => ({
       "@type": "NewsArticle",
-      headline: incident.headline_en ?? incident.headline,
+      headline: buildIncidentDisplayTitle(incident),
       url: buildIncidentUrl(incident, siteUrl),
     })),
   };
   const incidentItems = incidents
     .slice(0, 20)
     .map((incident) => {
-      const headline = incident.headline_en ?? incident.headline;
+      const headline = buildIncidentDisplayTitle(incident);
       return `<li><a href="${escapeHtmlAttribute(
         buildIncidentPath(incident),
       )}">${escapeHtml(headline)}</a></li>`;

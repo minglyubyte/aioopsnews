@@ -110,7 +110,7 @@ describe("seo files", () => {
     ).toHaveLength(1);
   });
 
-  it("limits generated incident slugs to 120 characters", () => {
+  it("limits generated incident slugs to 80 characters", () => {
     const path = buildIncidentPath(
       buildIncident({
         headline_en: Array.from({ length: 40 }, (_, index) => {
@@ -122,6 +122,40 @@ describe("seo files", () => {
 
     expect(slug).toBeDefined();
     expect(slug?.length).toBeLessThanOrEqual(MAX_INCIDENT_SLUG_LENGTH);
+    expect(MAX_INCIDENT_SLUG_LENGTH).toBe(80);
+  });
+
+  it("uses short display titles in prerendered incident metadata", () => {
+    const longHeadline =
+      "Legal filing: Damien Charlotin's AI hallucination tracker records Amanda Adams v. Allen Butler Construction, Inc. in CA Texas with Pro Se Litigant linked to alleged or found AI legal hallucination. Nature: Fabricated: Case Law | Appellant cited several cases that do not exist.";
+    const incident: IncidentDetail = {
+      ...buildIncident({
+        headline: longHeadline,
+        headline_en: longHeadline,
+        company_involved: "Legal filing",
+        source_family: "legal_hallucination",
+      }),
+      reality_summary: "Court record confirms the issue.",
+      reality_summary_en: "Court record confirms the issue.",
+      reality_summary_zh: null,
+      analysis: {},
+      matched_claim: null,
+      sources: [],
+    };
+    const html = buildIncidentPrerenderHtml({
+      incident,
+      siteUrl: "https://aioopsnews.com",
+    });
+
+    expect(html).toContain(
+      "<title>AI legal hallucination: Amanda Adams v. Allen Butler Construction, Inc. | AI Oops News</title>",
+    );
+    expect(html).toContain(
+      "<h1>AI legal hallucination: Amanda Adams v. Allen Butler Construction, Inc.</h1>",
+    );
+    expect(html).toContain(
+      '"alternativeHeadline":"Legal filing: Damien Charlotin',
+    );
   });
 
   it("escapes sitemap XML entities in generated locations", () => {

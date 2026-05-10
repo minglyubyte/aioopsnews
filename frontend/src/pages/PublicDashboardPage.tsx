@@ -4,6 +4,7 @@ import { useInView } from "../lib/useInView";
 
 import { fetchIncidentFeed, fetchIncidentFilters } from "../lib/api";
 import { buildIncidentPath } from "../lib/publicIncidentRoutes";
+import { buildIncidentDisplayTitle } from "../lib/publicIncidentTitleCore.js";
 import { localizePublicCategory } from "../lib/publicDashboardLocalization";
 import {
   getTopicDefinition,
@@ -200,6 +201,8 @@ export default function PublicDashboardPage() {
   }
 
   function renderArchiveCard(incident: IncidentArchiveItem, cardIdx: number) {
+    const headline = localizedHeadline(incident, readerLocale);
+
     return (
       <article
         className="public-archive-card"
@@ -222,7 +225,7 @@ export default function PublicDashboardPage() {
             {sourceFamilyLabel(incident.source_family, readerLocale)}
           </span>
         </div>
-        <h3>{localizedHeadline(incident, readerLocale)}</h3>
+        <h3>{headline}</h3>
         <p className="body-copy public-archive-summary">
           {buildSnippet(localizedArchiveSummary(incident, readerLocale))}
         </p>
@@ -237,10 +240,11 @@ export default function PublicDashboardPage() {
           ))}
         </div>
         <a
+          aria-label={`${copy.detailActionLabel()}: ${headline}`}
           className="secondary-action public-detail-button"
           href={buildIncidentPath(incident)}
         >
-          {copy.detailActionLabel(localizedHeadline(incident, readerLocale))}
+          {copy.detailActionLabel()}
         </a>
       </article>
     );
@@ -668,44 +672,45 @@ export default function PublicDashboardPage() {
                 </div>
               ) : null}
               {!isFeedLoading && !feedError ? (
-                <div
-                  className="public-archive-list"
-                  data-inview={archiveListInView ? "true" : "false"}
-                  ref={archiveListRef}
-                >
-                  <section className="public-track-section">
-                    <div className="public-track-header">
-                      <h3>{copy.verifiedSectionTitle}</h3>
-                      <p className="body-copy">{copy.verifiedSectionBody}</p>
-                    </div>
-                    {verifiedIncidents.length > 0 ? (
-                      verifiedIncidents.map((incident, cardIdx) =>
-                        renderArchiveCard(incident, cardIdx),
-                      )
-                    ) : (
-                      <p className="public-track-empty">
-                        {copy.verifiedSectionEmpty}
-                      </p>
-                    )}
-                  </section>
-                  <section className="public-track-section">
-                    <div className="public-track-header">
-                      <h3>{copy.watchSectionTitle}</h3>
-                      <p className="body-copy">{copy.watchSectionBody}</p>
-                    </div>
-                    {watchIncidents.length > 0 ? (
-                      watchIncidents.map((incident, cardIdx) =>
-                        renderArchiveCard(
-                          incident,
-                          verifiedIncidents.length + cardIdx,
-                        ),
-                      )
-                    ) : (
-                      <p className="public-track-empty">
-                        {copy.watchSectionEmpty}
-                      </p>
-                    )}
-                  </section>
+                <div className="public-archive-scroll">
+                  <div
+                    className="public-archive-list"
+                    data-inview={archiveListInView ? "true" : "false"}
+                  >
+                    <section className="public-track-section">
+                      <div className="public-track-header">
+                        <h3>{copy.verifiedSectionTitle}</h3>
+                        <p className="body-copy">{copy.verifiedSectionBody}</p>
+                      </div>
+                      {verifiedIncidents.length > 0 ? (
+                        verifiedIncidents.map((incident, cardIdx) =>
+                          renderArchiveCard(incident, cardIdx),
+                        )
+                      ) : (
+                        <p className="public-track-empty">
+                          {copy.verifiedSectionEmpty}
+                        </p>
+                      )}
+                    </section>
+                    <section className="public-track-section">
+                      <div className="public-track-header">
+                        <h3>{copy.watchSectionTitle}</h3>
+                        <p className="body-copy">{copy.watchSectionBody}</p>
+                      </div>
+                      {watchIncidents.length > 0 ? (
+                        watchIncidents.map((incident, cardIdx) =>
+                          renderArchiveCard(
+                            incident,
+                            verifiedIncidents.length + cardIdx,
+                          ),
+                        )
+                      ) : (
+                        <p className="public-track-empty">
+                          {copy.watchSectionEmpty}
+                        </p>
+                      )}
+                    </section>
+                  </div>
                 </div>
               ) : null}
               {!isFeedLoading && !feedError && incidents.length === 0 ? (
@@ -857,11 +862,7 @@ function MetricCard({
 }
 
 function localizedHeadline(incident: PublicIncidentBase, locale: ReaderLocale) {
-  if (locale === "zh") {
-    return incident.headline_zh ?? incident.headline_en ?? incident.headline;
-  }
-
-  return incident.headline_en ?? incident.headline;
+  return buildIncidentDisplayTitle(incident, locale);
 }
 
 function localizedCompanyName(

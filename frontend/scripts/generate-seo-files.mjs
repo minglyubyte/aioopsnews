@@ -7,6 +7,10 @@ import {
   normalizeSiteUrl,
 } from "../src/lib/publicIncidentRouteCore.js";
 import {
+  buildIncidentDisplayTitle,
+  buildOriginalIncidentTitle,
+} from "../src/lib/publicIncidentTitleCore.js";
+import {
   buildTopicPath,
   buildTopicUrl,
 } from "../src/lib/publicTopicRouteCore.js";
@@ -262,7 +266,8 @@ function buildRobotsTxt(siteUrl) {
 }
 
 export function buildIncidentPrerenderHtml({ incident, siteUrl }) {
-  const headline = incident.headline_en ?? incident.headline;
+  const headline = buildIncidentDisplayTitle(incident);
+  const originalHeadline = buildOriginalIncidentTitle(incident);
   const description = incident.reality_summary_en ?? incident.reality_summary;
   const canonicalUrl = buildIncidentUrl(incident, siteUrl);
   const sourceItems = (incident.sources ?? [])
@@ -282,6 +287,7 @@ export function buildIncidentPrerenderHtml({ incident, siteUrl }) {
       "@context": "https://schema.org",
       "@type": "NewsArticle",
       headline,
+      alternativeHeadline: originalHeadline,
       description,
       datePublished: incident.date_logged,
       dateModified: incident.date_logged,
@@ -322,7 +328,7 @@ export function buildTopicPrerenderHtml({ kind, value, incidents, siteUrl }) {
   const incidentItems = incidents
     .slice(0, 20)
     .map((incident) => {
-      const headline = incident.headline_en ?? incident.headline;
+      const headline = buildIncidentDisplayTitle(incident);
       return `<li><a href="${escapeHtmlAttribute(
         buildIncidentPath(incident),
       )}">${escapeHtml(headline)}</a></li>`;
@@ -341,7 +347,7 @@ export function buildTopicPrerenderHtml({ kind, value, incidents, siteUrl }) {
       mainEntityOfPage: canonicalUrl,
       mainEntity: incidents.slice(0, 20).map((incident) => ({
         "@type": "NewsArticle",
-        headline: incident.headline_en ?? incident.headline,
+        headline: buildIncidentDisplayTitle(incident),
         url: buildIncidentUrl(incident, siteUrl),
       })),
     },

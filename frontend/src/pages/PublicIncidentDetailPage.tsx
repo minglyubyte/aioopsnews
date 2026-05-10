@@ -8,6 +8,10 @@ import {
 } from "../lib/locale";
 import { useInView } from "../lib/useInView";
 import { buildIncidentUrl } from "../lib/publicIncidentRoutes";
+import {
+  buildIncidentDisplayTitle,
+  buildOriginalIncidentTitle,
+} from "../lib/publicIncidentTitleCore.js";
 import { localizePublicCategory } from "../lib/publicDashboardLocalization";
 import {
   READER_LOCALE_STORAGE_KEY,
@@ -202,6 +206,7 @@ function IncidentCaseFile({
   readerLocale: ReaderLocale;
 }) {
   const headline = getIncidentDisplayHeadline(incident, readerLocale);
+  const originalHeadline = buildOriginalIncidentTitle(incident, readerLocale);
   const description =
     buildIncidentMetaDescription(incident, readerLocale) ?? copy.positioning;
   const categories = incident.categories.map((category) =>
@@ -241,6 +246,12 @@ function IncidentCaseFile({
         <p className="public-kicker">{copy.detailCaseKicker}</p>
         <h1 id="case-title">{headline}</h1>
         <p className="case-dek">{description}</p>
+        {originalHeadline !== headline ? (
+          <details className="case-original-title">
+            <summary>{copy.originalRecordTitle}</summary>
+            <p>{originalHeadline}</p>
+          </details>
+        ) : null}
         <dl className="case-meta-strip" aria-label="Case metadata">
           <CaseMetaItem
             label={copy.detailCompanyLabel}
@@ -561,11 +572,7 @@ export function getIncidentDisplayHeadline(
   incident: IncidentDetail,
   locale: ReaderLocale = "en",
 ) {
-  if (locale === "zh") {
-    return incident.headline_zh ?? incident.headline_en ?? incident.headline;
-  }
-
-  return incident.headline_en ?? incident.headline;
+  return buildIncidentDisplayTitle(incident, locale);
 }
 
 function localizedCompanyName(incident: IncidentDetail, locale: ReaderLocale) {
@@ -752,6 +759,7 @@ function buildIncidentStructuredData(
   locale: ReaderLocale,
 ) {
   const headline = getIncidentDisplayHeadline(incident, locale);
+  const originalHeadline = buildOriginalIncidentTitle(incident, locale);
   const description =
     buildIncidentMetaDescription(incident, locale) ?? headline;
 
@@ -759,6 +767,7 @@ function buildIncidentStructuredData(
     "@context": "https://schema.org",
     "@type": "NewsArticle",
     headline,
+    alternativeHeadline: originalHeadline,
     description,
     datePublished: incident.date_logged,
     dateModified: incident.date_logged,

@@ -108,10 +108,8 @@ export const PUBLIC_COPY = {
       "Fresh automatically published reports and credible signals, clearly separate from verified accident case files.",
     watchSectionEmpty: "No AI news items in this slice yet.",
     noIncidentsForSlice: "No incidents match this slice yet.",
-    detailActionLabel: (headline: string) =>
-      `Open full context for ${headline}`,
-    sourceBackedDetailActionLabel: (headline: string) =>
-      `Open full context for ${headline}`,
+    detailActionLabel: () => "Open case file",
+    sourceBackedDetailActionLabel: () => "Open case file",
     detailKicker: "Evidence",
     detailTitle: "Full context",
     detailCaseKicker: "Case file",
@@ -161,6 +159,7 @@ export const PUBLIC_COPY = {
       "AI Oops News is provided for informational and research purposes only. We summarize public reports, court records, regulator materials, company statements, technical reports, and other cited sources. The content may be incomplete, delayed, or later corrected by the original source. Nothing on this site is legal, financial, medical, safety, investment, or other professional advice. Do not rely on this site as the sole basis for legal, business, technical, safety, or investment decisions. Verify important facts against the original sources and consult a qualified professional when needed.",
     detailSourceDisclaimer:
       "This case file summarizes cited sources. It is not legal advice. Verify against the original documents.",
+    originalRecordTitle: "Original record title",
     selectIncident:
       "Select an incident from the archive to inspect the full context and sources.",
     feedError: "Unable to load the incident feed right now.",
@@ -273,9 +272,8 @@ export const PUBLIC_COPY = {
     highlightInsightsBody:
       "这个面板总结当前筛选后的公开档案，让读者先看清整体轮廓，再决定打开哪一条事件。",
     noIncidentsForSlice: "当前筛选结果下还没有匹配事件。",
-    detailActionLabel: (headline: string) => `打开 ${headline} 的完整背景`,
-    sourceBackedDetailActionLabel: (headline: string) =>
-      `打开${headline}的完整背景`,
+    detailActionLabel: () => "打开完整背景",
+    sourceBackedDetailActionLabel: () => "打开完整背景",
     detailKicker: "证据",
     detailTitle: "完整背景",
     detailCaseKicker: "案件档案",
@@ -323,6 +321,7 @@ export const PUBLIC_COPY = {
       "AI Oops News 仅供信息参考与研究使用。本站基于公开报道、法院文件、监管材料、公司声明、技术报告及其他已列明来源进行整理。相关内容可能不完整、存在延迟，或后续被原始来源更正。本站内容不构成法律、财务、医疗、安全、投资或其他专业建议。请勿将本站作为法律、商业、技术、安全或投资决策的唯一依据。重要事实请以原始来源核验，并在需要时咨询具备资质的专业人士。",
     detailSourceDisclaimer:
       "本案件档案基于已列明来源整理，不构成法律建议。请以原始文件核验。",
+    originalRecordTitle: "原始记录标题",
     selectIncident: "从档案中选择一条事件以查看完整背景和来源。",
     feedError: "当前无法加载事件流。",
     detailError: "当前无法加载事件详情。",
@@ -426,8 +425,8 @@ export const PUBLIC_COPY = {
     watchSectionBody: string;
     watchSectionEmpty: string;
     noIncidentsForSlice: string;
-    detailActionLabel: (headline: string) => string;
-    sourceBackedDetailActionLabel: (headline: string) => string;
+    detailActionLabel: () => string;
+    sourceBackedDetailActionLabel: () => string;
     detailKicker: string;
     detailTitle: string;
     detailCaseKicker: string;
@@ -470,6 +469,7 @@ export const PUBLIC_COPY = {
     disclaimerPageIntro: string;
     disclaimerFullBody: string;
     detailSourceDisclaimer: string;
+    originalRecordTitle: string;
     selectIncident: string;
     feedError: string;
     detailError: string;
