@@ -95,4 +95,99 @@ describe("generate SEO files script helpers", () => {
       "Sitemap: https://airealitycheck.example/sitemap.xml",
     );
   });
+
+  it("fetches incident details and writes prerender HTML files", async () => {
+    const { generateSeoFiles } = await import(
+      "../../scripts/generate-seo-files.mjs"
+    );
+    const { mkdtemp, readFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { pathToFileURL } = await import("node:url");
+    const outputDir = pathToFileURL(
+      `${await mkdtemp(join(tmpdir(), "seo-prerender-"))}/`,
+    );
+    const incident = {
+      id: "incident-1",
+      headline: "Court sanctions brief with fake AI citations",
+      headline_en: "Court sanctions brief with fake AI citations",
+      date_logged: "2026-05-06",
+      company_involved: "Court filing",
+      categories: ["Hallucinations"],
+      severity_score: 4,
+      status: "approved",
+      publication_track: "verified_accident",
+      evidence_tier: "court_or_regulator",
+      source_family: "legal_hallucination",
+      verification_summary: "Court record confirms the issue.",
+      archive_summary: "Court record confirms the issue.",
+    };
+    const detail = {
+      ...incident,
+      reality_summary: "Court record confirms fake citations.",
+      reality_summary_en: "Court record confirms fake citations.",
+      analysis: {},
+      matched_claim: null,
+      sources: [
+        {
+          id: "source-1",
+          source_url: "https://example.com/order.pdf",
+          source_type: "court",
+          publisher: "Court",
+          title: "Order",
+        },
+      ],
+    };
+    const fetchImpl = vi.fn(async (url) => {
+      const parsedUrl = new URL(String(url));
+      if (parsedUrl.pathname === "/incidents/incident-1") {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return detail;
+          },
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            items: [incident],
+            has_next_page: false,
+          };
+        },
+      };
+    });
+
+    const result = await generateSeoFiles({
+      apiBaseUrl: "https://api.example.com/",
+      siteUrl: "https://aioopsnews.com",
+      outputDir,
+      fetchImpl,
+    });
+
+    expect(result).toEqual({
+      incidentCount: 1,
+      incidentHtmlCount: 1,
+      topicHtmlCount: 2,
+    });
+    const incidentHtml = await readFile(
+      new URL(
+        "incidents/incident-1/court-sanctions-brief-with-fake-ai-citations/index.html",
+        outputDir,
+      ),
+      "utf8",
+    );
+    const topicHtml = await readFile(
+      new URL("topics/category/hallucinations/index.html", outputDir),
+      "utf8",
+    );
+
+    expect(incidentHtml).toContain("<h1>Court sanctions brief with fake AI citations</h1>");
+    expect(incidentHtml).toContain("https://example.com/order.pdf");
+    expect(topicHtml).toContain("<h1>Hallucinations AI Incidents</h1>");
+  });
 });
