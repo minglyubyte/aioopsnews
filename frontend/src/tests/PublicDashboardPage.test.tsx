@@ -13,6 +13,7 @@ import {
   fetchIncidentFeed,
   fetchIncidentFilters,
 } from "../lib/api";
+import { buildIncidentUrl } from "../lib/publicIncidentRoutes";
 import { RouteEntry } from "../main";
 import type {
   IncidentArchiveItem,
@@ -186,6 +187,7 @@ describe("PublicDashboardPage", () => {
 
   afterEach(() => {
     vi.resetAllMocks();
+    vi.unstubAllEnvs();
     window.history.pushState({}, "", "/");
   });
 
@@ -419,9 +421,7 @@ describe("PublicDashboardPage", () => {
     ).toHaveAttribute("href", "https://example.com/court-order.pdf");
     expect(
       document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
-    ).toBe(
-      `${window.location.origin}/incidents/incident-routed/court-sanctions-brief-with-fake-ai-citations`,
-    );
+    ).toBe(buildIncidentUrl(incident, window.location.origin));
     const structuredData = JSON.parse(
       document.querySelector<HTMLScriptElement>(
         'script[type="application/ld+json"]',
@@ -433,7 +433,49 @@ describe("PublicDashboardPage", () => {
       headline: "Court sanctions brief with fake AI citations",
       datePublished: "2026-05-06",
       dateModified: "2026-05-06",
-      mainEntityOfPage: `${window.location.origin}/incidents/incident-routed/court-sanctions-brief-with-fake-ai-citations`,
+      mainEntityOfPage: buildIncidentUrl(incident, window.location.origin),
+    });
+  });
+
+  it("uses VITE_PUBLIC_SITE_URL for incident canonical URLs when configured", async () => {
+    vi.stubEnv("VITE_PUBLIC_SITE_URL", "https://airealitycheck.example/");
+    const incident = buildIncidentDetail({
+      id: "incident-prod",
+      headline: "Court sanctions brief with fake AI citations",
+      headline_en: "Court sanctions brief with fake AI citations",
+      date_logged: "2026-05-06",
+    });
+
+    mockedFetchIncidentDetail.mockResolvedValue(incident);
+    window.history.pushState(
+      {},
+      "",
+      "/incidents/incident-prod/court-sanctions-brief-with-fake-ai-citations",
+    );
+
+    render(<RouteEntry />);
+
+    await waitFor(() => {
+      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-prod");
+    });
+
+    const canonicalUrl = buildIncidentUrl(
+      incident,
+      "https://airealitycheck.example/",
+    );
+    await waitFor(() => {
+      expect(
+        document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
+      ).toBe(canonicalUrl);
+    });
+    expect(
+      JSON.parse(
+        document.querySelector<HTMLScriptElement>(
+          'script[type="application/ld+json"]',
+        )?.textContent ?? "{}",
+      ),
+    ).toMatchObject({
+      mainEntityOfPage: canonicalUrl,
     });
   });
 

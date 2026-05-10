@@ -1,4 +1,8 @@
-import { buildIncidentPath } from "../lib/publicIncidentRoutes";
+import {
+  buildIncidentUrl,
+  buildIncidentPath,
+  MAX_INCIDENT_SLUG_LENGTH,
+} from "../lib/publicIncidentRoutes";
 import {
   buildRobotsTxt,
   buildSitemapXml,
@@ -12,8 +16,7 @@ function buildIncident(
   return {
     id: overrides.id ?? "incident-1",
     headline:
-      overrides.headline ??
-      "Court sanctions brief with fake AI citations",
+      overrides.headline ?? "Court sanctions brief with fake AI citations",
     headline_en:
       overrides.headline_en ??
       overrides.headline ??
@@ -53,9 +56,26 @@ describe("seo files", () => {
 
     expect(sitemap).toContain("<urlset");
     expect(sitemap).toContain(
-      `<loc>https://airealitycheck.example${buildIncidentPath(incident)}</loc>`,
+      `<loc>${buildIncidentUrl(
+        incident,
+        "https://airealitycheck.example/",
+      )}</loc>`,
     );
     expect(sitemap).toContain("<lastmod>2026-05-06</lastmod>");
+  });
+
+  it("limits generated incident slugs to 120 characters", () => {
+    const path = buildIncidentPath(
+      buildIncident({
+        headline_en: Array.from({ length: 40 }, (_, index) => {
+          return `Example${index}`;
+        }).join(" "),
+      }),
+    );
+    const slug = path.split("/").at(-1);
+
+    expect(slug).toBeDefined();
+    expect(slug?.length).toBeLessThanOrEqual(MAX_INCIDENT_SLUG_LENGTH);
   });
 
   it("escapes sitemap XML entities in generated locations", () => {

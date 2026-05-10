@@ -1,5 +1,7 @@
-import { buildIncidentPath } from "./publicIncidentRoutes";
+import { buildIncidentUrl, normalizeSiteUrl } from "./publicIncidentRoutes";
 import type { PublicIncidentBase } from "../types/incident";
+
+export { normalizeSiteUrl } from "./publicIncidentRoutes";
 
 type SitemapOptions = {
   incidents: PublicIncidentBase[];
@@ -7,11 +9,10 @@ type SitemapOptions = {
 };
 
 export function buildSitemapXml({ incidents, siteUrl }: SitemapOptions) {
-  const normalizedSiteUrl = normalizeSiteUrl(siteUrl);
   const urls = incidents
     .map(
       (incident) => `  <url>
-    <loc>${escapeXml(`${normalizedSiteUrl}${buildIncidentPath(incident)}`)}</loc>
+    <loc>${escapeXml(buildIncidentUrl(incident, siteUrl))}</loc>
     <lastmod>${escapeXml(incident.date_logged)}</lastmod>
   </url>`,
     )
@@ -36,10 +37,6 @@ export function buildRobotsTxt(siteUrl: string) {
     `Sitemap: ${normalizedSiteUrl}/sitemap.xml`,
     "",
   ].join("\n");
-}
-
-export function normalizeSiteUrl(siteUrl: string) {
-  return siteUrl.replace(/\/+$/, "");
 }
 
 function escapeXml(value: string) {

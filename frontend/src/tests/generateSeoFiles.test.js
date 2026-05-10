@@ -1,4 +1,4 @@
-import { buildIncidentPath } from "../lib/publicIncidentRoutes";
+import { buildIncidentUrl } from "../lib/publicIncidentRoutes";
 
 describe("generate SEO files script helpers", () => {
   it("fetches all public incident feed pages", async () => {
@@ -68,7 +68,10 @@ describe("generate SEO files script helpers", () => {
     });
 
     expect(sitemapXml).toContain(
-      `<loc>https://airealitycheck.example${buildIncidentPath(incident)}</loc>`,
+      `<loc>${buildIncidentUrl(
+        incident,
+        "https://airealitycheck.example/",
+      )}</loc>`,
     );
     expect(sitemapXml).toContain("<lastmod>2026-05-06</lastmod>");
     expect(robotsTxt).toContain(

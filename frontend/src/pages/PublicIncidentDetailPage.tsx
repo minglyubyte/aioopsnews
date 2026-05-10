@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchIncidentDetail } from "../lib/api";
 import { PUBLIC_COPY } from "../lib/locale";
-import { buildIncidentPath } from "../lib/publicIncidentRoutes";
+import { buildIncidentUrl } from "../lib/publicIncidentRoutes";
 import type { IncidentAnalysis, IncidentDetail } from "../types/incident";
 import "./public-dashboard.css";
 
@@ -57,9 +57,7 @@ export default function PublicIncidentDetailPage({
       return;
     }
 
-    const canonicalUrl = `${window.location.origin}${buildIncidentPath(
-      incident,
-    )}`;
+    const canonicalUrl = buildIncidentUrl(incident, getCanonicalSiteUrl());
     const description =
       firstNonBlankText(
         incident.analysis.incident_summary_en,
@@ -171,6 +169,16 @@ export default function PublicIncidentDetailPage({
       </div>
     </main>
   );
+}
+
+function getCanonicalSiteUrl() {
+  const configuredSiteUrl = import.meta.env.VITE_PUBLIC_SITE_URL;
+
+  if (configuredSiteUrl?.trim()) {
+    return configuredSiteUrl;
+  }
+
+  return window.location.origin;
 }
 
 function DetailBlock({

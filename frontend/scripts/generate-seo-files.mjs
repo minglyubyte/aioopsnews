@@ -1,5 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { parseEnv } from "node:util";
+import {
+  buildIncidentUrl,
+  normalizeSiteUrl,
+} from "../src/lib/publicIncidentRouteCore.js";
 
 const DEFAULT_SITE_URL = "http://localhost:5173";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
@@ -40,17 +45,26 @@ export function buildSeoFileContents({ incidents, siteUrl }) {
 }
 
 export async function generateSeoFiles({
-  apiBaseUrl = process.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
-  siteUrl = process.env.SITE_URL ??
-    process.env.VITE_PUBLIC_SITE_URL ??
-    DEFAULT_SITE_URL,
+  apiBaseUrl,
+  siteUrl,
   outputDir = new URL("../public/", import.meta.url),
   fetchImpl = fetch,
 } = {}) {
-  const incidents = await fetchPublicIncidents({ apiBaseUrl, fetchImpl });
+  await loadProjectEnv();
+  const resolvedApiBaseUrl =
+    apiBaseUrl ?? process.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+  const resolvedSiteUrl =
+    siteUrl ??
+    process.env.SITE_URL ??
+    process.env.VITE_PUBLIC_SITE_URL ??
+    DEFAULT_SITE_URL;
+  const incidents = await fetchPublicIncidents({
+    apiBaseUrl: resolvedApiBaseUrl,
+    fetchImpl,
+  });
   const { sitemapXml, robotsTxt } = buildSeoFileContents({
     incidents,
-    siteUrl,
+    siteUrl: resolvedSiteUrl,
   });
 
   await mkdir(outputDir, { recursive: true });
@@ -62,12 +76,32 @@ export async function generateSeoFiles({
   };
 }
 
+async function loadProjectEnv() {
+  try {
+    const envText = await readFile(new URL("../../.env", import.meta.url), {
+      encoding: "utf8",
+    });
+    const parsedEnv = parseEnv(envText);
+
+    for (const [key, value] of Object.entries(parsedEnv)) {
+      process.env[key] ??= value;
+    }
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      if (error.code === "ENOENT") {
+        return;
+      }
+    }
+
+    throw error;
+  }
+}
+
 function buildSitemapXml({ incidents, siteUrl }) {
-  const normalizedSiteUrl = normalizeSiteUrl(siteUrl);
   const urls = incidents
     .map(
       (incident) => `  <url>
-    <loc>${escapeXml(`${normalizedSiteUrl}${buildIncidentPath(incident)}`)}</loc>
+    <loc>${escapeXml(buildIncidentUrl(incident, siteUrl))}</loc>
     <lastmod>${escapeXml(incident.date_logged)}</lastmod>
   </url>`,
     )
@@ -94,28 +128,6 @@ function buildRobotsTxt(siteUrl) {
   ].join("\n");
 }
 
-function buildIncidentPath(incident) {
-  return `/incidents/${encodeURIComponent(incident.id)}/${slugifyIncidentHeadline(
-    incident.headline_en ?? incident.headline,
-  )}`;
-}
-
-function slugifyIncidentHeadline(headline) {
-  const slug = headline
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-
-  return slug || "incident";
-}
-
-function normalizeSiteUrl(siteUrl) {
-  return siteUrl.replace(/\/+$/, "");
-}
-
 function ensureTrailingSlash(url) {
   return url.endsWith("/") ? url : `${url}/`;
 }
@@ -129,7 +141,10 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   const result = await generateSeoFiles();
   console.log(`Generated SEO files for ${result.incidentCount} incidents.`);
 }

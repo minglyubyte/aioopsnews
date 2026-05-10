@@ -107,6 +107,28 @@ Key API endpoints:
 
 Admin endpoints require the `X-Admin-Token` header to match `ADMIN_API_TOKEN`.
 
+## Frontend SEO Deployment
+
+Set the public frontend URL and API URL in the repository-root `.env` or your
+deployment platform before building production assets:
+
+```bash
+VITE_PUBLIC_SITE_URL=https://aioopsnews.com
+VITE_API_BASE_URL=https://api.example.com
+```
+
+`VITE_PUBLIC_SITE_URL` is used for incident canonical URLs, `robots.txt`, and
+`sitemap.xml`; the SEO generation script can also use `SITE_URL` as an override.
+`VITE_API_BASE_URL` points the frontend and SEO generation script at the public
+API. The Vite app and SEO generation script both read the repository-root `.env`.
+Before publishing a build, run:
+
+```bash
+cd frontend
+npm run seo:generate
+npm run build
+```
+
 ## Launch Readiness Evaluation
 
 Run the seed gold-sample evaluation locally with:
