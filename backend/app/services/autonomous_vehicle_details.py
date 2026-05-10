@@ -57,24 +57,6 @@ class DetailQualityAssessment:
     source_fact_summary: str | None
 
 
-@dataclass(frozen=True)
-class AutonomousVehicleDetailCopy:
-    incident_summary_en: str
-    what_happened_en: str
-    ai_failure_point_en: str
-    why_it_matters_en: str
-    evidence_summary_en: str
-
-    def as_dict(self) -> dict[str, str]:
-        return {
-            "incident_summary_en": self.incident_summary_en,
-            "what_happened_en": self.what_happened_en,
-            "ai_failure_point_en": self.ai_failure_point_en,
-            "why_it_matters_en": self.why_it_matters_en,
-            "evidence_summary_en": self.evidence_summary_en,
-        }
-
-
 def extract_autonomous_vehicle_facts(text: str | None) -> AutonomousVehicleFacts:
     normalized = _normalize_text(text)
     if not normalized:
@@ -162,56 +144,6 @@ def assess_autonomous_vehicle_detail_quality(
         detail_quality="sufficient",
         detail_quality_reasons=[],
         source_fact_summary=summary,
-    )
-
-
-def build_autonomous_vehicle_detail_copy(
-    incident: dict[str, Any],
-) -> AutonomousVehicleDetailCopy | None:
-    if incident.get("source_family") != "autonomous_vehicle":
-        return None
-
-    facts = _best_facts_from_sources(incident.get("sources", []))
-    if not summarize_autonomous_vehicle_facts(facts):
-        return None
-
-    company = str(incident.get("company_involved") or "The operator")
-    incident_date = str(incident.get("date_logged") or "the reported date")
-    location = facts.location_context or "the reported roadway location"
-    impact = facts.injury_or_damage or "the report records the collision outcome"
-    narrative = facts.narrative_excerpt or (
-        f"The DMV report describes a collision involving {company} at {location}."
-    )
-    automation_state = facts.automation_state or "autonomous vehicle operation"
-
-    return AutonomousVehicleDetailCopy(
-        incident_summary_en=(
-            f"California DMV records document a {company} autonomous-vehicle "
-            f"collision on {incident_date} at {location}, with {impact}."
-        ),
-        what_happened_en=(
-            f"According to the California DMV collision report, at {location}, "
-            f"{narrative} "
-            f"The filing identifies the vehicle as operating in {automation_state} "
-            f"and records {impact}."
-        ),
-        ai_failure_point_en=(
-            "The DMV filing does not establish a confirmed software defect; the "
-            f"relevant automation question is how the autonomous vehicle handled "
-            f"this road interaction at {location} while operating in "
-            f"{automation_state}."
-        ),
-        why_it_matters_en=(
-            "California DMV collision reports matter because they turn individual "
-            "autonomous-vehicle road contacts into comparable public evidence for "
-            "monitoring operator patterns, road-user interactions, locations, and "
-            "real-world deployment edge cases."
-        ),
-        evidence_summary_en=(
-            "Official California DMV autonomous vehicle collision report with "
-            "date, time, location, involved-vehicle fields, damage or injury "
-            "indicators, and a narrative description of the contact."
-        ),
     )
 
 

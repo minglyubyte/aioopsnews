@@ -171,7 +171,7 @@ def test_initial_migration_matches_fresh_postgres_native_schema() -> None:
         assert column_definition in migration_sql
 
 
-def test_legacy_additive_migrations_were_removed() -> None:
+def test_only_initial_incident_schema_migration_is_present() -> None:
     migrations = sorted(
         path.name
         for path in (REPO_ROOT / "infra" / "supabase" / "migrations").glob("*.sql")

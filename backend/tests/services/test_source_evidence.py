@@ -386,3 +386,41 @@ def test_review_source_context_prioritizes_incident_pdf_over_index_page() -> Non
 
     assert context[0]["source_url"] == pdf_source["source_url"]
     assert "DATE OF ACCIDENT: 4/6/2026" in context[0]["evidence_text"]
+
+
+def test_review_source_context_includes_nhtsa_csv_evidence_before_home_pages() -> None:
+    home_source = {
+        "source_url": (
+            "https://www.nhtsa.gov/laws-regulations/"
+            "standing-general-order-crash-reporting"
+        ),
+        "canonical_url": None,
+        "fetch_status": None,
+        "http_status": None,
+        "source_origin": "fixed_verified_source",
+        "source_registry_key": "nhtsa_data",
+        "evidence_text": None,
+    }
+    csv_source = {
+        "source_url": (
+            "https://www.nhtsa.gov/laws-regulations/"
+            "standing-general-order-crash-reporting#report-tesla-2"
+        ),
+        "canonical_url": (
+            "https://www.nhtsa.gov/laws-regulations/"
+            "standing-general-order-crash-reporting#report-tesla-2"
+        ),
+        "fetch_status": "fetched",
+        "http_status": None,
+        "source_origin": "fixed_verified_source",
+        "source_registry_key": "nhtsa_data",
+        "evidence_text": (
+            "NHTSA SGO CSV report facts. Report ID: tesla-2. "
+            "Engagement Status: Verified Engaged. Narrative: Vehicle crashed."
+        ),
+    }
+
+    context = build_review_source_context([home_source, csv_source], max_chars=500)
+
+    assert context[0]["source_url"] == csv_source["source_url"]
+    assert "Report ID: tesla-2" in context[0]["evidence_text"]

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from app.services.autonomous_vehicle_details import (
     assess_autonomous_vehicle_detail_quality,
-    build_autonomous_vehicle_detail_copy,
     extract_autonomous_vehicle_facts,
 )
 
@@ -84,42 +83,6 @@ def test_extract_autonomous_vehicle_facts_from_dmv_hit_by_narrative() -> None:
     assert "hit on the right rear corner by an SUV" in facts.narrative_excerpt
     assert "missing_collision_object" not in facts.uncertainty_notes
     assert "missing_narrative_excerpt" not in facts.uncertainty_notes
-
-
-def test_build_autonomous_vehicle_detail_copy_from_evidence() -> None:
-    incident = {
-        "company_involved": "Waymo",
-        "date_logged": "2026-04-01",
-        "source_family": "autonomous_vehicle",
-        "sources": [
-            {
-                "evidence_text": (
-                    "MANUFACTURERS NAME: Waymo LLC DATE OF ACCIDENT: 04/01/2026 "
-                    "0: Electric Avenue near Milwood Avenue 0: Venice 1: "
-                    "On April 1, 2026 at 12:20 PM PT a Waymo Autonomous Vehicle "
-                    "operating in autonomous mode was stopped facing west on "
-                    "Electric Avenue near Milwood Avenue to yield to a pickup "
-                    "truck. While the Waymo AV was stopped, the pickup truck "
-                    "proceeded to pass to the left, and the left side of the "
-                    "pickup truck made contact with the rear left side of the "
-                    "stationary Waymo AV. No injuries were reported."
-                )
-            }
-        ],
-    }
-
-    detail_copy = build_autonomous_vehicle_detail_copy(incident)
-
-    assert detail_copy is not None
-    assert "Electric Avenue near Milwood Avenue" in detail_copy.what_happened_en
-    assert "does not establish a confirmed software defect" in (
-        detail_copy.ai_failure_point_en
-    )
-    assert "California DMV" in detail_copy.evidence_summary_en
-    enriched = {**incident, **detail_copy.as_dict()}
-    assert assess_autonomous_vehicle_detail_quality(enriched).detail_quality == (
-        "sufficient"
-    )
 
 
 def test_assess_av_detail_quality_marks_template_records_insufficient() -> None:

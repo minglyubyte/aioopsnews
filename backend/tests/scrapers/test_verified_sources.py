@@ -140,6 +140,36 @@ def test_parse_nhtsa_sgo_records_from_csv() -> None:
     )
 
 
+def test_parse_nhtsa_sgo_records_accepts_month_abbreviation_dates() -> None:
+    csv_text = "\n".join(
+        [
+            "Report ID,Incident Date,Reporting Entity,Make,Model,Narrative",
+            "12345,DEC-2025,Tesla Inc,Tesla,Model Y,Crash report.",
+        ]
+    )
+
+    records = parse_nhtsa_sgo_records(csv_text, limit=1)
+
+    assert records[0].incident_date == "2025-12-01"
+
+
+def test_parse_nhtsa_sgo_records_skips_no_new_incident_rows() -> None:
+    csv_text = "\n".join(
+        [
+            (
+                "Report ID,Report Type,Incident Date,Reporting Entity,Make,"
+                "Model,Narrative"
+            ),
+            "empty-1,No New or Updated Incident Reports,JUN-2025,Tesla,Tesla,,",
+            "real-1,5-Day,JUL-2025,Tesla,Tesla,Model 3,Crash report.",
+        ]
+    )
+
+    records = parse_nhtsa_sgo_records(csv_text, limit=10)
+
+    assert [record.external_id for record in records] == ["nhtsa-sgo-real-1"]
+
+
 def test_parse_ftc_ai_enforcement_records_from_operation_ai_comply_page() -> None:
     html = """
     <nav><h2>Breadcrumb</h2><time>February 13, 2026</time></nav>

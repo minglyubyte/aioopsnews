@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass
 from datetime import date
 from io import StringIO
@@ -51,6 +52,8 @@ class ParsedIncidentImportRow:
     verification_summary: str | None
     source_origin: str | None
     source_registry_key: str | None
+    primary_source_evidence_text: str | None
+    primary_source_raw_payload: dict[str, object] | None
     notes: str | None
 
 
@@ -147,6 +150,11 @@ def parse_incidents_csv_text(csv_text: str) -> list[ParsedIncidentImportRow]:
             column="source_origin",
             line_number=line_number,
         )
+        primary_source_raw_payload = _parse_optional_json_object(
+            row.get("primary_source_raw_payload_json"),
+            column="primary_source_raw_payload_json",
+            line_number=line_number,
+        )
 
         rows.append(
             ParsedIncidentImportRow(
@@ -167,6 +175,10 @@ def parse_incidents_csv_text(csv_text: str) -> list[ParsedIncidentImportRow]:
                 verification_summary=row.get("verification_summary") or None,
                 source_origin=source_origin,
                 source_registry_key=row.get("source_registry_key") or None,
+                primary_source_evidence_text=(
+                    row.get("primary_source_evidence_text") or None
+                ),
+                primary_source_raw_payload=primary_source_raw_payload,
                 notes=row.get("notes") or None,
             )
         )
@@ -201,6 +213,14 @@ def import_incidents_csv_text(
         matched_claim_id = (
             row.mapped_claim if row.mapped_claim in existing_claim_ids else None
         )
+        source_evidence_texts = _primary_source_values(
+            row.source_links,
+            row.primary_source_evidence_text,
+        )
+        raw_source_payloads = _primary_source_values(
+            row.source_links,
+            row.primary_source_raw_payload,
+        )
 
         repository.upsert_incident_import_row(
             external_id=row.incident_id,
@@ -233,6 +253,8 @@ def import_incidents_csv_text(
             verification_summary=row.verification_summary,
             source_origin=row.source_origin,
             source_registry_key=row.source_registry_key,
+            source_evidence_texts=source_evidence_texts,
+            raw_source_payloads=raw_source_payloads,
         )
         inserted += 1
         pending_llm_review += 1
@@ -283,6 +305,38 @@ def _parse_optional_choice(
             f"{', '.join(sorted(allowed))}"
         )
     return normalized
+
+
+def _parse_optional_json_object(
+    value: str | None,
+    *,
+    column: str,
+    line_number: int,
+) -> dict[str, object] | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise IncidentImportValidationError(
+            "Invalid incident import at line "
+            f"{line_number}: {column} must be valid JSON"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise IncidentImportValidationError(
+            "Invalid incident import at line "
+            f"{line_number}: {column} must be a JSON object"
+        )
+    return parsed
+
+
+def _primary_source_values(
+    source_links: list[str],
+    value: object | None,
+) -> list[object | None] | None:
+    if value is None:
+        return None
+    return [value, *([None] * (len(source_links) - 1))]
 
 
 def _validate_iso_date(value: str, line_number: int) -> None:

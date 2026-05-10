@@ -574,6 +574,7 @@ class InMemoryIncidentRepository:
         verification_summary: str | None = None,
         source_origin: str | None = None,
         source_registry_key: str | None = None,
+        source_evidence_texts: list[str | None] | None = None,
         raw_source_payloads: list[dict[str, object] | None] | None = None,
     ) -> None:
         existing_incident_id = next(
@@ -595,18 +596,23 @@ class InMemoryIncidentRepository:
             raw_source_payload = None
             if raw_source_payloads and display_order < len(raw_source_payloads):
                 raw_source_payload = raw_source_payloads[display_order]
+            source_evidence_text = None
+            if source_evidence_texts and display_order < len(source_evidence_texts):
+                source_evidence_text = source_evidence_texts[display_order]
+            canonical_url = url if source_evidence_text else None
+            fetch_status = "fetched" if source_evidence_text else None
             self._source_sequence += 1
             sources.append(
                 {
                     "id": f"source-{self._source_sequence}",
                     "source_url": url,
-                    "canonical_url": None,
+                    "canonical_url": canonical_url,
                     "source_type": "imported",
                     "publisher": None,
                     "title": None,
-                    "fetch_status": None,
+                    "fetch_status": fetch_status,
                     "http_status": None,
-                    "evidence_text": None,
+                    "evidence_text": source_evidence_text,
                     "fetch_error": None,
                     "source_origin": source_origin or "manual_import",
                     "source_registry_key": source_registry_key,
@@ -678,6 +684,7 @@ class InMemoryIncidentRepository:
         evidence_text: str | None,
         fetch_error: str | None,
         fetched_at: str,
+        raw_source_payload: dict[str, object] | None = None,
     ) -> None:
         for incident in self.incidents.values():
             for source in incident.get("sources", []):
@@ -693,6 +700,8 @@ class InMemoryIncidentRepository:
                         "fetched_at": fetched_at,
                     }
                 )
+                if raw_source_payload is not None:
+                    source["raw_source_payload"] = raw_source_payload
                 return
 
     def mark_incidents_review_batch(
@@ -884,27 +893,6 @@ class InMemoryIncidentRepository:
             }
         )
         return self._serialize_admin_incident(incident)
-
-    def update_incident_detail_copy(
-        self,
-        *,
-        incident_id: str,
-        incident_summary_en: str,
-        what_happened_en: str,
-        ai_failure_point_en: str,
-        why_it_matters_en: str,
-        evidence_summary_en: str,
-    ) -> None:
-        incident = self.incidents[incident_id]
-        incident.update(
-            {
-                "incident_summary_en": incident_summary_en,
-                "what_happened_en": what_happened_en,
-                "ai_failure_point_en": ai_failure_point_en,
-                "why_it_matters_en": why_it_matters_en,
-                "evidence_summary_en": evidence_summary_en,
-            }
-        )
 
     def _serialize_public_archive_incident(
         self,

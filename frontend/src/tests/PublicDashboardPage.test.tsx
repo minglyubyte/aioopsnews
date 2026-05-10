@@ -1303,129 +1303,6 @@ describe("PublicDashboardPage", () => {
     expect(mockedFetchIncidentFeed).not.toHaveBeenCalled();
   });
 
-  it("renders the forensic detail structure for legacy incidents without structured ai failure data", async () => {
-    const legacyIncident = buildArchiveIncident({
-      id: "incident-legacy",
-      headline:
-        "Mercedes Benz: An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
-      company_involved: "Mercedes Benz",
-      categories: ["Autonomous Systems"],
-      severity_score: 2,
-      archive_summary:
-        "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
-      archive_summary_en:
-        "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
-      date_logged: "2023-11-29",
-    });
-
-    mockedFetchIncidentDetail.mockResolvedValue(
-      buildIncidentDetail({
-        ...legacyIncident,
-        reality_summary:
-          "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
-        reality_summary_en:
-          "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
-        analysis: {
-          what_happened_en: null,
-          what_happened_zh: null,
-          ai_failure_point_en: null,
-          ai_failure_point_zh: null,
-          why_it_matters_en:
-            "Incident involves a Mercedes Benz autonomous testing vehicle collision with official DMV documentation.",
-          why_it_matters_zh: null,
-          evidence_summary_en:
-            "High quality, official DMV collision report and academic dashboard.",
-          evidence_summary_zh: null,
-        },
-      }),
-    );
-    window.history.pushState(
-      {},
-      "",
-      "/incidents/incident-legacy/mercedes-benz-autonomous-testing-vehicle-collision",
-    );
-
-    render(<RouteEntry />);
-
-    expect(
-      await screen.findByRole("heading", {
-        level: 1,
-        name: /Mercedes Benz: An autonomous testing vehicle/,
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("AI failure point")).toBeInTheDocument();
-    expect(
-      screen.getByText("Not yet structured for this incident."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("What happened")).not.toBeInTheDocument();
-    expect(
-      screen.getAllByText(
-        "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
-      ),
-    ).toHaveLength(1);
-  });
-
-  it("shows official-detail-pending copy for thin autonomous vehicle records", async () => {
-    const thinIncident = buildArchiveIncident({
-      id: "incident-thin-av",
-      headline: "California DMV published Waymo collision report",
-      headline_en: "California DMV published Waymo collision report",
-      company_involved: "Waymo",
-      categories: ["Autonomous Systems"],
-      publication_track: "verified_accident",
-      evidence_tier: "official_documented",
-      source_family: "autonomous_vehicle",
-      archive_summary:
-        "California DMV published an autonomous vehicle collision report.",
-    });
-
-    mockedFetchIncidentDetail.mockResolvedValue(
-      buildIncidentDetail({
-        ...thinIncident,
-        reality_summary:
-          "California DMV published an autonomous vehicle collision report.",
-        analysis: {
-          incident_summary_en:
-            "California DMV published an autonomous vehicle collision report.",
-          ai_failure_point_en: null,
-          evidence_summary_en: "Official DMV collision report.",
-          detail_quality: "insufficient",
-          detail_quality_reasons: [
-            "missing_evidence_text",
-            "missing_ai_failure_point",
-          ],
-          source_fact_summary: null,
-        },
-        sources: [
-          {
-            id: "source-thin-av",
-            source_url: "https://www.dmv.ca.gov/report.pdf",
-            source_type: "official",
-            publisher: "California DMV",
-            title: "Waymo collision report",
-          },
-        ],
-      }),
-    );
-    window.history.pushState(
-      {},
-      "",
-      "/incidents/incident-thin-av/california-dmv-published-waymo-collision-report",
-    );
-
-    render(<RouteEntry />);
-
-    expect(
-      await screen.findByText("Official report, detail pending"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("AI failure point")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("link", {
-        name: "Waymo collision report",
-      }),
-    ).toBeInTheDocument();
-  });
-
   it("keeps existing autonomous vehicle case detail visible when source evidence is incomplete", async () => {
     const autonomousIncident = buildArchiveIncident({
       id: "incident-av-rich",
@@ -1495,7 +1372,9 @@ describe("PublicDashboardPage", () => {
     render(<RouteEntry />);
 
     expect(
-      await screen.findByText("Official report, detail pending"),
+      await screen.findByText(
+        "The Waymo vehicle stopped on a narrow street before another vehicle passed closely and made contact with its rear left side.",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(

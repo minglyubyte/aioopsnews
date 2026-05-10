@@ -212,7 +212,6 @@ function IncidentCaseFile({
   const categories = incident.categories.map((category) =>
     localizePublicCategory(category, readerLocale),
   );
-  const hasThinDetail = hasInsufficientDetail(incident);
   const visibleSources = publicDetailSources(incident);
   const whatHappened = localizedAnalysisText(
     incident.analysis,
@@ -288,39 +287,29 @@ function IncidentCaseFile({
           className="case-article"
           data-inview={articleInView ? "true" : "false"}
         >
-          {hasThinDetail ? (
-            <DetailBlock
-              detailIndex={0}
-              title={copy.officialDetailPendingTitle}
-              value={
-                incident.analysis.source_fact_summary ??
-                copy.officialDetailPendingBody
-              }
-            />
-          ) : null}
           {whatHappened ? (
             <DetailBlock
-              detailIndex={hasThinDetail ? 1 : 0}
+              detailIndex={0}
               title={copy.whatHappenedTitle}
               value={whatHappened}
             />
           ) : null}
-          {!hasThinDetail || aiFailurePoint ? (
+          {aiFailurePoint ? (
             <DetailBlock
-              detailIndex={hasThinDetail ? 2 : 1}
+              detailIndex={1}
               title={copy.aiFailurePointTitle}
-              value={aiFailurePoint ?? copy.aiFailurePointUnavailable}
+              value={aiFailurePoint}
             />
           ) : null}
           {whyItMatters ? (
             <DetailBlock
-              detailIndex={hasThinDetail ? 3 : 2}
+              detailIndex={2}
               title={copy.whyItMattersTitle}
               value={whyItMatters}
             />
           ) : null}
           <DetailBlock
-            detailIndex={hasThinDetail ? 4 : 3}
+            detailIndex={3}
             title={copy.evidenceSummaryTitle}
             value={localizedAnalysisText(
               incident.analysis,
@@ -609,13 +598,6 @@ export function buildIncidentPageTitle(
   locale: ReaderLocale = "en",
 ) {
   return `${getIncidentDisplayHeadline(incident, locale)} | ${DETAIL_PAGE_BRAND}`;
-}
-
-function hasInsufficientDetail(incident: IncidentDetail) {
-  return (
-    incident.source_family === "autonomous_vehicle" &&
-    incident.analysis.detail_quality === "insufficient"
-  );
 }
 
 const TRACK_LABELS_ZH: Record<string, string> = {

@@ -145,6 +145,7 @@ class IncidentRepository(Protocol):
         verification_summary: str | None = None,
         source_origin: str | None = None,
         source_registry_key: str | None = None,
+        source_evidence_texts: list[str | None] | None = None,
         raw_source_payloads: list[dict[str, object] | None] | None = None,
     ) -> None: ...
 
@@ -158,6 +159,7 @@ class IncidentRepository(Protocol):
         evidence_text: str | None,
         fetch_error: str | None,
         fetched_at: str,
+        raw_source_payload: dict[str, object] | None = None,
     ) -> None: ...
 
     def update_incident_embedding(
@@ -226,17 +228,6 @@ class IncidentRepository(Protocol):
         source_family: str | None = None,
         verification_summary: str | None = None,
     ) -> IncidentDict | None: ...
-
-    def update_incident_detail_copy(
-        self,
-        *,
-        incident_id: str,
-        incident_summary_en: str,
-        what_happened_en: str,
-        ai_failure_point_en: str,
-        why_it_matters_en: str,
-        evidence_summary_en: str,
-    ) -> None: ...
 
     def update_incident_translation(
         self,

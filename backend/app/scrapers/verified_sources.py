@@ -610,6 +610,10 @@ def parse_nhtsa_sgo_records(
     records: list[VerifiedSourceRecord] = []
     for row in csv.DictReader(StringIO(csv_text)):
         normalized = _normalize_row(row)
+        if _first_present(normalized, "report type") == (
+            "No New or Updated Incident Reports"
+        ):
+            continue
         report_id = _first_present(
             normalized,
             "report id",
@@ -1928,13 +1932,15 @@ def _parse_flexible_date(value: str) -> str:
     for fmt in (
         "%Y-%m-%d",
         "%Y-%m",
+        "%b-%Y",
+        "%B-%Y",
         "%B %d, %Y",
         "%d %B %Y",
         "%m/%d/%Y",
         "%m-%d-%Y",
     ):
         try:
-            if fmt == "%Y-%m":
+            if fmt in {"%Y-%m", "%b-%Y", "%B-%Y"}:
                 return f"{datetime.strptime(stripped, fmt).date().isoformat()[:7]}-01"
             return datetime.strptime(stripped, fmt).date().isoformat()
         except ValueError:

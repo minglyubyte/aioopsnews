@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the minimum operating model for running AI Reality Check as a production editorial system. It ties together daily ingest, historical backfill, failure handling, queue monitoring, and launch-day checks.
+This document defines the minimum operating model for running AI Reality Check as a production editorial system. It ties together daily ingest, failure handling, queue monitoring, and launch-day checks.
 
 ## Operating Model
 
@@ -11,7 +11,6 @@ This document defines the minimum operating model for running AI Reality Check a
 - Daily dual-track ingestion is the default production workflow.
 - AI News auto-publishes after duplicate checks as an unverified news signal.
 - AI Accidents remain review-gated before public accident publication.
-- Historical backfill is a controlled maintenance task, not part of the daily schedule.
 
 ## Daily Ingest Scheduling
 
@@ -44,26 +43,6 @@ This document defines the minimum operating model for running AI Reality Check a
 5. Promote any AI News item to accident review only when it should become part
    of the reviewed accident archive.
 
-## Backfill Execution Policy
-
-### When To Run Backfill
-
-- Run backfill only for historical coverage expansion or recovery from missing periods.
-- Do not combine broad backfill with the same-day launch window unless necessary.
-
-### Safe Backfill Sequence
-
-1. Run a pilot on one source and one month first.
-2. Review the resulting incidents for taxonomy, severity, summary quality, and claim-match quality.
-3. Expand to the full selected date range only if the pilot looks acceptable.
-4. Reuse the same checkpoint and audit files if a run is interrupted.
-
-### Backfill Safeguards
-
-- Do not delete checkpoint files until the full run is complete.
-- Review audit logs for unexpected spikes in duplicates or low creation volume.
-- Sample the admin queue before bulk approvals.
-
 ## Failure Handling
 
 ### Daily Ingest Failures
@@ -75,12 +54,6 @@ This document defines the minimum operating model for running AI Reality Check a
 - If the whole ingest job fails:
   - rerun once after verifying config and runtime inputs
   - if the second attempt fails, pause same-day publish expectations and investigate before continuing
-
-### Backfill Failures
-
-- Restart the job with the same checkpoint path.
-- Confirm the checkpoint file still reflects completed `source|batch` pairs.
-- Review the audit log before resuming.
 
 ### Classification or Claim-Match Concerns
 

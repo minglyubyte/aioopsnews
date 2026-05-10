@@ -1351,6 +1351,7 @@ class PostgresIncidentRepository:
         verification_summary: str | None = None,
         source_origin: str | None = None,
         source_registry_key: str | None = None,
+        source_evidence_texts: list[str | None] | None = None,
         raw_source_payloads: list[dict[str, object] | None] | None = None,
     ) -> None:
         with self._connect() as connection:
@@ -1504,19 +1505,27 @@ class PostgresIncidentRepository:
                 raw_source_payload = None
                 if raw_source_payloads and display_order < len(raw_source_payloads):
                     raw_source_payload = raw_source_payloads[display_order]
+                source_evidence_text = None
+                if (
+                    source_evidence_texts
+                    and display_order < len(source_evidence_texts)
+                ):
+                    source_evidence_text = source_evidence_texts[display_order]
+                canonical_url = source_url if source_evidence_text else None
+                fetch_status = "fetched" if source_evidence_text else None
                 source_rows.append(
                     (
                         str(uuid4()),
                         resolved_incident_id,
                         source_url,
-                        None,
+                        canonical_url,
                         "imported",
                         None,
                         None,
                         None,
+                        fetch_status,
                         None,
-                        None,
-                        None,
+                        source_evidence_text,
                         None,
                         source_origin or "manual_import",
                         source_registry_key,
@@ -1562,6 +1571,7 @@ class PostgresIncidentRepository:
         evidence_text: str | None,
         fetch_error: str | None,
         fetched_at: str,
+        raw_source_payload: dict[str, object] | None = None,
     ) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -1573,7 +1583,8 @@ class PostgresIncidentRepository:
                     http_status = %s,
                     evidence_text = %s,
                     fetch_error = %s,
-                    fetched_at = %s
+                    fetched_at = %s,
+                    raw_source_payload = coalesce(%s, raw_source_payload)
                 where id = %s
                 """,
                 (
@@ -1583,6 +1594,7 @@ class PostgresIncidentRepository:
                     evidence_text,
                     fetch_error,
                     fetched_at,
+                    _jsonb_or_none(raw_source_payload),
                     source_id,
                 ),
             )
@@ -2013,40 +2025,6 @@ class PostgresIncidentRepository:
             sources=sources_by_incident[str(row["id"])],
             duplicate_candidates=self._list_duplicate_candidates(row["id"]),
         )
-
-    def update_incident_detail_copy(
-        self,
-        *,
-        incident_id: str,
-        incident_summary_en: str,
-        what_happened_en: str,
-        ai_failure_point_en: str,
-        why_it_matters_en: str,
-        evidence_summary_en: str,
-    ) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                """
-                update incident_logs
-                set
-                    incident_summary_en = %s,
-                    what_happened_en = %s,
-                    ai_failure_point_en = %s,
-                    why_it_matters_en = %s,
-                    evidence_summary_en = %s,
-                    updated_at = current_timestamp
-                where id = %s
-                """,
-                (
-                    incident_summary_en,
-                    what_happened_en,
-                    ai_failure_point_en,
-                    why_it_matters_en,
-                    evidence_summary_en,
-                    incident_id,
-                ),
-            )
-            connection.commit()
 
     def update_incident_translation(
         self,

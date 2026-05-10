@@ -120,7 +120,7 @@ def main() -> int:
         default="pending_llm_review",
         help=(
             "Comma-separated incident statuses to refresh. Defaults to "
-            "pending_llm_review. Use approved for public backfills."
+            "pending_llm_review. Use approved for public evidence repairs."
         ),
     )
     parser.add_argument(
