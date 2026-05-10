@@ -94,25 +94,44 @@ export const PUBLIC_COPY = {
     spotlightKicker: "Highlights",
     spotlightTitle: "Quick takeaway",
     spotlightLoading: "Loading incident feed...",
-    highlightsEmpty: "Highlights will appear once this slice has enough signal.",
+    highlightsEmpty:
+      "Highlights will appear once this slice has enough signal.",
     highlightInsightsTitle: "Slice-level view",
     highlightInsightsBody:
       "This panel summarizes the filtered archive so readers can scan the shape of the slice before opening any incident.",
     verifiedSectionTitle: "Verified AI Accidents",
     verifiedSectionBody:
       "Source-backed case files from official, court, regulator, company, or fixed high-provenance records.",
-    verifiedSectionEmpty:
-      "No verified accident case files in this slice yet.",
+    verifiedSectionEmpty: "No verified accident case files in this slice yet.",
     watchSectionTitle: "AI News",
     watchSectionBody:
       "Fresh automatically published reports and credible signals, clearly separate from verified accident case files.",
     watchSectionEmpty: "No AI news items in this slice yet.",
     noIncidentsForSlice: "No incidents match this slice yet.",
-    detailActionLabel: (headline: string) => `Open full context for ${headline}`,
+    detailActionLabel: (headline: string) =>
+      `Open full context for ${headline}`,
     sourceBackedDetailActionLabel: (headline: string) =>
       `Open full context for ${headline}`,
     detailKicker: "Evidence",
     detailTitle: "Full context",
+    detailCaseKicker: "Case file",
+    detailBackToFeed: "Back to feed",
+    detailAtAGlanceTitle: "At a glance",
+    detailCompanyLabel: "Company",
+    detailDateLabel: "Date logged",
+    detailSeverityLabel: "Severity",
+    detailTrackLabel: "Publication track",
+    detailEvidenceLabel: "Evidence tier",
+    detailSourceFamilyLabel: "Source family",
+    detailSourceCountLabel: "Source count",
+    detailSourceCount: (count: number) =>
+      `${count} source${count === 1 ? "" : "s"}`,
+    detailContinueKicker: "Next read",
+    detailContinueTitle: "Continue reading",
+    detailContinueBody:
+      "Browse more case files by company, category, and timeframe from the incident feed.",
+    detailSameCompanyPlaceholder: "Same company",
+    detailRecentPlaceholder: "Recent incidents",
     detailLoading: "Loading incident details...",
     aiFailurePointTitle: "AI failure point",
     aiFailurePointUnavailable: "Not yet structured for this incident.",
@@ -181,8 +200,7 @@ export const PUBLIC_COPY = {
       '"别再无脑干活了！我亲眼看着AI在5分钟内干掉了一个团队 🤯"',
       '"彻底觉醒！当AI学会自己写代码，打工人的末日真的来了！🔥"',
     ],
-    heroCopy:
-      "我们想提醒你，AI 并不完美，所以放轻松，不要恐慌。",
+    heroCopy: "我们想提醒你，AI 并不完美，所以放轻松，不要恐慌。",
     languageSwitchLabel: "读者语言切换",
     themeSwitchLabel: "读者主题切换",
     lightTheme: "浅色",
@@ -245,6 +263,22 @@ export const PUBLIC_COPY = {
       `打开${headline}的完整背景`,
     detailKicker: "证据",
     detailTitle: "完整背景",
+    detailCaseKicker: "案件档案",
+    detailBackToFeed: "返回事件流",
+    detailAtAGlanceTitle: "一眼看清",
+    detailCompanyLabel: "公司",
+    detailDateLabel: "记录日期",
+    detailSeverityLabel: "严重级别",
+    detailTrackLabel: "发布轨道",
+    detailEvidenceLabel: "证据等级",
+    detailSourceFamilyLabel: "来源领域",
+    detailSourceCountLabel: "来源数量",
+    detailSourceCount: (count: number) => `${count} 个来源`,
+    detailContinueKicker: "继续浏览",
+    detailContinueTitle: "继续阅读",
+    detailContinueBody: "从事件流继续按公司、类别和时间范围浏览更多案件档案。",
+    detailSameCompanyPlaceholder: "同公司事件",
+    detailRecentPlaceholder: "近期事件",
     detailLoading: "正在加载事件详情...",
     aiFailurePointTitle: "AI 失效点",
     aiFailurePointUnavailable: "这起事件的 AI 失效点尚未整理出来。",
@@ -366,6 +400,22 @@ export const PUBLIC_COPY = {
     sourceBackedDetailActionLabel: (headline: string) => string;
     detailKicker: string;
     detailTitle: string;
+    detailCaseKicker: string;
+    detailBackToFeed: string;
+    detailAtAGlanceTitle: string;
+    detailCompanyLabel: string;
+    detailDateLabel: string;
+    detailSeverityLabel: string;
+    detailTrackLabel: string;
+    detailEvidenceLabel: string;
+    detailSourceFamilyLabel: string;
+    detailSourceCountLabel: string;
+    detailSourceCount: (count: number) => string;
+    detailContinueKicker: string;
+    detailContinueTitle: string;
+    detailContinueBody: string;
+    detailSameCompanyPlaceholder: string;
+    detailRecentPlaceholder: string;
     detailLoading: string;
     aiFailurePointTitle: string;
     aiFailurePointUnavailable: string;

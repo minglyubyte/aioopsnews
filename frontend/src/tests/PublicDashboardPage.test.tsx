@@ -191,7 +191,7 @@ describe("PublicDashboardPage", () => {
     window.history.pushState({}, "", "/");
   });
 
-  it("renders dual-track sections, evidence metadata, filters, and detail evidence block", async () => {
+  it("renders dual-track sections, evidence metadata, filters, and case file links without loading inline detail", async () => {
     const verifiedIncident = buildArchiveIncident({
       id: "incident-verified",
       headline: "DMV collision report documents autonomous vehicle crash",
@@ -226,23 +226,6 @@ describe("PublicDashboardPage", () => {
 
     mockedFetchIncidentFeed.mockResolvedValue(
       buildFeedResponse([verifiedIncident, watchIncident]),
-    );
-    mockedFetchIncidentDetail.mockResolvedValue(
-      buildIncidentDetail({
-        ...verifiedIncident,
-        sources: [
-          {
-            id: "source-dmv",
-            source_url: "https://www.dmv.ca.gov/report.pdf",
-            source_type: "official",
-            source_origin: "fixed_verified_source",
-            source_registry_key: "ca_dmv_av_collisions",
-            raw_source_payload: { report_number: "OL 316" },
-            publisher: "California DMV",
-            title: "Autonomous vehicle collision report",
-          },
-        ],
-      }),
     );
 
     render(<PublicDashboardPage />);
@@ -297,6 +280,10 @@ describe("PublicDashboardPage", () => {
     expect(
       screen.getByLabelText("Filter by source family"),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Full context" }),
+    ).not.toBeInTheDocument();
+    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Filter by track"), {
       target: { value: "verified_accident" },
@@ -307,25 +294,7 @@ describe("PublicDashboardPage", () => {
         expect.objectContaining({ publicationTrack: "verified_accident" }),
       );
     });
-
-    expect(
-      screen.getByRole("heading", { name: "What is confirmed" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "What remains uncertain" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Primary source trail" }),
-    ).toBeInTheDocument();
-    const confirmedBlock = screen
-      .getByRole("heading", { name: "What is confirmed" })
-      .closest("div");
-    expect(confirmedBlock).not.toBeNull();
-    expect(
-      within(confirmedBlock as HTMLElement).getByText(
-        "California DMV documents the collision; editorial review still checks AI relevance and severity.",
-      ),
-    ).toBeInTheDocument();
+    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
   });
 
   it("keeps empty track sections visible", async () => {
@@ -360,6 +329,19 @@ describe("PublicDashboardPage", () => {
   });
 
   it("renders an incident detail page from a shareable incident URL", async () => {
+    const boundingClientRectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        bottom: 100,
+        height: 100,
+        left: 0,
+        right: 100,
+        top: 0,
+        width: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
     const incident = buildIncidentDetail({
       id: "incident-routed",
       headline: "Court sanctions brief with fake AI citations",
@@ -368,6 +350,8 @@ describe("PublicDashboardPage", () => {
       company_involved: "Court filing",
       categories: ["Legal Hallucination"],
       severity_score: 4,
+      publication_track: "verified_accident",
+      evidence_tier: "court_or_regulator",
       reality_summary:
         "A court sanctioned a filing after it included fake AI-generated citations.",
       reality_summary_en:
@@ -375,6 +359,8 @@ describe("PublicDashboardPage", () => {
       verification_summary:
         "A court record confirms the sanctions and fake citations.",
       analysis: {
+        incident_summary_en:
+          "A court sanctioned a filing after it included fake AI-generated citations.",
         what_happened_en:
           "The brief included cases the court could not verify.",
         ai_failure_point_en:
@@ -392,6 +378,14 @@ describe("PublicDashboardPage", () => {
           publisher: "Court order",
           title: "Sanctions order",
         },
+        {
+          id: "source-empty-labels",
+          source_url:
+            "https://www.damiencharlotin.com/documents/2078/Butler_v._Fidelity_USA_30_April_2026.pdf",
+          source_type: "imported",
+          publisher: "",
+          title: "",
+        },
       ],
     });
 
@@ -405,20 +399,62 @@ describe("PublicDashboardPage", () => {
     render(<RouteEntry />);
 
     await waitFor(() => {
-      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith(
-        "incident-routed",
-      );
+      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-routed");
     });
     expect(
       await screen.findByRole("heading", {
+        level: 1,
         name: "Court sanctions brief with fake AI citations",
       }),
     ).toBeInTheDocument();
+    expect(document.title).toBe(
+      "Court sanctions brief with fake AI citations | AI Oops News",
+    );
+    expect(
+      document.querySelector<HTMLMetaElement>('meta[name="description"]')
+        ?.content,
+    ).toBe(
+      "A court sanctioned a filing after it included fake AI-generated citations.",
+    );
+    expect(screen.getByText("Court filing")).toBeInTheDocument();
+    expect(screen.getByText("Severity 4")).toBeInTheDocument();
+    expect(screen.getByText("May 6, 2026")).toBeInTheDocument();
+    expect(screen.getAllByText("Verified accident").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Court or regulator").length).toBeGreaterThan(0);
+    expect(screen.getByText("At a glance")).toBeInTheDocument();
+    expect(screen.getByText("Source count")).toBeInTheDocument();
+    expect(screen.getByText("2 sources")).toBeInTheDocument();
     expect(screen.getByText("What happened")).toBeInTheDocument();
     expect(screen.getByText("Primary source trail")).toBeInTheDocument();
+    expect(screen.getByText("Court source")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Sanctions order" }),
     ).toHaveAttribute("href", "https://example.com/court-order.pdf");
+    expect(screen.getByText("damiencharlotin.com")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: "damiencharlotin.com/documents/2078/Butler_v._Fidelity_USA_30_April_2026.pdf",
+      }),
+    ).toHaveAttribute(
+      "href",
+      "https://www.damiencharlotin.com/documents/2078/Butler_v._Fidelity_USA_30_April_2026.pdf",
+    );
+    expect(
+      screen
+        .getByRole("link", {
+          name: "damiencharlotin.com/documents/2078/Butler_v._Fidelity_USA_30_April_2026.pdf",
+        })
+        .closest(".public-source-list"),
+    ).toHaveAttribute("data-inview", "true");
+    expect(
+      screen
+        .getAllByRole("link", { name: "Back to feed" })
+        .every((link) => link.getAttribute("href") === "/"),
+    ).toBe(true);
+    expect(screen.getByText("Continue reading")).toBeInTheDocument();
+    expect(screen.getAllByText("Legal Hallucination").length).toBeGreaterThan(
+      0,
+    );
     expect(
       document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
     ).toBe(buildIncidentUrl(incident, window.location.origin));
@@ -433,6 +469,120 @@ describe("PublicDashboardPage", () => {
       headline: "Court sanctions brief with fake AI citations",
       datePublished: "2026-05-06",
       dateModified: "2026-05-06",
+      mainEntityOfPage: buildIncidentUrl(incident, window.location.origin),
+    });
+    boundingClientRectSpy.mockRestore();
+  });
+
+  it("inherits the Chinese reader preference on the incident detail page", async () => {
+    window.localStorage.setItem("ai-reality-check-locale", "zh");
+    const incident = buildIncidentDetail({
+      id: "incident-routed-zh",
+      headline: "Court sanctions brief with fake AI citations",
+      headline_en: "Court sanctions brief with fake AI citations",
+      headline_zh: "法院因虚假 AI 引文制裁法律文件",
+      date_logged: "2026-05-06",
+      company_involved: "Court filing",
+      company_involved_zh: "法院文件",
+      categories: ["Legal Hallucination"],
+      severity_score: 4,
+      publication_track: "verified_accident",
+      evidence_tier: "court_or_regulator",
+      source_family: "legal_hallucination",
+      reality_summary:
+        "A court sanctioned a filing after it included fake AI-generated citations.",
+      reality_summary_en:
+        "A court sanctioned a filing after it included fake AI-generated citations.",
+      reality_summary_zh: "法院因文件包含 AI 生成的虚假引文而作出处罚。",
+      analysis: {
+        incident_summary_en:
+          "A court sanctioned a filing after it included fake AI-generated citations.",
+        incident_summary_zh: "法院因文件包含 AI 生成的虚假引文而作出处罚。",
+        what_happened_en:
+          "The brief included cases the court could not verify.",
+        what_happened_zh: "该法律文件包含法院无法核实的案例。",
+        ai_failure_point_en:
+          "The AI-assisted workflow produced fake legal citations.",
+        ai_failure_point_zh: "AI 辅助流程生成了虚假的法律引文。",
+        why_it_matters_en:
+          "The incident shows why legal AI output needs source verification.",
+        why_it_matters_zh: "这起事件说明法律 AI 输出必须经过来源核验。",
+        evidence_summary_en:
+          "The court order documents the sanctions and citation failures.",
+        evidence_summary_zh: "法院命令记录了处罚和引文失败。",
+      },
+      sources: [
+        {
+          id: "source-court-zh",
+          source_url: "https://example.com/court-order.pdf",
+          source_type: "court",
+          publisher: "Court order",
+          title: "Sanctions order",
+        },
+      ],
+    });
+
+    mockedFetchIncidentDetail.mockResolvedValue(incident);
+    window.history.pushState(
+      {},
+      "",
+      "/incidents/incident-routed-zh/court-sanctions-brief-with-fake-ai-citations",
+    );
+
+    render(<RouteEntry />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "法院因虚假 AI 引文制裁法律文件",
+      }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.title).toBe(
+        "法院因虚假 AI 引文制裁法律文件 | AI Oops News",
+      );
+      expect(
+        document.querySelector<HTMLMetaElement>('meta[name="description"]')
+          ?.content,
+      ).toBe("法院因文件包含 AI 生成的虚假引文而作出处罚。");
+    });
+    expect(screen.getByText("案件档案")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "中文" })).toHaveClass(
+      "is-active",
+    );
+    expect(screen.getByRole("button", { name: "浅色" })).toHaveClass(
+      "is-active",
+    );
+    expect(screen.getByText("一眼看清")).toBeInTheDocument();
+    expect(screen.getByText("法院文件")).toBeInTheDocument();
+    expect(screen.getByText("严重级别 4")).toBeInTheDocument();
+    expect(screen.getAllByText("已验证事故").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("法院或监管记录").length).toBeGreaterThan(0);
+    expect(screen.getByText("来源数量")).toBeInTheDocument();
+    expect(screen.getByText("1 个来源")).toBeInTheDocument();
+    expect(screen.getByText("发生了什么")).toBeInTheDocument();
+    expect(
+      screen.getByText("该法律文件包含法院无法核实的案例。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("主要来源链")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link", { name: "返回事件流" })
+        .every((link) => link.getAttribute("href") === "/"),
+    ).toBe(true);
+    expect(screen.getByText("继续阅读")).toBeInTheDocument();
+
+    expect(
+      document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
+    ).toBe(buildIncidentUrl(incident, window.location.origin));
+    const structuredData = JSON.parse(
+      document.querySelector<HTMLScriptElement>(
+        'script[type="application/ld+json"]',
+      )?.textContent ?? "{}",
+    ) as Record<string, unknown>;
+    expect(structuredData).toMatchObject({
+      headline: "法院因虚假 AI 引文制裁法律文件",
+      description: "法院因文件包含 AI 生成的虚假引文而作出处罚。",
       mainEntityOfPage: buildIncidentUrl(incident, window.location.origin),
     });
   });
@@ -630,17 +780,8 @@ describe("PublicDashboardPage", () => {
         },
       }),
     );
-    mockedFetchIncidentDetail.mockImplementation(async (incidentId: string) => {
-      if (incidentId === "incident-1") {
-        return latestIncidentDetail;
-      }
-
-      if (incidentId === "incident-2") {
-        return archiveIncidentDetail;
-      }
-
-      throw new Error(`Unexpected incident detail request for ${incidentId}`);
-    });
+    expect(latestIncidentDetail.sources).toHaveLength(1);
+    expect(archiveIncidentDetail.sources).toHaveLength(1);
 
     render(<PublicDashboardPage />);
 
@@ -737,49 +878,15 @@ describe("PublicDashboardPage", () => {
     expect(within(archive).getByText("AssistCo")).toBeInTheDocument();
     expect(latestIncident.company_involved_zh).toBe("助理公司");
 
-    await waitFor(() => {
-      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-1");
-    });
-
-    const detail = screen
-      .getByRole("heading", { name: "Full context" })
-      .closest("section");
-    expect(detail).not.toBeNull();
     expect(
-      within(detail as HTMLElement).getByRole("heading", {
-        name: "AssistCo assistant exposes private billing notes",
+      within(archive).getByRole("link", {
+        name: /Open full context for AssistCo assistant exposes private billing notes/i,
       }),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText("What happened"),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText(
-        "A support automation release exposed private billing notes in customer replies.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText("AI failure point"),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText(
-        "The reply composer mixed internal billing annotations into customer-facing output.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText("Why it matters"),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText("Evidence summary"),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText("Claim vs. reality"),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByRole("link", {
-        name: "AssistCo assistant exposes private billing notes",
-      }),
-    ).toHaveAttribute("href", "https://example.com/assistco");
+    ).toHaveAttribute(
+      "href",
+      "/incidents/incident-1/assistco-assistant-exposes-private-billing-notes",
+    );
+    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "中文" }));
 
@@ -798,11 +905,6 @@ describe("PublicDashboardPage", () => {
       within(spotlight as HTMLElement).getByText(
         "助理公司 (5)、机器人舰队 (3)",
       ),
-    ).toBeInTheDocument();
-    expect(
-      await within(detail as HTMLElement).findByRole("heading", {
-        name: "AssistCo 助手泄露了私密账单备注",
-      }),
     ).toBeInTheDocument();
     expect(within(archive).getByText("隐私 / 安全")).toBeInTheDocument();
     expect(within(archive).getByText("自主系统")).toBeInTheDocument();
@@ -825,64 +927,23 @@ describe("PublicDashboardPage", () => {
       screen.getByText("我们想提醒你，AI 并不完美，所以放轻松，不要恐慌。"),
     ).toBeInTheDocument();
 
-    expect(
-      within(detail as HTMLElement).getByRole("heading", {
-        name: "AssistCo 助手泄露了私密账单备注",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText("声明 vs. 现实"),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText(
-        "Our assistant never exposes internal account notes.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText(
-        "一次支持自动化发布在客户回复中暴露了私密账单备注。",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText("AI 失效点"),
-    ).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByText(
-        "回复生成器将内部账单注释混入了面向客户的输出。",
-      ),
-    ).toBeInTheDocument();
     expect(within(archive).getByText("助理公司")).toBeInTheDocument();
     expect(
-      within(detail as HTMLElement).getByText("助理公司"),
-    ).toBeInTheDocument();
-
-    fireEvent.click(
       within(archive).getByRole("link", {
-        name: /打开 RoboFleet 机器人试点因导航失误而回滚 的完整背景/i,
+        name: /打开 AssistCo 助手泄露了私密账单备注 的完整背景/i,
       }),
+    ).toHaveAttribute(
+      "href",
+      "/incidents/incident-1/assistco-assistant-exposes-private-billing-notes",
     );
-
-    await waitFor(() => {
-      expect(mockedFetchIncidentDetail).toHaveBeenLastCalledWith("incident-2");
-    });
-    await waitFor(() => {
-      expect(
-        within(detail as HTMLElement).getByRole("heading", {
-          name: "RoboFleet 机器人试点因导航失误而回滚",
-        }),
-      ).toBeInTheDocument();
-    });
     expect(within(archive).getByText("RoboFleet")).toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getAllByText("RoboFleet"),
-    ).toHaveLength(2);
+    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
   });
 
   it("uses Chinese company labels for filter options while keeping canonical company values", async () => {
     mockedFetchIncidentFeed.mockResolvedValue(
       buildFeedResponse([buildArchiveIncident()]),
     );
-    mockedFetchIncidentDetail.mockResolvedValue(buildIncidentDetail());
 
     render(<PublicDashboardPage />);
 
@@ -926,11 +987,8 @@ describe("PublicDashboardPage", () => {
       screen.getByText("No incidents match this slice yet."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Select an incident from the archive to inspect the full context and sources.",
-      ),
-    ).toBeInTheDocument();
-    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
+      screen.queryByRole("heading", { name: "Full context" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a public feed failure without exposing editor controls", async () => {
@@ -950,12 +1008,12 @@ describe("PublicDashboardPage", () => {
     expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
   });
 
-  it("falls back to English analysis text when Chinese fields are empty strings", async () => {
+  it("falls back to English detail analysis text when localized fields are empty strings", async () => {
     const incident = buildArchiveIncident({
+      id: "incident-waymo",
       headline_zh: "Waymo 事故",
       archive_summary_zh: "一份官方事故报告。",
     });
-    mockedFetchIncidentFeed.mockResolvedValue(buildFeedResponse([incident]));
     mockedFetchIncidentDetail.mockResolvedValue(
       buildIncidentDetail({
         ...incident,
@@ -969,11 +1027,13 @@ describe("PublicDashboardPage", () => {
         },
       }),
     );
+    window.history.pushState(
+      {},
+      "",
+      "/incidents/incident-waymo/waymo-incident",
+    );
 
-    render(<PublicDashboardPage />);
-
-    await screen.findByRole("heading", { name: "Quick takeaway" });
-    fireEvent.click(screen.getByRole("button", { name: "中文" }));
+    render(<RouteEntry />);
 
     expect(
       await screen.findByText("English incident context remains available."),
@@ -986,7 +1046,7 @@ describe("PublicDashboardPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows a localized detail failure and lets readers retry the same incident", async () => {
+  it("shows a detail-route failure without loading the feed", async () => {
     const incident = buildArchiveIncident({
       id: "incident-3",
       headline: "Warehouse classifier reroutes medical inventory",
@@ -1000,61 +1060,23 @@ describe("PublicDashboardPage", () => {
       archive_summary_en:
         "A warehouse classifier repeatedly misrouted urgent medical stock.",
     });
+    expect(incident.archive_summary).toContain("warehouse classifier");
+    mockedFetchIncidentDetail.mockRejectedValue(new Error("detail failed"));
+    window.history.pushState(
+      {},
+      "",
+      "/incidents/incident-3/warehouse-classifier-reroutes-medical-inventory",
+    );
 
-    const incidentDetail = buildIncidentDetail({
-      ...incident,
-      reality_summary:
-        "A warehouse classifier repeatedly misrouted urgent medical stock.",
-      reality_summary_en:
-        "A warehouse classifier repeatedly misrouted urgent medical stock.",
-      analysis: {
-        what_happened_en:
-          "A warehouse classifier repeatedly misrouted urgent medical stock.",
-        why_it_matters_en:
-          "Critical supplies were delayed because the model kept sending them to the wrong handling lane.",
-        evidence_summary_en:
-          "Operations logs and staff review confirmed repeated misrouting during the rollout.",
-      },
-    });
-
-    mockedFetchIncidentFeed.mockResolvedValue(buildFeedResponse([incident]));
-    mockedFetchIncidentDetail
-      .mockRejectedValueOnce(new Error("detail failed"))
-      .mockResolvedValueOnce(incidentDetail);
-
-    render(<PublicDashboardPage />);
-
-    await waitFor(() => {
-      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-3");
-    });
+    render(<RouteEntry />);
 
     expect(
       await screen.findByText("Unable to load incident details right now."),
     ).toBeInTheDocument();
-
-    fireEvent.click(
-      within(
-        screen.getByRole("region", { name: "Browse incidents" }),
-      ).getByRole("link", {
-        name: /Open full context for Warehouse classifier reroutes medical inventory/i,
-      }),
-    );
-
     await waitFor(() => {
-      expect(mockedFetchIncidentDetail).toHaveBeenCalledTimes(2);
+      expect(mockedFetchIncidentDetail).toHaveBeenCalledWith("incident-3");
     });
-    const detail = screen
-      .getByRole("heading", { name: "Full context" })
-      .closest("section");
-    expect(detail).not.toBeNull();
-    expect(
-      screen.queryByText("Unable to load incident details right now."),
-    ).not.toBeInTheDocument();
-    expect(
-      within(detail as HTMLElement).getByRole("heading", {
-        name: "Warehouse classifier reroutes medical inventory",
-      }),
-    ).toBeInTheDocument();
+    expect(mockedFetchIncidentFeed).not.toHaveBeenCalled();
   });
 
   it("renders the forensic detail structure for legacy incidents without structured ai failure data", async () => {
@@ -1072,9 +1094,6 @@ describe("PublicDashboardPage", () => {
       date_logged: "2023-11-29",
     });
 
-    mockedFetchIncidentFeed.mockResolvedValue(
-      buildFeedResponse([legacyIncident]),
-    );
     mockedFetchIncidentDetail.mockResolvedValue(
       buildIncidentDetail({
         ...legacyIncident,
@@ -1096,31 +1115,27 @@ describe("PublicDashboardPage", () => {
         },
       }),
     );
-
-    render(<PublicDashboardPage />);
-
-    fireEvent.click(
-      await screen.findByRole("link", {
-        name: /Open full context for Mercedes Benz: An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles./i,
-      }),
+    window.history.pushState(
+      {},
+      "",
+      "/incidents/incident-legacy/mercedes-benz-autonomous-testing-vehicle-collision",
     );
 
-    const detail = await screen.findByRole("heading", { name: "Full context" });
-    const detailSection = detail.closest("section");
-    expect(detailSection).not.toBeNull();
+    render(<RouteEntry />);
+
     expect(
-      within(detailSection as HTMLElement).getByText("AI failure point"),
+      await screen.findByRole("heading", {
+        level: 1,
+        name: /Mercedes Benz: An autonomous testing vehicle/,
+      }),
     ).toBeInTheDocument();
+    expect(screen.getByText("AI failure point")).toBeInTheDocument();
     expect(
-      within(detailSection as HTMLElement).getByText(
-        "Not yet structured for this incident.",
-      ),
+      screen.getByText("Not yet structured for this incident."),
     ).toBeInTheDocument();
+    expect(screen.queryByText("What happened")).not.toBeInTheDocument();
     expect(
-      within(detailSection as HTMLElement).queryByText("What happened"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(detailSection as HTMLElement).getAllByText(
+      screen.getAllByText(
         "An autonomous testing vehicle was involved in a collision requiring formal documentation submission to the California Department of Motor Vehicles.",
       ),
     ).toHaveLength(1);
@@ -1140,7 +1155,6 @@ describe("PublicDashboardPage", () => {
         "California DMV published an autonomous vehicle collision report.",
     });
 
-    mockedFetchIncidentFeed.mockResolvedValue(buildFeedResponse([thinIncident]));
     mockedFetchIncidentDetail.mockResolvedValue(
       buildIncidentDetail({
         ...thinIncident,
@@ -1169,26 +1183,26 @@ describe("PublicDashboardPage", () => {
         ],
       }),
     );
+    window.history.pushState(
+      {},
+      "",
+      "/incidents/incident-thin-av/california-dmv-published-waymo-collision-report",
+    );
 
-    render(<PublicDashboardPage />);
+    render(<RouteEntry />);
 
     expect(
       await screen.findByText("Official report, detail pending"),
     ).toBeInTheDocument();
-    const detail = screen.getByRole("heading", { name: "Full context" });
-    const detailSection = detail.closest("section");
-    expect(detailSection).not.toBeNull();
+    expect(screen.queryByText("AI failure point")).not.toBeInTheDocument();
     expect(
-      within(detailSection as HTMLElement).queryByText("AI failure point"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(detailSection as HTMLElement).getByRole("link", {
+      screen.getByRole("link", {
         name: "Waymo collision report",
       }),
     ).toBeInTheDocument();
   });
 
-  it("paginates archive results and keeps the selected detail visible across page changes", async () => {
+  it("paginates archive results without loading incident details", async () => {
     const firstPageIncident = buildArchiveIncident({
       id: "incident-page-1",
       headline: "First page incident",
@@ -1218,14 +1232,6 @@ describe("PublicDashboardPage", () => {
           has_previous_page: true,
         }),
       );
-    mockedFetchIncidentDetail.mockResolvedValue(
-      buildIncidentDetail({
-        ...firstPageIncident,
-        analysis: {
-          what_happened_en: "First page incident detail",
-        },
-      }),
-    );
 
     render(<PublicDashboardPage />);
 
@@ -1243,15 +1249,15 @@ describe("PublicDashboardPage", () => {
       pageSize: 6,
     });
     expect(
-      screen.getByRole("heading", { name: "First page incident" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("heading", { name: "First page incident" }),
+    ).not.toBeInTheDocument();
+    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
   });
 
   it("renders a public theme switch, defaults to light, and persists dark mode after toggle", async () => {
     mockedFetchIncidentFeed.mockResolvedValue(
       buildFeedResponse([buildArchiveIncident()]),
     );
-    mockedFetchIncidentDetail.mockResolvedValue(buildIncidentDetail());
 
     render(<PublicDashboardPage />);
 

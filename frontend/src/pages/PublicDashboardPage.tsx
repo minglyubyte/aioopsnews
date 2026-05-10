@@ -1,18 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useCountUp } from "../lib/useCountUp";
 import { useInView } from "../lib/useInView";
 
-import {
-  fetchIncidentDetail,
-  fetchIncidentFeed,
-  fetchIncidentFilters,
-} from "../lib/api";
+import { fetchIncidentFeed, fetchIncidentFilters } from "../lib/api";
 import { buildIncidentPath } from "../lib/publicIncidentRoutes";
 import { localizePublicCategory } from "../lib/publicDashboardLocalization";
+import {
+  READER_LOCALE_STORAGE_KEY,
+  READER_THEME_STORAGE_KEY,
+  readStoredReaderLocale,
+  readStoredReaderTheme,
+} from "../lib/publicReaderPreferences";
 import type {
-  IncidentAnalysis,
   IncidentArchiveItem,
-  IncidentDetail,
   IncidentFeedFilters,
   IncidentFeedResponse,
   IncidentFilters,
@@ -21,8 +21,6 @@ import type {
 } from "../types/incident";
 import "./public-dashboard.css";
 
-const READER_LOCALE_STORAGE_KEY = "ai-reality-check-locale";
-const READER_THEME_STORAGE_KEY = "ai-reality-check-theme";
 const SIGNAL_COLORS = [
   "#8a3b26",
   "#274b63",
@@ -67,19 +65,9 @@ export default function PublicDashboardPage() {
   const [feed, setFeed] = useState<IncidentFeedResponse>(() =>
     buildEmptyIncidentFeed(),
   );
-  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
-    null,
-  );
-  const [detailRequestNonce, setDetailRequestNonce] = useState(0);
-  const [incidentDetail, setIncidentDetail] = useState<IncidentDetail | null>(
-    null,
-  );
   const [isFiltersLoading, setIsFiltersLoading] = useState(true);
   const [isFeedLoading, setIsFeedLoading] = useState(true);
-  const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [feedError, setFeedError] = useState<string | null>(null);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const lastSliceFilterKeyRef = useRef(buildSliceFilterKey(readerFilters));
 
   // ── InView refs for entrance animations ──────────────────────────
   const [heroRef, heroInView] = useInView<HTMLElement>();
@@ -90,8 +78,6 @@ export default function PublicDashboardPage() {
   const [archiveListRef, archiveListInView] = useInView<HTMLDivElement>();
   const [spotlightRef, spotlightInView] = useInView<HTMLElement>();
   const [insightsRef, insightsInView] = useInView<HTMLElement>();
-  const [detailRef, detailInView] = useInView<HTMLElement>();
-  const [sourceListRef, sourceListInView] = useInView<HTMLDivElement>();
 
   const incidents = feed.items;
   const verifiedIncidents = incidents.filter(
@@ -100,8 +86,6 @@ export default function PublicDashboardPage() {
   const watchIncidents = incidents.filter(
     (incident) => incident.publication_track !== "verified_accident",
   );
-  const selectedIncident =
-    incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
   const sliceSummary = feed.slice_summary;
   const availableMonths = readerFilters.year
     ? (filters?.months_by_year[String(readerFilters.year)] ?? [])
@@ -158,9 +142,6 @@ export default function PublicDashboardPage() {
 
   useEffect(() => {
     let isCancelled = false;
-    const nextSliceFilterKey = buildSliceFilterKey(readerFilters);
-    const sliceFiltersChanged =
-      lastSliceFilterKeyRef.current !== nextSliceFilterKey;
 
     async function loadFeed() {
       setIsFeedLoading(true);
@@ -176,28 +157,9 @@ export default function PublicDashboardPage() {
         }
 
         setFeed(response);
-        setSelectedIncidentId((currentSelectedIncidentId) => {
-          const incidentIsVisible = currentSelectedIncidentId
-            ? response.items.some(
-                (incident) => incident.id === currentSelectedIncidentId,
-              )
-            : false;
-
-          if (currentSelectedIncidentId && incidentIsVisible) {
-            return currentSelectedIncidentId;
-          }
-
-          if (currentSelectedIncidentId && !sliceFiltersChanged) {
-            return currentSelectedIncidentId;
-          }
-
-          return response.items[0]?.id ?? null;
-        });
-        lastSliceFilterKeyRef.current = nextSliceFilterKey;
       } catch {
         if (!isCancelled) {
           setFeed(buildEmptyIncidentFeed());
-          setSelectedIncidentId(null);
           setFeedError("Unable to load the incident feed right now.");
         }
       } finally {
@@ -214,45 +176,6 @@ export default function PublicDashboardPage() {
     };
   }, [readerFilters]);
 
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function loadDetail() {
-      if (!selectedIncidentId) {
-        setIncidentDetail(null);
-        setDetailError(null);
-        setIsDetailLoading(false);
-        return;
-      }
-
-      setIsDetailLoading(true);
-      setDetailError(null);
-
-      try {
-        const detail = await fetchIncidentDetail(selectedIncidentId);
-
-        if (!isCancelled) {
-          setIncidentDetail(detail);
-        }
-      } catch {
-        if (!isCancelled) {
-          setIncidentDetail(null);
-          setDetailError("Unable to load incident details right now.");
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsDetailLoading(false);
-        }
-      }
-    }
-
-    void loadDetail();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [detailRequestNonce, selectedIncidentId]);
-
   function updateFilter<K extends keyof IncidentFeedFilters>(
     key: K,
     value: IncidentFeedFilters[K],
@@ -265,11 +188,9 @@ export default function PublicDashboardPage() {
   }
 
   function renderArchiveCard(incident: IncidentArchiveItem, cardIdx: number) {
-    const isSelected = incident.id === selectedIncident?.id;
-
     return (
       <article
-        className={`public-archive-card${isSelected ? " is-selected" : ""}`}
+        className="public-archive-card"
         key={incident.id}
         style={{ "--card-index": cardIdx } as React.CSSProperties}
       >
@@ -304,10 +225,8 @@ export default function PublicDashboardPage() {
           ))}
         </div>
         <a
-          aria-pressed={isSelected}
           className="secondary-action public-detail-button"
           href={buildIncidentPath(incident)}
-          onClick={(event) => handleIncidentLinkClick(event, incident)}
         >
           {copy.detailActionLabel(localizedHeadline(incident, readerLocale))}
         </a>
@@ -334,37 +253,6 @@ export default function PublicDashboardPage() {
         page: 1,
       };
     });
-  }
-
-  function showIncidentDetail(incidentId: string) {
-    setSelectedIncidentId((currentSelectedIncidentId) => {
-      if (currentSelectedIncidentId === incidentId) {
-        setDetailRequestNonce((currentNonce) => currentNonce + 1);
-        return currentSelectedIncidentId;
-      }
-
-      return incidentId;
-    });
-  }
-
-  function handleIncidentLinkClick(
-    event: React.MouseEvent<HTMLAnchorElement>,
-    incident: IncidentArchiveItem,
-  ) {
-    if (
-      event.defaultPrevented ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey ||
-      event.button !== 0
-    ) {
-      return;
-    }
-
-    event.preventDefault();
-    window.history.pushState({}, "", buildIncidentPath(incident));
-    showIncidentDetail(incident.id);
   }
 
   return (
@@ -896,215 +784,6 @@ export default function PublicDashboardPage() {
             </section>
           </aside>
         </section>
-
-        <section
-          className="public-panel public-detail-section"
-          aria-live="polite"
-          data-inview={detailInView ? "true" : "false"}
-          ref={detailRef}
-        >
-          <div className="section-header">
-            <p className="public-kicker">{copy.detailKicker}</p>
-            <h2>{copy.detailTitle}</h2>
-          </div>
-          {isDetailLoading ? (
-            <div aria-busy="true" style={{ display: "grid", gap: "1rem" }}>
-              <div className="public-skeleton public-skeleton-block is-medium" />
-              <div className="public-skeleton public-skeleton-block is-tall" />
-              <div className="public-skeleton public-skeleton-block" />
-              <div className="public-skeleton public-skeleton-block is-medium" />
-            </div>
-          ) : null}
-          {detailError ? <p>{copy.detailError}</p> : null}
-          {!isDetailLoading && !detailError && incidentDetail ? (
-            <div className="public-detail-grid">
-              <article className="public-incident-card public-detail-card">
-                <div className="incident-meta">
-                  <span>
-                    {localizedCompanyName(incidentDetail, readerLocale)}
-                  </span>
-                  <span>
-                    {severityLabel(incidentDetail.severity_score, readerLocale)}
-                  </span>
-                  <span>
-                    {formatDate(incidentDetail.date_logged, readerLocale)}
-                  </span>
-                </div>
-                <h3>{localizedHeadline(incidentDetail, readerLocale)}</h3>
-                <p className="body-copy">
-                  {localizedDetailSummary(incidentDetail, readerLocale)}
-                </p>
-                <div className="tag-row">
-                  {incidentDetail.categories.map((category) => (
-                    <span className="tag" key={category}>
-                      {localizePublicCategory(category, readerLocale)}
-                    </span>
-                  ))}
-                </div>
-                <section className="public-evidence-block">
-                  <div>
-                    <h3>{copy.whatIsConfirmedTitle}</h3>
-                    <p className="body-copy">
-                      {localizedVerificationSummary(
-                        incidentDetail,
-                        readerLocale,
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <h3>{copy.whatRemainsUncertainTitle}</h3>
-                    <p className="body-copy">
-                      {uncertaintySummary(incidentDetail, readerLocale)}
-                    </p>
-                  </div>
-                </section>
-                <div className="public-detail-analysis">
-                  {hasInsufficientDetail(incidentDetail) ? (
-                    <section className="public-detail-block">
-                      <p className="public-claim-kicker">
-                        {copy.officialDetailPendingTitle}
-                      </p>
-                      <p className="body-copy">
-                        {incidentDetail.analysis.source_fact_summary ??
-                          copy.officialDetailPendingBody}
-                      </p>
-                    </section>
-                  ) : null}
-                  {!hasInsufficientDetail(incidentDetail) &&
-                  localizedAnalysisText(
-                    incidentDetail.analysis,
-                    "what_happened",
-                    readerLocale,
-                  ) ? (
-                    <section className="public-detail-block">
-                      <p className="public-claim-kicker">
-                        {copy.whatHappenedTitle}
-                      </p>
-                      <p className="body-copy">
-                        {localizedAnalysisText(
-                          incidentDetail.analysis,
-                          "what_happened",
-                          readerLocale,
-                        )}
-                      </p>
-                    </section>
-                  ) : null}
-                  {!hasInsufficientDetail(incidentDetail) ? (
-                    <section className="public-detail-block">
-                      <p className="public-claim-kicker">
-                        {copy.aiFailurePointTitle}
-                      </p>
-                      <p className="body-copy">
-                        {localizedAnalysisText(
-                          incidentDetail.analysis,
-                          "ai_failure_point",
-                          readerLocale,
-                        ) ?? copy.aiFailurePointUnavailable}
-                      </p>
-                    </section>
-                  ) : null}
-                  {!hasInsufficientDetail(incidentDetail) &&
-                  localizedAnalysisText(
-                    incidentDetail.analysis,
-                    "why_it_matters",
-                    readerLocale,
-                  ) ? (
-                    <section className="public-detail-block">
-                      <p className="public-claim-kicker">
-                        {copy.whyItMattersTitle}
-                      </p>
-                      <p className="body-copy">
-                        {localizedAnalysisText(
-                          incidentDetail.analysis,
-                          "why_it_matters",
-                          readerLocale,
-                        )}
-                      </p>
-                    </section>
-                  ) : null}
-                  {localizedAnalysisText(
-                    incidentDetail.analysis,
-                    "evidence_summary",
-                    readerLocale,
-                  ) ? (
-                    <section className="public-detail-block">
-                      <p className="public-claim-kicker">
-                        {copy.evidenceSummaryTitle}
-                      </p>
-                      <p className="body-copy">
-                        {localizedAnalysisText(
-                          incidentDetail.analysis,
-                          "evidence_summary",
-                          readerLocale,
-                        )}
-                      </p>
-                    </section>
-                  ) : null}
-                </div>
-                {incidentDetail.matched_claim ? (
-                  <section
-                    className="public-claim-block"
-                    aria-label={copy.claimVsReality}
-                  >
-                    <p className="public-claim-kicker">{copy.claimVsReality}</p>
-                    <p className="public-claim-quote">
-                      {incidentDetail.matched_claim.original_claim}
-                    </p>
-                    <div className="incident-meta">
-                      <span>{incidentDetail.matched_claim.claimant_name}</span>
-                      <span>{incidentDetail.matched_claim.claim_date}</span>
-                      <span>
-                        {copy.confidenceLabel}{" "}
-                        {Math.round(
-                          incidentDetail.matched_claim.match_confidence * 100,
-                        )}
-                        %
-                      </span>
-                    </div>
-                  </section>
-                ) : null}
-              </article>
-
-              <aside
-                className="public-panel public-source-panel"
-                data-inview={sourceListInView ? "true" : "false"}
-                ref={sourceListRef}
-              >
-                <p className="public-kicker">{copy.reportingTrailKicker}</p>
-                <h3>{copy.primarySourceTrailTitle}</h3>
-                <div
-                  className="public-source-list"
-                  data-inview={sourceListInView ? "true" : "false"}
-                  ref={sourceListRef}
-                >
-                  {incidentDetail.sources.length === 0 ? (
-                    <p className="body-copy">{copy.noSources}</p>
-                  ) : (
-                    incidentDetail.sources.map((source, srcIdx) => (
-                      <article
-                        className="public-source-item"
-                        key={source.id}
-                        style={
-                          { "--source-index": srcIdx } as React.CSSProperties
-                        }
-                      >
-                        <p className="public-source-publisher">
-                          {source.publisher ?? source.source_type}
-                        </p>
-                        <a href={source.source_url}>
-                          {source.title ?? source.source_url}
-                        </a>
-                      </article>
-                    ))
-                  )}
-                </div>
-              </aside>
-            </div>
-          ) : null}
-          {!isDetailLoading && !detailError && !incidentDetail ? (
-            <p className="body-copy">{copy.selectIncident}</p>
-          ) : null}
-        </section>
       </div>
     </main>
   );
@@ -1196,76 +875,6 @@ function localizedArchiveSummary(
   return archiveSummaryEn ?? archiveSummary;
 }
 
-function localizedDetailSummary(
-  incident: IncidentDetail,
-  locale: ReaderLocale,
-) {
-  if (hasInsufficientDetail(incident)) {
-    return incident.reality_summary_en ?? incident.reality_summary;
-  }
-
-  const incidentSummary = localizedAnalysisText(
-    incident.analysis,
-    "incident_summary",
-    locale,
-  );
-  if (incidentSummary) {
-    return incidentSummary;
-  }
-
-  if (locale === "zh") {
-    return (
-      incident.reality_summary_zh ??
-      incident.reality_summary_en ??
-      incident.reality_summary
-    );
-  }
-
-  return incident.reality_summary_en ?? incident.reality_summary;
-}
-
-function hasInsufficientDetail(incident: IncidentDetail) {
-  return (
-    incident.source_family === "autonomous_vehicle" &&
-    incident.analysis.detail_quality === "insufficient"
-  );
-}
-
-function localizedAnalysisText(
-  analysis: IncidentAnalysis,
-  key:
-    | "incident_summary"
-    | "what_happened"
-    | "ai_failure_point"
-    | "why_it_matters"
-    | "evidence_summary",
-  locale: ReaderLocale,
-) {
-  const englishKey = `${key}_en` as keyof IncidentAnalysis;
-  const chineseKey = `${key}_zh` as keyof IncidentAnalysis;
-  const baseKey = key as keyof IncidentAnalysis;
-
-  if (locale === "zh") {
-    return firstNonBlankText(
-      analysis[chineseKey],
-      analysis[baseKey],
-      analysis[englishKey],
-    );
-  }
-
-  return firstNonBlankText(analysis[englishKey], analysis[baseKey]);
-}
-
-function firstNonBlankText(...values: unknown[]) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-  }
-
-  return null;
-}
-
 const TRACK_LABELS_ZH: Record<string, string> = {
   accident_watch: "事故观察",
   verified_accident: "已验证事故",
@@ -1337,28 +946,6 @@ function localizedVerificationSummary(
   return (
     "这是一条自动发现的观察信号；需要官方、法院、监管、公司或固定高可信来源" +
     "确认后，才会进入已验证事故档案。"
-  );
-}
-
-function uncertaintySummary(incident: IncidentDetail, locale: ReaderLocale) {
-  if (incident.publication_track === "verified_accident") {
-    if (locale === "zh") {
-      return "编辑审核仍会检查 AI 相关性、重复风险和严重程度。";
-    }
-
-    return "Editorial review still checks AI relevance, duplicate risk, and severity.";
-  }
-
-  if (locale === "zh") {
-    return (
-      "这仍是一条观察信号；需要官方、法院、监管、公司或固定高可信来源" +
-      "确认后，才会进入已验证事故档案。"
-    );
-  }
-
-  return (
-    "This remains a watch item until an official, court, regulator, company, " +
-    "or fixed verified source confirms the incident."
   );
 }
 
@@ -1643,21 +1230,4 @@ function normalizeIncidentFeed(
       top_companies: [],
     },
   };
-}
-
-function buildSliceFilterKey(filters: IncidentFeedFilters) {
-  const sliceFilters = { ...filters };
-  delete sliceFilters.page;
-  delete sliceFilters.pageSize;
-  return JSON.stringify(sliceFilters);
-}
-
-function readStoredReaderLocale(): ReaderLocale {
-  const storedLocale = window.localStorage.getItem(READER_LOCALE_STORAGE_KEY);
-  return storedLocale === "zh" ? "zh" : "en";
-}
-
-function readStoredReaderTheme(): ReaderTheme {
-  const storedTheme = window.localStorage.getItem(READER_THEME_STORAGE_KEY);
-  return storedTheme === "dark" ? "dark" : "light";
 }
