@@ -516,8 +516,11 @@ async def review_pending_incidents(
     adaptive_rps_step: float = 1.0,
     adaptive_max_rps: float = 20.0,
     adaptive_backoff_max_seconds: float = 60.0,
+    source_registry_keys: list[str] | None = None,
 ) -> IncidentReviewRunSummary:
-    incidents = repository.list_incidents_pending_llm_review()
+    incidents = repository.list_incidents_pending_llm_review(
+        source_registry_keys=source_registry_keys
+    )
     if max_reviews is not None:
         incidents = incidents[:max_reviews]
     if not incidents:
@@ -539,7 +542,9 @@ async def review_pending_incidents(
         incidents=incidents,
         source_fetcher=source_fetcher,
     )
-    refreshed_incidents = repository.list_incidents_pending_llm_review()
+    refreshed_incidents = repository.list_incidents_pending_llm_review(
+        source_registry_keys=source_registry_keys
+    )
     refreshed_incident_ids = {str(incident["id"]) for incident in incidents}
     refreshed_incidents = [
         incident
@@ -592,6 +597,15 @@ async def review_pending_incidents(
                     max_attempts=max_attempts,
                     rate_limiter=rate_limiter,
                 )
+            except ReviewResponseParseError as exc:
+                application_result = _apply_unparseable_review_result(
+                    repository,
+                    incident=incident,
+                    error=exc,
+                    review_model=primary_model,
+                    review_batch_id=incident.get("review_batch_id"),
+                )
+                return application_result, False, None
             except Exception as exc:
                 return _failure_result(exc)
 
@@ -1103,6 +1117,69 @@ def _apply_review_decision(
         rejected=0,
         translations_completed=1 if translation.status == "completed" else 0,
         translations_failed=0 if translation.status == "completed" else 1,
+    )
+
+
+def _apply_unparseable_review_result(
+    repository: IncidentRepository,
+    *,
+    incident: dict[str, Any],
+    error: ReviewResponseParseError,
+    review_model: str,
+    review_batch_id: str | None,
+) -> IncidentReviewApplicationResult:
+    reasoning = f"LLM review response could not be parsed: {error}"
+    repository.apply_incident_review_result(
+        incident_id=incident["id"],
+        status="pending_review",
+        legitimacy_score=0.0,
+        legitimacy_label="pending_review",
+        legitimacy_reasoning=reasoning,
+        source_validation_summary=(
+            incident.get("source_validation_summary")
+            or "LLM review response could not be parsed; editor review required."
+        ),
+        headline_en=incident.get("headline_en") or incident["headline"],
+        reality_summary_en=(
+            incident.get("reality_summary_en")
+            or incident.get("reality_summary")
+            or ""
+        ),
+        incident_summary_en=incident.get("incident_summary_en"),
+        what_happened_en=incident.get("what_happened_en"),
+        ai_failure_point_en=incident.get("ai_failure_point_en"),
+        why_it_matters_en=incident.get("why_it_matters_en"),
+        evidence_summary_en=incident.get("evidence_summary_en"),
+        publication_track=incident.get("publication_track"),
+        evidence_tier=incident.get("evidence_tier"),
+        source_family=incident.get("source_family"),
+        verification_summary=incident.get("verification_summary"),
+        categories=list(incident.get("categories", [])),
+        severity_score=incident.get("severity_score", 3),
+        suggested_severity_score=incident.get("suggested_severity_score"),
+        severity_confidence=incident.get("severity_confidence"),
+        severity_reasoning=(
+            incident.get("severity_reasoning")
+            or "LLM review response could not be parsed; editor review required."
+        ),
+        severity_flags=list(incident.get("severity_flags", [])),
+        severity_model=review_model,
+        severity_decision_source=None,
+        severity_suggested_at=_now_isoformat(),
+        review_model=review_model,
+        review_batch_id=review_batch_id,
+        reviewed_at=_now_isoformat(),
+    )
+    incident["status"] = "pending_review"
+    incident["legitimacy_score"] = 0.0
+    incident["legitimacy_label"] = "pending_review"
+    incident["legitimacy_reasoning"] = reasoning
+    return IncidentReviewApplicationResult(
+        approved=0,
+        pending_review=1,
+        rejected=0,
+        translations_completed=0,
+        translations_failed=0,
     )
 
 

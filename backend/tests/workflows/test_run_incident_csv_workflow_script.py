@@ -257,6 +257,108 @@ def test_workflow_script_fails_fast_without_primary_review_credentials(
     assert "PRIMARY_REVIEW_API_KEY or DEEPSEEK_API_KEY" in str(exc_info.value)
 
 
+def test_workflow_script_passes_source_registry_keys_to_workflow(
+    monkeypatch,
+    capsys,
+    tmp_path,
+) -> None:
+    repository = _StubRepository()
+    summary = {
+        "files_found": 0,
+        "files_imported": 0,
+        "files_failed": 0,
+        "incidents_imported": 0,
+        "reviews_attempted": 57,
+        "reviews_completed": 57,
+        "reviews_failed": 0,
+        "review_failures": [],
+        "approved": 40,
+        "pending_review": 17,
+        "rejected": 0,
+        "translations_completed": 40,
+        "translations_failed": 0,
+        "file_results": [],
+    }
+    workflow_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        workflow_script,
+        "get_settings",
+        lambda: Settings(
+            database_url="postgresql://example/db",
+            openai_api_key="test-openai-key",
+            primary_review_api_key="test-primary-key",
+            primary_review_base_url="https://deepseek.example/v1",
+            primary_review_model="deepseek-v4-flash",
+            escalation_review_model="deepseek-v4-pro",
+            deepseek_api_key="test-deepseek-key",
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "build_incident_repository",
+        lambda database_url: repository,
+    )
+    monkeypatch.setattr(
+        workflow_script.argparse.ArgumentParser,
+        "parse_args",
+        lambda self: argparse.Namespace(
+            inbox_dir=tmp_path / "inbox",
+            archive_dir=tmp_path / "archive",
+            dry_run=False,
+            import_only=False,
+            review_only=True,
+            max_reviews=None,
+            review_concurrency=3,
+            source_registry_keys=[
+                "ftc_ai_enforcement",
+                "doj_ai_enforcement",
+            ],
+            adaptive_deepseek_rate=False,
+            adaptive_initial_rps=1.0,
+            adaptive_rps_step=1.0,
+            adaptive_max_rps=20.0,
+            adaptive_backoff_max_seconds=60.0,
+        ),
+    )
+    monkeypatch.setattr(workflow_script, "HttpIncidentSourceFetcher", lambda: object())
+    monkeypatch.setattr(
+        workflow_script,
+        "AsyncCompatibleIncidentReviewClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "OpenAIIncidentEmbeddingClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "CompatibleIncidentDuplicateJudgeClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "DeepSeekIncidentTranslationClient",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        workflow_script,
+        "run_incident_csv_workflow",
+        lambda **kwargs: workflow_calls.append(kwargs) or _async_summary(summary),
+    )
+
+    exit_code = workflow_script.main()
+
+    assert exit_code == 0
+    assert workflow_calls[0]["source_registry_keys"] == [
+        "ftc_ai_enforcement",
+        "doj_ai_enforcement",
+    ]
+    assert workflow_calls[0]["review_concurrency"] == 3
+    assert json.loads(capsys.readouterr().out) == summary
+
+
 def test_workflow_script_fails_fast_without_downstream_review_credentials(
     monkeypatch,
     tmp_path,

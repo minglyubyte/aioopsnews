@@ -32,7 +32,11 @@ class IncidentRepository(Protocol):
 
     def list_review_queue(self) -> list[IncidentDict]: ...
 
-    def list_incidents_pending_llm_review(self) -> list[IncidentDict]: ...
+    def list_incidents_pending_llm_review(
+        self,
+        *,
+        source_registry_keys: list[str] | None = None,
+    ) -> list[IncidentDict]: ...
 
     def get_incident(self, incident_id: str) -> IncidentDict | None: ...
 
@@ -222,6 +226,17 @@ class IncidentRepository(Protocol):
         source_family: str | None = None,
         verification_summary: str | None = None,
     ) -> IncidentDict | None: ...
+
+    def update_incident_detail_copy(
+        self,
+        *,
+        incident_id: str,
+        incident_summary_en: str,
+        what_happened_en: str,
+        ai_failure_point_en: str,
+        why_it_matters_en: str,
+        evidence_summary_en: str,
+    ) -> None: ...
 
     def update_incident_translation(
         self,

@@ -107,13 +107,27 @@ class OpenAIIncidentDuplicateJudgeClient:
         parsed = json.loads(content)
         return DuplicateJudgeDecision(
             is_duplicate=bool(parsed["is_duplicate"]),
-            confidence=float(parsed["confidence"]),
+            confidence=_normalize_duplicate_confidence(parsed["confidence"]),
             reasoning=parsed["reasoning"],
             canonical_incident_id=parsed.get("canonical_incident_id"),
         )
 
 
 CompatibleIncidentDuplicateJudgeClient = OpenAIIncidentDuplicateJudgeClient
+
+
+def _normalize_duplicate_confidence(value: object) -> float:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        qualitative = {
+            "low": 0.3,
+            "medium": 0.6,
+            "moderate": 0.6,
+            "high": 0.9,
+        }
+        if normalized in qualitative:
+            return qualitative[normalized]
+    return float(value)
 
 
 def detect_and_merge_duplicate_incident(

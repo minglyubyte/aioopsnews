@@ -762,6 +762,44 @@ def test_autonomous_vehicle_review_with_generic_detail_stays_pending() -> None:
     assert repository.incidents["incident-av"]["status"] == "pending_review"
 
 
+def test_review_routes_unparseable_llm_response_to_pending_review() -> None:
+    incident = _official_fixed_source_incident()
+    repository = InMemoryIncidentRepository(incidents=[incident])
+    translation_client = FakeTranslationClient()
+
+    summary = asyncio.run(
+        review_pending_incidents(
+            repository,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=FakeAsyncReviewRetryClient(
+                [
+                    ReviewResponseParseError(
+                        "Expected what_happened_en to contain at least 80 words"
+                    )
+                ]
+            ),
+            escalation_client=FakeBatchReviewClient(),
+            translation_client=translation_client,
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            primary_model="deepseek-test",
+            escalation_model="deepseek-pro-test",
+            embedding_model="embedding-test",
+            duplicate_judge_model="duplicate-test",
+        )
+    )
+
+    reviewed_incident = repository.incidents["incident-official"]
+    assert summary.reviews_completed == 1
+    assert summary.reviews_failed == 0
+    assert summary.pending_review == 1
+    assert summary.review_failures == []
+    assert reviewed_incident["status"] == "pending_review"
+    assert reviewed_incident["legitimacy_label"] == "pending_review"
+    assert "could not be parsed" in reviewed_incident["legitimacy_reasoning"]
+    assert translation_client.calls == []
+
+
 def test_review_auto_approves_high_confidence_fixed_source_incident() -> None:
     incident = _official_fixed_source_incident()
     incident["sources"][0]["fetch_status"] = None  # type: ignore[index]

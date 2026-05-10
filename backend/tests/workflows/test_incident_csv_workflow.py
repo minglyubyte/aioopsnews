@@ -513,6 +513,124 @@ def test_run_incident_csv_workflow_limits_reviews_per_run(
     assert len(repository.list_incidents_pending_llm_review()) == 1
 
 
+def test_run_incident_csv_workflow_filters_reviews_by_source_registry_key(
+    tmp_path,
+) -> None:
+    from app.workflows.incident_csv_workflow import run_incident_csv_workflow
+
+    repository = InMemoryIncidentRepository()
+    inbox_dir = tmp_path / "inbox"
+    archive_dir = tmp_path / "archive"
+    inbox_dir.mkdir()
+    for external_id, source_key in [
+        ("inc-ftc-001", "ftc_ai_enforcement"),
+        ("inc-doj-002", "doj_ai_enforcement"),
+        ("inc-damien-003", "damien_charlotin_hallucinations"),
+    ]:
+        repository.upsert_incident_import_row(
+            external_id=external_id,
+            headline=f"{external_id} headline",
+            date_logged="2026-05-01",
+            company_involved="ExampleCo",
+            incident_topic="model_governance",
+            reality_summary=f"{external_id} summary",
+            status="pending_llm_review",
+            source_links=[
+                f"https://example.com/{external_id}/1",
+                f"https://example.com/{external_id}/2",
+                f"https://example.com/{external_id}/3",
+            ],
+            legitimacy_score=None,
+            legitimacy_label=None,
+            legitimacy_reasoning=None,
+            source_validation_summary="Validated 3 distinct sources.",
+            legitimacy_flag="ACCEPT",
+            confidence_level="high",
+            import_notes=None,
+            matched_claim_id=None,
+            headline_zh=None,
+            reality_summary_zh=None,
+            translation_status="not_requested",
+            publication_track="verified_accident",
+            evidence_tier="court_or_regulator",
+            source_family="model_governance",
+            verification_summary="Official source.",
+            source_origin="fixed_verified_source",
+            source_registry_key=source_key,
+        )
+    review_client = FakeAsyncReviewClient(
+        results_by_external_id={
+            "inc-ftc-001": [
+                IncidentReviewResult(
+                    incident_id="unused-ftc",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Needs editor review.",
+                    source_quality_summary="Sources need review.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="FTC action headline",
+                    reality_summary_en="FTC action summary.",
+                    categories=["Model Governance"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Needs review.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+            "inc-doj-002": [
+                IncidentReviewResult(
+                    incident_id="unused-doj",
+                    verdict="pending_review",
+                    score=0.62,
+                    reasoning="Needs editor review.",
+                    source_quality_summary="Sources need review.",
+                    date_confirmed=True,
+                    company_confirmed=True,
+                    headline_en="DOJ action headline",
+                    reality_summary_en="DOJ action summary.",
+                    categories=["Model Governance"],
+                    suggested_severity_score=None,
+                    severity_confidence=0.82,
+                    severity_reasoning="Needs review.",
+                    severity_flags=[],
+                    needs_escalation=False,
+                    reviewed_model="gpt-5.4-mini",
+                )
+            ],
+        }
+    )
+
+    summary = asyncio.run(
+        run_incident_csv_workflow(
+            repository=repository,
+            inbox_dir=inbox_dir,
+            archive_dir=archive_dir,
+            source_fetcher=FakeSourceFetcher(),
+            review_client=review_client,
+            escalation_client=FakeEscalationReviewClient(),
+            translation_client=FakeTranslationClient(),
+            primary_model="gpt-5.4-mini",
+            escalation_model="gpt-5.2",
+            embedding_client=FakeEmbeddingClient(),
+            duplicate_judge_client=FakeDuplicateJudgeClient(),
+            review_only=True,
+            max_reviews=1,
+            source_registry_keys=["ftc_ai_enforcement", "doj_ai_enforcement"],
+        )
+    )
+
+    assert summary["reviews_attempted"] == 1
+    assert [call[0] for call in review_client.calls] == ["inc-doj-002"]
+    pending_external_ids = {
+        incident["external_id"]
+        for incident in repository.list_incidents_pending_llm_review()
+    }
+    assert pending_external_ids == {"inc-ftc-001", "inc-damien-003"}
+
+
 def test_run_incident_csv_workflow_limits_parallel_primary_reviews(
     tmp_path,
 ) -> None:

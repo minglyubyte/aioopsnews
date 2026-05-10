@@ -365,12 +365,26 @@ class InMemoryIncidentRepository:
             for incident in incidents
         ]
 
-    def list_incidents_pending_llm_review(self) -> list[dict[str, Any]]:
+    def list_incidents_pending_llm_review(
+        self,
+        *,
+        source_registry_keys: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         incidents = [
             incident
             for incident in self.incidents.values()
             if incident["status"] == "pending_llm_review"
         ]
+        if source_registry_keys:
+            source_key_set = set(source_registry_keys)
+            incidents = [
+                incident
+                for incident in incidents
+                if any(
+                    source.get("source_registry_key") in source_key_set
+                    for source in incident.get("sources", [])
+                )
+            ]
         incidents.sort(
             key=lambda incident: (incident["date_logged"], incident["id"]),
             reverse=True,
@@ -870,6 +884,27 @@ class InMemoryIncidentRepository:
             }
         )
         return self._serialize_admin_incident(incident)
+
+    def update_incident_detail_copy(
+        self,
+        *,
+        incident_id: str,
+        incident_summary_en: str,
+        what_happened_en: str,
+        ai_failure_point_en: str,
+        why_it_matters_en: str,
+        evidence_summary_en: str,
+    ) -> None:
+        incident = self.incidents[incident_id]
+        incident.update(
+            {
+                "incident_summary_en": incident_summary_en,
+                "what_happened_en": what_happened_en,
+                "ai_failure_point_en": ai_failure_point_en,
+                "why_it_matters_en": why_it_matters_en,
+                "evidence_summary_en": evidence_summary_en,
+            }
+        )
 
     def _serialize_public_archive_incident(
         self,

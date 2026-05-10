@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from app.services.incident_deduplication import (
     DuplicateJudgeDecision,
+    OpenAIIncidentDuplicateJudgeClient,
     detect_and_merge_duplicate_incident,
 )
 from tests.support.fakes import InMemoryIncidentRepository
@@ -199,6 +200,55 @@ def test_detect_and_merge_duplicate_incident_absorbs_sources_and_notes_into_cano
         "https://example.com/canonical-source",
         "https://example.com/new-source",
     ]
+
+
+def test_duplicate_judge_client_accepts_qualitative_confidence(monkeypatch) -> None:
+    class StubResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"is_duplicate":false,"confidence":"high",'
+                                '"reasoning":"Likely distinct records."}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+    monkeypatch.setattr(
+        "app.services.incident_deduplication.httpx.post",
+        lambda *args, **kwargs: StubResponse(),
+    )
+    client = OpenAIIncidentDuplicateJudgeClient(api_key="test-key")
+
+    decision = client.judge_duplicate(
+        incident=_build_incident(
+            "incident-a",
+            "AI enforcement action",
+            "2026-01-01",
+            "AgencyCo",
+            "model governance",
+            status="approved",
+        ),
+        candidate=_build_incident(
+            "incident-b",
+            "Different AI enforcement action",
+            "2026-01-02",
+            "AgencyCo",
+            "model governance",
+            status="approved",
+        ),
+        model="deepseek-test",
+    )
+
+    assert decision.is_duplicate is False
+    assert decision.confidence == 0.9
 
 
 def _build_incident(

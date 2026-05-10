@@ -415,7 +415,16 @@ class _StubConnection:
             if "company_involved_zh" in query:
                 row["company_involved_zh"] = "开放人工智能"
             return _StubResult(row)
-        if "from incident_sources" in query:
+        if (
+            "from incident_logs" in query
+            and "where status = %s" in query
+            and "order by date_logged desc" in query
+        ):
+            return _StubResult(rows=[dict(self.incident_row)])
+        if (
+            "from incident_sources" in query
+            and "exists (" not in query
+        ):
             return _StubResult(
                 rows=[
                     {
@@ -638,7 +647,7 @@ def test_postgres_repository_writes_native_postgres_values(monkeypatch) -> None:
 
     assert review_params[5] == ["Hallucinations"]
     assert review_params[10] == ["core_system_outage"]
-    assert embedding_params[1] == [0.1, 0.9]
+    assert type(embedding_params[1]).__name__ == "Jsonb"
 
 
 def test_upsert_incident_import_row_wraps_raw_source_payload_as_jsonb(
@@ -931,6 +940,63 @@ def test_list_review_queue_selects_dual_track_fields(monkeypatch) -> None:
     assert queue[0]["verification_summary"] == "Fixed source accident."
 
 
+def test_list_duplicate_search_pool_selects_dual_track_fields(monkeypatch) -> None:
+    class StrictDuplicateSearchConnection(_StubConnection):
+        def execute(self, query: str, *args, **kwargs) -> _StubResult:
+            if (
+                "from incident_logs" in query
+                and "where id <> %s" in query
+                and "abs((date_logged::date" in query
+                and "embedding_vector" in query
+            ):
+                row = dict(self.incident_row)
+                for field in (
+                    "publication_track",
+                    "evidence_tier",
+                    "source_family",
+                    "verification_summary",
+                ):
+                    if field not in query:
+                        row.pop(field, None)
+                return _StubResult(rows=[row])
+            return super().execute(query, *args, **kwargs)
+
+    connection = StrictDuplicateSearchConnection()
+    connection.incident_row["status"] = "approved"
+    connection.incident_row["publication_track"] = "verified_accident"
+    connection.incident_row["evidence_tier"] = "court_or_regulator"
+    connection.incident_row["source_family"] = "model_governance"
+    connection.incident_row["verification_summary"] = "Official source accident."
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    candidates = repository.list_duplicate_search_pool(
+        incident_id="incident-new",
+        date_logged="2026-04-30",
+        date_window_days=30,
+    )
+
+    assert candidates[0]["publication_track"] == "verified_accident"
+    assert candidates[0]["evidence_tier"] == "court_or_regulator"
+    assert candidates[0]["source_family"] == "model_governance"
+    assert candidates[0]["verification_summary"] == "Official source accident."
+
+
 def test_update_incident_translation_persists_company_name_translation(
     monkeypatch,
 ) -> None:
@@ -1117,6 +1183,44 @@ def test_public_incident_pagination_uses_stable_tie_breaker(monkeypatch) -> None
     assert all(
         "order by incident_logs.date_logged desc, incident_logs.id asc" in query
         for query in paged_queries
+    )
+
+
+def test_list_pending_llm_review_filters_by_source_registry_keys(monkeypatch) -> None:
+    connection = _StubConnection()
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    repository.list_incidents_pending_llm_review(
+        source_registry_keys=["ftc_ai_enforcement", "doj_ai_enforcement"]
+    )
+
+    incident_queries = [
+        (query, args)
+        for query, args in connection.calls
+        if "from incident_logs" in query and "where status = %s" in query
+    ]
+    assert incident_queries
+    query, args = incident_queries[-1]
+    assert "incident_sources.source_registry_key = any(%s)" in query
+    assert args[0] == (
+        "pending_llm_review",
+        ["ftc_ai_enforcement", "doj_ai_enforcement"],
     )
 
 

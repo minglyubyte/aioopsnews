@@ -81,6 +81,16 @@ def main() -> int:
         help="Maximum pending incidents to review in this run.",
     )
     parser.add_argument(
+        "--source-registry-key",
+        dest="source_registry_keys",
+        action="append",
+        default=None,
+        help=(
+            "Restrict review to pending incidents linked to this source registry "
+            "key. Repeat the flag to include multiple keys."
+        ),
+    )
+    parser.add_argument(
         "--review-concurrency",
         type=int,
         default=None,
@@ -188,6 +198,7 @@ def main() -> int:
                 import_only=args.import_only,
                 review_only=getattr(args, "review_only", False),
                 max_reviews=args.max_reviews,
+                source_registry_keys=getattr(args, "source_registry_keys", None),
                 review_concurrency=review_concurrency,
                 adaptive_deepseek_rate=getattr(
                     args,

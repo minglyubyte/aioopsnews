@@ -21,6 +21,12 @@ _ROAD_SUFFIX = (
 )
 _COLLISION_OBJECT_PATTERNS = (
     r"\bwhen (?:a |an |the )?(?P<object>[a-z][a-z -]{2,40}) entered\b",
+    r"\bin a collision involving (?:a |an |the )?(?P<object>[a-z][a-z -]{2,40}) on\b",
+    r"\bwas rear ended by (?:a |an |the )?(?P<object>[a-z][a-z -]{2,40})",
+    r"\bwas hit [^.]{0,80}\bby (?:a |an |the )?(?P<object>[a-z][a-z -]{2,40})",
+    r"\b(?P<object>passenger car|suv|pickup truck|motorcycle|motorcyclist|van|cargo van|heavy truck|parked vehicle|vehicle)\s+lightly swiped\b",
+    r"\b(?P<object>motorcyclist|motorcycle|passenger vehicle|passenger car|suv|pickup truck|pickup|van|cargo van|garbage can|vehicle)\b[^.]{0,140}\b(?:clipped|hit|swiped|rear ended|made contact)\b",
+    r"\b(?:a|an|the)\s+(?P<object>passenger car|suv|pickup truck|motorcycle|van|heavy truck|parked vehicle|vehicle)\b[^.]{0,100}\b(?:made contact|struck|swiped|rear ended)\b",
     r"\bmade contact with (?:a |an |the )?(?P<object>[a-z][a-z -]{2,40})",
     r"\bcollided with (?:a |an |the )?(?P<object>[a-z][a-z -]{2,40})",
     r"\bstruck (?:a |an |the )?(?P<object>[a-z][a-z -]{2,40})",
@@ -49,6 +55,24 @@ class DetailQualityAssessment:
     detail_quality: DetailQuality
     detail_quality_reasons: list[str]
     source_fact_summary: str | None
+
+
+@dataclass(frozen=True)
+class AutonomousVehicleDetailCopy:
+    incident_summary_en: str
+    what_happened_en: str
+    ai_failure_point_en: str
+    why_it_matters_en: str
+    evidence_summary_en: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "incident_summary_en": self.incident_summary_en,
+            "what_happened_en": self.what_happened_en,
+            "ai_failure_point_en": self.ai_failure_point_en,
+            "why_it_matters_en": self.why_it_matters_en,
+            "evidence_summary_en": self.evidence_summary_en,
+        }
 
 
 def extract_autonomous_vehicle_facts(text: str | None) -> AutonomousVehicleFacts:
@@ -111,18 +135,23 @@ def assess_autonomous_vehicle_detail_quality(
         )
 
     facts = _best_facts_from_sources(incident.get("sources", []))
-    reasons = list(facts.uncertainty_notes or [])
+    fact_reasons = list(facts.uncertainty_notes or [])
+    field_reasons = []
     if _has_template_forensic_copy(incident):
-        reasons.append("template_forensic_copy")
+        field_reasons.append("template_forensic_copy")
     if not _has_specific_field(incident.get("what_happened_en"), min_words=18):
-        reasons.append("missing_what_happened")
+        field_reasons.append("missing_what_happened")
     if not _has_specific_field(incident.get("ai_failure_point_en"), min_words=14):
-        reasons.append("missing_ai_failure_point")
+        field_reasons.append("missing_ai_failure_point")
     if not _has_specific_field(incident.get("why_it_matters_en"), min_words=12):
-        reasons.append("missing_why_it_matters")
+        field_reasons.append("missing_why_it_matters")
+
+    summary = summarize_autonomous_vehicle_facts(facts)
+    reasons = field_reasons
+    if field_reasons or summary is None:
+        reasons = fact_reasons + field_reasons
 
     deduped_reasons = list(dict.fromkeys(reasons))
-    summary = summarize_autonomous_vehicle_facts(facts)
     if deduped_reasons:
         return DetailQualityAssessment(
             detail_quality="insufficient",
@@ -133,6 +162,56 @@ def assess_autonomous_vehicle_detail_quality(
         detail_quality="sufficient",
         detail_quality_reasons=[],
         source_fact_summary=summary,
+    )
+
+
+def build_autonomous_vehicle_detail_copy(
+    incident: dict[str, Any],
+) -> AutonomousVehicleDetailCopy | None:
+    if incident.get("source_family") != "autonomous_vehicle":
+        return None
+
+    facts = _best_facts_from_sources(incident.get("sources", []))
+    if not summarize_autonomous_vehicle_facts(facts):
+        return None
+
+    company = str(incident.get("company_involved") or "The operator")
+    incident_date = str(incident.get("date_logged") or "the reported date")
+    location = facts.location_context or "the reported roadway location"
+    impact = facts.injury_or_damage or "the report records the collision outcome"
+    narrative = facts.narrative_excerpt or (
+        f"The DMV report describes a collision involving {company} at {location}."
+    )
+    automation_state = facts.automation_state or "autonomous vehicle operation"
+
+    return AutonomousVehicleDetailCopy(
+        incident_summary_en=(
+            f"California DMV records document a {company} autonomous-vehicle "
+            f"collision on {incident_date} at {location}, with {impact}."
+        ),
+        what_happened_en=(
+            f"According to the California DMV collision report, at {location}, "
+            f"{narrative} "
+            f"The filing identifies the vehicle as operating in {automation_state} "
+            f"and records {impact}."
+        ),
+        ai_failure_point_en=(
+            "The DMV filing does not establish a confirmed software defect; the "
+            f"relevant automation question is how the autonomous vehicle handled "
+            f"this road interaction at {location} while operating in "
+            f"{automation_state}."
+        ),
+        why_it_matters_en=(
+            "California DMV collision reports matter because they turn individual "
+            "autonomous-vehicle road contacts into comparable public evidence for "
+            "monitoring operator patterns, road-user interactions, locations, and "
+            "real-world deployment edge cases."
+        ),
+        evidence_summary_en=(
+            "Official California DMV autonomous vehicle collision report with "
+            "date, time, location, involved-vehicle fields, damage or injury "
+            "indicators, and a narrative description of the contact."
+        ),
     )
 
 
@@ -167,7 +246,7 @@ def _normalize_text(text: str | None) -> str:
 
 def _first_match(text: str, patterns: tuple[str, ...], group: str) -> str | None:
     for pattern in patterns:
-        match = re.search(pattern, text)
+        match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             return _clean_phrase(match.group(group))
     return None
@@ -176,6 +255,8 @@ def _first_match(text: str, patterns: tuple[str, ...], group: str) -> str | None
 def _extract_automation_state(text: str) -> str | None:
     lowered = text.lower()
     if "autonomous mode" in lowered:
+        return "autonomous mode"
+    if "auto mode" in lowered:
         return "autonomous mode"
     if "automation engaged" in lowered:
         return "automation engaged"
@@ -207,15 +288,68 @@ def _extract_injury_or_damage(text: str) -> str | None:
 
 
 def _extract_narrative_excerpt(text: str) -> str | None:
+    dmv_narrative = _extract_dmv_form_narrative(text)
+    if dmv_narrative:
+        return dmv_narrative
+
     sentences = re.split(r"(?<=[.!?])\s+", text)
     for sentence in sentences:
         lowered = sentence.lower()
         if any(
             marker in lowered
-            for marker in ("made contact", "collided with", "struck", "entered")
+            for marker in (
+                "made contact",
+                "collided with",
+                "struck",
+                "entered",
+                "rear ended",
+                "swiped",
+                "clipped",
+                "was hit",
+            )
         ):
             return _clean_phrase(sentence)
     return None
+
+
+def _extract_dmv_form_narrative(text: str) -> str | None:
+    match = re.search(
+        r"\b1:\s+(?P<narrative>(?:On|A|An|While|After)\b.+?)(?=\s+(?:2:|STATE_2|"
+        r"INSURANCE|$))",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    narrative = _clean_phrase(match.group("narrative"))
+    if not _looks_like_collision_narrative(narrative):
+        return None
+
+    sentences = re.split(r"(?<=[.!?])\s+", narrative)
+    selected: list[str] = []
+    for sentence in sentences:
+        selected.append(sentence)
+        if _looks_like_collision_narrative(" ".join(selected)):
+            break
+    return _clean_phrase(" ".join(selected))
+
+
+def _looks_like_collision_narrative(text: str) -> bool:
+    lowered = text.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "made contact",
+            "collided",
+            "struck",
+            "entered",
+            "rear ended",
+            "swiped",
+            "clipped",
+            "was hit",
+            "collision",
+        )
+    )
 
 
 def _has_template_forensic_copy(incident: dict[str, Any]) -> bool:

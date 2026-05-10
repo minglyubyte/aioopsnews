@@ -36,7 +36,7 @@ except ModuleNotFoundError:
 _POSTGRES_SCHEMA = (Path(__file__).parent / "_schema.sql").read_text()
 
 
-def _jsonb_or_none(value: dict[str, object] | None) -> object | None:
+def _jsonb_or_none(value: object | None) -> object | None:
     if value is None or Jsonb is None:
         return value
     return Jsonb(value)
@@ -406,10 +406,27 @@ class PostgresIncidentRepository:
             for row in incident_rows
         ]
 
-    def list_incidents_pending_llm_review(self) -> list[dict[str, Any]]:
+    def list_incidents_pending_llm_review(
+        self,
+        *,
+        source_registry_keys: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        where_sql = "status = %s"
+        params: list[object] = ["pending_llm_review"]
+        if source_registry_keys:
+            where_sql += """
+                and exists (
+                    select 1
+                    from incident_sources
+                    where incident_sources.incident_id = incident_logs.id
+                    and incident_sources.source_registry_key = any(%s)
+                )
+            """
+            params.append(source_registry_keys)
+
         with self._connect() as connection:
             incident_rows = connection.execute(
-                """
+                f"""
                 select
                     id,
                     external_id,
@@ -449,10 +466,10 @@ class PostgresIncidentRepository:
                     source_family,
                     verification_summary
                 from incident_logs
-                where status = %s
+                where {where_sql}
                 order by date_logged desc, id asc
                 """,
-                ("pending_llm_review",),
+                tuple(params),
             ).fetchall()
             source_rows = connection.execute(
                 """
@@ -526,7 +543,11 @@ class PostgresIncidentRepository:
                     duplicate_of_incident_id,
                     canonical_incident_id,
                     embedding_model,
-                    embedding_vector
+                    embedding_vector,
+                    publication_track,
+                    evidence_tier,
+                    source_family,
+                    verification_summary
                 from incident_logs
                 where id = %s
                 limit 1
@@ -604,7 +625,11 @@ class PostgresIncidentRepository:
                     duplicate_of_incident_id,
                     canonical_incident_id,
                     embedding_model,
-                    embedding_vector
+                    embedding_vector,
+                    publication_track,
+                    evidence_tier,
+                    source_family,
+                    verification_summary
                 from incident_logs
                 where id <> %s
                   and status <> %s
@@ -1580,7 +1605,7 @@ class PostgresIncidentRepository:
                     updated_at = current_timestamp
                 where id = %s
                 """,
-                (embedding_model, embedding_vector, incident_id),
+                (embedding_model, _jsonb_or_none(embedding_vector), incident_id),
             )
             connection.commit()
 
@@ -1988,6 +2013,40 @@ class PostgresIncidentRepository:
             sources=sources_by_incident[str(row["id"])],
             duplicate_candidates=self._list_duplicate_candidates(row["id"]),
         )
+
+    def update_incident_detail_copy(
+        self,
+        *,
+        incident_id: str,
+        incident_summary_en: str,
+        what_happened_en: str,
+        ai_failure_point_en: str,
+        why_it_matters_en: str,
+        evidence_summary_en: str,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                update incident_logs
+                set
+                    incident_summary_en = %s,
+                    what_happened_en = %s,
+                    ai_failure_point_en = %s,
+                    why_it_matters_en = %s,
+                    evidence_summary_en = %s,
+                    updated_at = current_timestamp
+                where id = %s
+                """,
+                (
+                    incident_summary_en,
+                    what_happened_en,
+                    ai_failure_point_en,
+                    why_it_matters_en,
+                    evidence_summary_en,
+                    incident_id,
+                ),
+            )
+            connection.commit()
 
     def update_incident_translation(
         self,
