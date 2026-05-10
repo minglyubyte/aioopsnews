@@ -50,6 +50,24 @@ def test_verified_source_registry_defines_fixed_high_provenance_adapters() -> No
             "autonomous_vehicle",
             "fixed_verified_source",
         ),
+        "ftc_ai_enforcement": (
+            "verified_accident",
+            "court_or_regulator",
+            "model_governance",
+            "fixed_verified_source",
+        ),
+        "doj_ai_enforcement": (
+            "verified_accident",
+            "court_or_regulator",
+            "model_governance",
+            "fixed_verified_source",
+        ),
+        "sec_ai_enforcement": (
+            "verified_accident",
+            "court_or_regulator",
+            "model_governance",
+            "fixed_verified_source",
+        ),
     }
 
 
@@ -85,6 +103,28 @@ def test_verified_source_record_normalizes_into_common_incident_candidate() -> N
         "report_number": "OL 316",
         "pdf_url": "https://www.dmv.ca.gov/report.pdf",
     }
+
+
+def test_verified_source_record_can_override_source_family() -> None:
+    record = VerifiedSourceRecord(
+        source_registry_key="ftc_ai_enforcement",
+        external_id="ftc-ai-example-2026-01-01",
+        title="FTC AI enforcement action: Example",
+        incident_date="2026-01-01",
+        company="Example",
+        summary="FTC official enforcement page records an AI privacy case.",
+        source_url="https://www.ftc.gov/example",
+        publisher="FTC",
+        raw_payload={"source": "fixture"},
+        source_family="security_privacy",
+    )
+
+    candidate = normalize_verified_source_record(record)
+
+    assert candidate.publication_track == "verified_accident"
+    assert candidate.evidence_tier == "court_or_regulator"
+    assert candidate.source_family == "security_privacy"
+    assert candidate.sources[0].source_origin == "fixed_verified_source"
 
 
 def test_watch_search_discovery_creates_watch_candidates_with_search_provenance() -> (

@@ -4,8 +4,11 @@ from app.scrapers.verified_sources import (
     fetch_verified_source_records,
     parse_ca_dmv_collision_records,
     parse_charlotin_hallucination_records,
+    parse_doj_ai_enforcement_records,
     parse_edrm_judicial_order_records,
+    parse_ftc_ai_enforcement_records,
     parse_nhtsa_sgo_records,
+    parse_sec_ai_enforcement_records,
 )
 
 
@@ -135,6 +138,128 @@ def test_parse_nhtsa_sgo_records_from_csv() -> None:
     )
 
 
+def test_parse_ftc_ai_enforcement_records_from_operation_ai_comply_page() -> None:
+    html = """
+    <nav><h2>Breadcrumb</h2><time>February 13, 2026</time></nav>
+    <h1>FTC Announces Crackdown on Deceptive AI Claims and Schemes</h1>
+    <time>September 25, 2024</time>
+    <p>The FTC is taking action against multiple companies as part of
+    Operation AI Comply.</p>
+    <h2>DoNotPay</h2>
+    <p>The FTC is taking action against DoNotPay, a company that claimed to
+    offer an AI service that was the world's first robot lawyer. According to
+    the FTC complaint, DoNotPay could not deliver on these promises.</p>
+    <h2>Rytr</h2>
+    <p>According to the FTC's complaint, Rytr marketed an AI writing assistant
+    that enabled subscribers to generate false consumer reviews. The proposed
+    order would bar similar conduct.</p>
+    """
+
+    records = parse_ftc_ai_enforcement_records(
+        html,
+        source_url=(
+            "https://www.ftc.gov/news-events/news/press-releases/2024/09/"
+            "ftc-announces-crackdown-deceptive-ai-claims-schemes"
+        ),
+        limit=10,
+    )
+
+    assert [record.external_id for record in records] == [
+        "ftc-ai-donotpay-2024-09-25",
+        "ftc-ai-rytr-2024-09-25",
+    ]
+    assert records[0].source_registry_key == "ftc_ai_enforcement"
+    assert {record.company for record in records} == {"DoNotPay", "Rytr"}
+    assert records[0].incident_date == "2024-09-25"
+    assert records[0].company == "DoNotPay"
+    assert "FTC official enforcement page" in records[0].summary
+
+
+def test_parse_doj_ai_enforcement_records_from_press_release() -> None:
+    html = """
+    <h1>Justice Department Sues RealPage for Algorithmic Pricing Scheme that
+    Harms Millions of American Renters</h1>
+    <div>Friday, August 23, 2024</div>
+    <p>The Justice Department filed a civil antitrust lawsuit today against
+    RealPage Inc. The complaint alleges RealPage's pricing algorithm violated
+    antitrust law and harmed renters.</p>
+    """
+
+    records = parse_doj_ai_enforcement_records(
+        html,
+        source_url=(
+            "https://www.justice.gov/opa/pr/justice-department-sues-realpage-"
+            "algorithmic-pricing-scheme-harms-millions-american-renters"
+        ),
+        limit=10,
+    )
+
+    assert len(records) == 1
+    assert records[0].source_registry_key == "doj_ai_enforcement"
+    assert records[0].external_id == "doj-ai-realpage-2024-08-23"
+    assert records[0].company == "RealPage"
+    assert records[0].source_family == "model_governance"
+
+
+def test_parse_sec_ai_enforcement_records_from_ai_washing_press_release() -> None:
+    html = """
+    <h1>SEC Charges Two Investment Advisers with Making False and Misleading
+    Statements About Their Use of Artificial Intelligence</h1>
+    <p>Washington D.C., March 18, 2024 —</p>
+    <p>The Securities and Exchange Commission announced settled charges against
+    two investment advisers, Delphia (USA) Inc. and Global Predictions Inc.,
+    for making false and misleading statements about their purported use of
+    artificial intelligence.</p>
+    """
+
+    records = parse_sec_ai_enforcement_records(
+        html,
+        source_url="https://www.sec.gov/newsroom/press-releases/2024-36",
+        limit=10,
+    )
+
+    assert [record.external_id for record in records] == [
+        "sec-ai-delphia-usa-inc-2024-03-18",
+        "sec-ai-global-predictions-inc-2024-03-18",
+    ]
+    assert records[0].source_registry_key == "sec_ai_enforcement"
+    assert records[0].company == "Delphia (USA) Inc."
+
+
+def test_parse_official_ai_guidance_pages_are_skipped() -> None:
+    html = """
+    <h1>Artificial Intelligence Guidance</h1>
+    <p>This page explains agency guidance, best practices, speeches, and policy
+    resources about artificial intelligence. It does not announce a complaint,
+    settlement, lawsuit, order, or charges against a named entity.</p>
+    """
+
+    assert (
+        parse_ftc_ai_enforcement_records(
+            html,
+            source_url="https://www.ftc.gov/industry/technology/artificial-intelligence",
+            limit=10,
+        )
+        == []
+    )
+    assert (
+        parse_doj_ai_enforcement_records(
+            html,
+            source_url="https://www.justice.gov/crt/ai",
+            limit=10,
+        )
+        == []
+    )
+    assert (
+        parse_sec_ai_enforcement_records(
+            html,
+            source_url="https://www.sec.gov/artificial-intelligence",
+            limit=10,
+        )
+        == []
+    )
+
+
 def test_fetch_verified_source_records_collects_selected_sources() -> None:
     class FakeResponse:
         def __init__(self, text: str) -> None:
@@ -162,6 +287,64 @@ def test_fetch_verified_source_records_collects_selected_sources() -> None:
 
     assert len(records) == 1
     assert records[0].external_id == "ca-dmv-waymo-2026-04-12-2"
+
+
+def test_fetch_verified_source_records_collects_selected_ai_enforcement_sources() -> (
+    None
+):
+    class FakeResponse:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeHttpClient:
+        def get(self, url: str) -> FakeResponse:
+            if "ftc.gov" in url:
+                return FakeResponse(
+                    """
+                    <h1>FTC Announces Crackdown on Deceptive AI Claims and
+                    Schemes</h1><time>September 25, 2024</time>
+                    <h2>DoNotPay</h2>
+                    <p>The FTC complaint alleges DoNotPay made deceptive AI
+                    lawyer claims.</p>
+                    """
+                )
+            if "justice.gov" in url:
+                assert "/atr/case-document/complaint-303" in url
+                return FakeResponse(
+                    """
+                    <h1>Complaint</h1><p>Date Friday, August 23, 2024</p>
+                    <p>Document Type Complaint</p>
+                    <a href="/atr/media/1365471/dl">424422.pdf</a>
+                    <p>Related Case U.S. and Plaintiff States v. RealPage,
+                    Inc.</p>
+                    """
+                )
+            return FakeResponse(
+                """
+                <h1>SEC Charges Rimar Capital Entities and Owner Itai Liptz
+                for Defrauding Investors by Making False and Misleading
+                Statements About Use of Artificial Intelligence</h1>
+                <p>Washington D.C., Oct. 10, 2024 —</p>
+                <p>The SEC announced charges against Rimar Capital USA, Inc.
+                and Rimar Capital, LLC for misleading AI claims.</p>
+                """
+            )
+
+    records = fetch_verified_source_records(
+        sources=["ftc_ai_enforcement", "doj_ai_enforcement", "sec_ai_enforcement"],
+        http_client=FakeHttpClient(),
+        limit_per_source=1,
+    )
+
+    assert [record.source_registry_key for record in records] == [
+        "ftc_ai_enforcement",
+        "doj_ai_enforcement",
+        "sec_ai_enforcement",
+    ]
+    assert records[1].source_url == "https://www.justice.gov/atr/media/1365471/dl"
 
 
 def test_fetch_verified_source_records_continues_when_one_source_fails() -> None:

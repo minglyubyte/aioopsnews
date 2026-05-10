@@ -144,6 +144,8 @@ cd backend
 - CSV claim import with UUID primary keys; omit `id` to generate one
 - fixed-source accident CSV generation with
   `python -m app.scripts.generate_verified_source_csv --sources all`
+- official FTC, DOJ, and SEC AI enforcement source collection via
+  `python -m app.scripts.generate_verified_source_csv --sources ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement`
 - concurrency-bound DeepSeek review with no proactive qps cap and shared 429
   cooldown via
   `python -m app.scripts.run_incident_csv_workflow --max-reviews 100 --review-concurrency 10`

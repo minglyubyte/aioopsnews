@@ -72,9 +72,16 @@ The runner prints a JSON summary with:
   - NHTSA Standing General Order crash reporting data
   - Damien Charlotin's AI hallucination case tracker
   - EDRM judicial orders
+  - FTC official AI enforcement actions
+  - DOJ official AI-related enforcement actions and case announcements
+  - SEC official AI-washing and AI-related enforcement actions
 - New fixed-source accident records are written with `publication_track="verified_accident"` and `status="pending_llm_review"`.
 - Existing `external_id` or source URL matches are skipped.
 - Existing reviewed incidents are not overwritten or moved back into review.
+- FTC, DOJ, and SEC records are treated as regulator/court evidence, not as
+  aggregator evidence. Pure guidance, speeches, inventories, and policy pages
+  are skipped unless they announce a named complaint, lawsuit, settlement,
+  order, charges, or comparable enforcement action.
 
 To generate a CSV for inspection before importing, run:
 
@@ -92,6 +99,16 @@ Then validate the generated CSV with:
 ```bash
 UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.import_incidents_csv \
   app/imports/inbox/verified-source-auto.csv --dry-run
+```
+
+To generate only the official FTC, DOJ, and SEC AI enforcement tier:
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.generate_verified_source_csv \
+  --sources ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement \
+  --limit-per-source 50 \
+  --out app/imports/inbox/verified-source-enforcement.csv
 ```
 
 ### AI News Track
