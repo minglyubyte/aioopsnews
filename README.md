@@ -77,6 +77,21 @@ Claim CSV `id` values are UUIDs. Leave `id` blank to let the importer generate
 one. Incident CSV `incident_id` remains an external import key and is stored in
 `incident_logs.external_id`; the database row id is generated as a UUID.
 
+Incident imports are the first step of the normal publication workflow, not the
+final publication step. New incident rows imported from CSV start as
+`pending_llm_review` with `translation_status="not_requested"`. The daily runner
+then reviews them, approves publishable rows, and translates approved incidents
+before they appear in the public feed.
+
+Re-import safety is intentional: importing the same external incident again must
+not unpublish or de-localize an already published record. Existing
+`status="approved"` rows stay approved during re-import, and completed Chinese
+copy is preserved. In particular, non-empty `headline_zh`,
+`reality_summary_zh`, `translation_status="completed"`, and `translated_at`
+must not be overwritten by empty CSV/import values or `not_requested`. To remove
+or unpublish a record, use the explicit admin/review flow rather than relying on
+CSV re-import side effects.
+
 ## Run Locally
 
 ### Frontend

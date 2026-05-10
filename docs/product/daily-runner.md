@@ -147,6 +147,39 @@ The daily runner moves incidents through these states:
 7. still-approved incidents run translation, including company-name localization
 8. only `approved` incidents appear in the public feed
 
+The expected production path is therefore: fetch or generate source-backed
+records, import them, review or approve them, translate approved incidents, and
+then expose them publicly. Translation is not an optional follow-up for newly
+approved public incidents; it is part of the approval path.
+
+## Publication Safety
+
+Re-imports are allowed to refresh source and metadata fields, but they must not
+undo publication decisions. If a row is already `approved`, a later import of the
+same `external_id` must keep it approved. If Chinese public copy has already
+completed, a later import must keep the existing `headline_zh`,
+`reality_summary_zh`, `translation_status="completed"`, and `translated_at`
+instead of replacing them with empty values or `not_requested`.
+
+The repair script below is not the normal daily publication path. Use it only
+for historical/backfill repair when sitemap incidents already exist but their
+database status or required Chinese public fields are incomplete:
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+../backend/.venv/bin/python -m app.scripts.publish_sitemap_incidents
+../backend/.venv/bin/python -m app.scripts.publish_sitemap_incidents \
+  --apply \
+  --missing-limit 100 \
+  --concurrency 100
+```
+
+Run the command without `--apply` first. The dry run should report how many
+sitemap incidents exist, how many rows are missing, and how many records still
+need `headline_zh` or `reality_summary_zh`. The apply form only translates rows
+missing those required Chinese fields and only marks rows publishable when the
+required Chinese copy is present.
+
 ## All-In-One Command
 
 Run the full workflow from the backend directory:

@@ -599,6 +599,67 @@ def test_upsert_incident_import_row_wraps_raw_source_payload_as_jsonb(
     assert source_params[14].obj == {"source": "dmv", "case_id": "abc"}
 
 
+def test_upsert_incident_import_row_preserves_approved_translation_on_reimport(
+    monkeypatch,
+) -> None:
+    connection = _StubConnection()
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    repository.upsert_incident_import_row(
+        external_id="verified-source-1",
+        headline="Verified source incident",
+        date_logged="2026-05-09",
+        company_involved="Waymo",
+        incident_topic="autonomous_vehicle",
+        reality_summary="A fixed verified source reported an incident.",
+        status="pending_llm_review",
+        source_links=["https://example.com/report"],
+        legitimacy_score=None,
+        legitimacy_label=None,
+        legitimacy_reasoning=None,
+        source_validation_summary="Fixed verified source.",
+        legitimacy_flag="REVIEW",
+        confidence_level="high",
+        import_notes=None,
+        matched_claim_id=None,
+        headline_zh=None,
+        reality_summary_zh=None,
+        translation_status="not_requested",
+    )
+
+    upsert_query = next(
+        query
+        for query, args in connection.calls
+        if args and "on conflict (id) do update" in query
+    )
+
+    assert "status = case" in upsert_query
+    assert "incident_logs.status = 'approved'" in upsert_query
+    assert "headline_zh = coalesce(" in upsert_query
+    assert "incident_logs.headline_zh" in upsert_query
+    assert "reality_summary_zh = coalesce(" in upsert_query
+    assert "incident_logs.reality_summary_zh" in upsert_query
+    assert "incident_logs.translation_status = 'completed'" in upsert_query
+    assert "translated_at = coalesce(" in upsert_query
+    assert "incident_logs.translated_at" in upsert_query
+
+
 def test_apply_admin_review_selects_translation_fields(monkeypatch) -> None:
     connection = _StubConnection()
 
