@@ -1368,14 +1368,23 @@ class PostgresIncidentRepository:
                     external_id = excluded.external_id,
                     headline = excluded.headline,
                     headline_en = excluded.headline_en,
-                    headline_zh = excluded.headline_zh,
+                    headline_zh = coalesce(
+                        incident_logs.headline_zh,
+                        excluded.headline_zh
+                    ),
                     date_logged = excluded.date_logged,
                     company_involved = excluded.company_involved,
                     incident_topic = excluded.incident_topic,
                     reality_summary = excluded.reality_summary,
                     reality_summary_en = excluded.reality_summary_en,
-                    reality_summary_zh = excluded.reality_summary_zh,
-                    status = excluded.status,
+                    reality_summary_zh = coalesce(
+                        incident_logs.reality_summary_zh,
+                        excluded.reality_summary_zh
+                    ),
+                    status = case
+                        when incident_logs.status = 'approved' then incident_logs.status
+                        else excluded.status
+                    end,
                     confidence_score = excluded.confidence_score,
                     review_notes = excluded.review_notes,
                     matched_claim_id = excluded.matched_claim_id,
@@ -1386,11 +1395,18 @@ class PostgresIncidentRepository:
                     legitimacy_flag = excluded.legitimacy_flag,
                     confidence_level = excluded.confidence_level,
                     import_notes = excluded.import_notes,
-                    translation_status = excluded.translation_status,
+                    translation_status = case
+                        when incident_logs.translation_status = 'completed'
+                            then incident_logs.translation_status
+                        else excluded.translation_status
+                    end,
                     review_batch_id = excluded.review_batch_id,
                     review_model = excluded.review_model,
                     reviewed_at = excluded.reviewed_at,
-                    translated_at = excluded.translated_at,
+                    translated_at = coalesce(
+                        incident_logs.translated_at,
+                        excluded.translated_at
+                    ),
                     publication_track = excluded.publication_track,
                     evidence_tier = excluded.evidence_tier,
                     source_family = excluded.source_family,

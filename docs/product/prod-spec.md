@@ -147,6 +147,10 @@ confidence, and high-risk flags remain visible inside the review record.
 
 - translation runs only after approval
 - translation does not run for incidents merged away as duplicates
+- approved incidents should complete reader-facing Chinese copy before they are
+  considered fully ready for bilingual public use
+- re-import must not erase completed Chinese copy or move an already approved
+  incident back to review
 
 ## Admin Review Behavior
 

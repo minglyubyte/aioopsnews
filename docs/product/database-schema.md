@@ -178,6 +178,18 @@ When translation completes for an approved incident, `incident_logs` stores a Ch
 
 The translated company field is optional at the schema level, but the product uses it when present so Chinese readers can see a localized company name instead of always falling back to the English value.
 
+Operational invariants:
+
+- public feed queries only expose `status="approved"` incidents
+- the Chinese public experience depends on `translation_status="completed"` plus
+  non-empty `headline_zh` and `reality_summary_zh`
+- re-import is a refresh path for source and metadata fields, not an unpublish
+  path
+- re-import must preserve existing `approved` status and completed Chinese
+  public copy
+- intentional unpublishing or status rollback must happen through explicit
+  admin/review action
+
 ## `incident_sources`
 
 ### Purpose
