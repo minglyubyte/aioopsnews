@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchIncidentDetail } from "../lib/api";
 import { PUBLIC_COPY } from "../lib/locale";
+import { buildIncidentPath } from "../lib/publicIncidentRoutes";
 import type { IncidentAnalysis, IncidentDetail } from "../types/incident";
 import "./public-dashboard.css";
 
@@ -56,16 +57,22 @@ export default function PublicIncidentDetailPage({
       return;
     }
 
-    document.title = `${incident.headline_en ?? incident.headline} | ${
-      copy.brand
-    }`;
-    setMetaDescription(
+    const canonicalUrl = `${window.location.origin}${buildIncidentPath(
+      incident,
+    )}`;
+    const description =
       firstNonBlankText(
         incident.analysis.incident_summary_en,
         incident.reality_summary_en,
         incident.reality_summary,
-      ) ?? copy.positioning,
-    );
+      ) ?? copy.positioning;
+
+    document.title = `${incident.headline_en ?? incident.headline} | ${
+      copy.brand
+    }`;
+    setMetaDescription(description);
+    setCanonicalLink(canonicalUrl);
+    setStructuredData(buildIncidentStructuredData(incident, canonicalUrl));
   }, [copy.brand, copy.positioning, incident]);
 
   return (
@@ -233,4 +240,66 @@ function setMetaDescription(content: string) {
   }
 
   metaDescription.content = content;
+}
+
+function setCanonicalLink(href: string) {
+  let canonicalLink = document.querySelector<HTMLLinkElement>(
+    'link[rel="canonical"]',
+  );
+
+  if (!canonicalLink) {
+    canonicalLink = document.createElement("link");
+    canonicalLink.rel = "canonical";
+    document.head.append(canonicalLink);
+  }
+
+  canonicalLink.href = href;
+}
+
+function setStructuredData(data: Record<string, unknown>) {
+  let structuredData = document.querySelector<HTMLScriptElement>(
+    'script[type="application/ld+json"]',
+  );
+
+  if (!structuredData) {
+    structuredData = document.createElement("script");
+    structuredData.type = "application/ld+json";
+    document.head.append(structuredData);
+  }
+
+  structuredData.textContent = JSON.stringify(data);
+}
+
+function buildIncidentStructuredData(
+  incident: IncidentDetail,
+  canonicalUrl: string,
+) {
+  const headline = incident.headline_en ?? incident.headline;
+  const description =
+    firstNonBlankText(
+      incident.analysis.incident_summary_en,
+      incident.reality_summary_en,
+      incident.reality_summary,
+    ) ?? headline;
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    headline,
+    description,
+    datePublished: incident.date_logged,
+    dateModified: incident.date_logged,
+    mainEntityOfPage: canonicalUrl,
+    isAccessibleForFree: true,
+    author: {
+      "@type": "Organization",
+      name: "AI Reality Check",
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "AI Reality Check",
+    },
+    about: incident.categories,
+    citation: incident.sources.map((source) => source.source_url),
+  };
 }

@@ -417,6 +417,24 @@ describe("PublicDashboardPage", () => {
     expect(
       screen.getByRole("link", { name: "Sanctions order" }),
     ).toHaveAttribute("href", "https://example.com/court-order.pdf");
+    expect(
+      document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
+    ).toBe(
+      `${window.location.origin}/incidents/incident-routed/court-sanctions-brief-with-fake-ai-citations`,
+    );
+    const structuredData = JSON.parse(
+      document.querySelector<HTMLScriptElement>(
+        'script[type="application/ld+json"]',
+      )?.textContent ?? "{}",
+    ) as Record<string, unknown>;
+    expect(structuredData).toMatchObject({
+      "@context": "https://schema.org",
+      "@type": "NewsArticle",
+      headline: "Court sanctions brief with fake AI citations",
+      datePublished: "2026-05-06",
+      dateModified: "2026-05-06",
+      mainEntityOfPage: `${window.location.origin}/incidents/incident-routed/court-sanctions-brief-with-fake-ai-citations`,
+    });
   });
 
   it("renders slice-level highlights, localized archive cards, and source-backed detail", async () => {
