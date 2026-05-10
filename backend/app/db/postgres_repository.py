@@ -89,7 +89,7 @@ class PostgresIncidentRepository:
                     incident_logs.verification_summary
                 from incident_logs
                 where {where_sql}
-                order by incident_logs.date_logged desc
+                order by incident_logs.date_logged desc, incident_logs.id asc
                 limit %s offset %s
                 """,
                 (*params, filters.page_size, offset),
@@ -175,7 +175,7 @@ class PostgresIncidentRepository:
                     incident_logs.verification_summary
                 from incident_logs
                 where {where_sql}
-                order by incident_logs.date_logged desc
+                order by incident_logs.date_logged desc, incident_logs.id asc
                 limit %s offset %s
                 """,
                 (*params, filters.page_size, offset),

@@ -1085,6 +1085,41 @@ def test_list_public_incident_feed_serializes_company_name_translation(
     ]
 
 
+def test_public_incident_pagination_uses_stable_tie_breaker(monkeypatch) -> None:
+    connection = _StubConnection()
+
+    class StubConnectionPool:
+        def __init__(self, conninfo: str, kwargs: dict[str, object]) -> None:
+            self.conninfo = conninfo
+            self.kwargs = kwargs
+
+        def connection(self) -> _StubConnection:
+            return connection
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(postgres_repository, "ConnectionPool", StubConnectionPool)
+
+    repository = PostgresIncidentRepository(
+        "postgresql://postgres:postgres@localhost:5432/ai_reality_check"
+    )
+
+    repository.list_public_incident_feed(postgres_repository.IncidentQueryFilters())
+    repository.list_public_incidents(postgres_repository.IncidentQueryFilters())
+
+    paged_queries = [
+        query
+        for query in connection.executed
+        if "from incident_logs" in query and "limit %s offset %s" in query
+    ]
+    assert paged_queries
+    assert all(
+        "order by incident_logs.date_logged desc, incident_logs.id asc" in query
+        for query in paged_queries
+    )
+
+
 def test_get_public_incident_serializes_company_name_translation(
     monkeypatch,
 ) -> None:
