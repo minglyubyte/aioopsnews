@@ -4,16 +4,89 @@
 
 This document describes the operational daily runner workflow for incident ingestion and review.
 
-The product now has two daily tracks:
+The product has two daily tracks:
 
 - `AI Accidents`: fixed high-provenance sources are checked for newly documented incidents. New records enter accident review before public accident publication.
 - `AI News`: search discovery finds fresh AI failure reporting. New, non-duplicate items auto-publish to the public AI News stream as unverified news signals.
 
-The main entrypoint is the all-in-one script:
+## AI Accidents Pipeline (Primary)
 
-- [run_incident_csv_workflow.py](/Users/leo/Desktop/AI_Oops/backend/app/scripts/run_incident_csv_workflow.py)
+The AI Accidents pipeline uses two scripts with a clear separation of concerns:
 
-This script is the workflow body. It is not itself a scheduler. To run it every day, wrap it in cron, GitHub Actions scheduled jobs, Supabase scheduled jobs, or another deployment scheduler.
+| Script | Responsibility | Entry Point |
+|---|---|---|
+| **Scrape** | Discover incidents from 9 verified sources + fetch source evidence | `app.scripts.scrape_verified_sources` |
+| **Review** | LLM review + dedup + translation for pending incidents | `app.scripts.review_pending_incidents` |
+
+### Script 1: Scrape Verified Sources
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.scrape_verified_sources
+```
+
+Options:
+
+```bash
+--dry-run                  # compute create/skip counts without writing to DB
+--sources all              # default: scrape all 9 verified sources
+--sources ca_dmv_av_collisions,nhtsa_data  # scrape specific sources only
+--since 2026-01-01         # only include records on or after this date
+--limit-per-source 50      # max records per source (default: 50)
+--skip-evidence-fetch      # persist without fetching evidence (debug only)
+```
+
+This script:
+1. Fetches records from verified sources (HTML parsing, CSV download, etc.)
+2. Deduplicates by `external_id` and `source_url`
+3. Persists new incidents as `status="pending_llm_review"`
+4. Fetches and parses source evidence (HTML → markdown, PDF → text)
+5. Prints a JSON summary
+
+### Script 2: Review Pending Incidents
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.review_pending_incidents
+```
+
+Options:
+
+```bash
+--dry-run                           # list pending incidents without calling APIs
+--max-reviews 10                    # limit reviews per run
+--source-registry-key nhtsa_data    # restrict to specific source (repeatable)
+--review-concurrency 10             # max concurrent API calls (default: 10)
+--backoff-max-seconds 60            # max 429 exponential backoff (default: 60)
+```
+
+This script:
+1. Picks up all `pending_llm_review` incidents
+2. Fetches any missing source evidence (safety redundancy)
+3. Runs async LLM review via DeepSeek
+4. Routes decisions: auto-approve / reject / send to editor queue
+5. Runs embedding-based deduplication on approved incidents
+6. Translates approved incidents EN → ZH
+7. Prints a JSON summary
+
+### Editor Review (Admin API)
+
+Incidents routed to `pending_review` are reviewed by editors via the Admin API:
+
+```http
+GET /admin/incidents                     # list review queue
+PATCH /admin/incidents/{id}              # approve/reject with edits
+POST /admin/incidents/{id}/upgrade-to-accident  # upgrade news → accident
+```
+
+Editor approval automatically triggers translation.
+
+## Legacy Scripts
+
+The following scripts remain available for backward compatibility and CSV backfill:
+
+- [run_incident_csv_workflow.py](app/scripts/run_incident_csv_workflow.py) — CSV import + review (all-in-one)
+- [run_dual_track_daily_runner.py](app/scripts/run_dual_track_daily_runner.py) — dual-track ingestion (accidents + news)
 
 ## Required Environment
 

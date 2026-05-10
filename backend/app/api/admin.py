@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from hmac import compare_digest
 from typing import Literal
 
@@ -159,7 +160,7 @@ def patch_admin_incident(
             legitimacy_reasoning_zh=translation.legitimacy_reasoning_zh,
             source_validation_summary_zh=translation.source_validation_summary_zh,
             translation_status=translation.status,
-            translated_at="2026-04-30T12:00:00",
+            translated_at=datetime.now(tz=UTC).replace(microsecond=0).isoformat(),
             incident_summary_zh=translation.incident_summary_zh,
             what_happened_zh=translation.what_happened_zh,
             ai_failure_point_zh=translation.ai_failure_point_zh,

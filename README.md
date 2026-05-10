@@ -171,31 +171,23 @@ cd backend
 
 ### Backend Workflows
 
-- PostgreSQL-backed repository for local development
-- RSS ingestion with dedupe plus `pending_review` / `pending_llm_review` persistence
-- enrichment and heuristic claim matching
-- primary LLM review with strict structured output, taxonomy-bound categories,
-  severity suggestion, and high-confidence fixed-source auto-approval
-- resumable historical backfill with checkpoint and audit files
-- daily ingestion orchestration with retry and run metrics
-- CSV claim import with UUID primary keys; omit `id` to generate one
-- fixed-source accident CSV generation with
-  `python -m app.scripts.generate_verified_source_csv --sources all`
-- official FTC, DOJ, SEC, EEOC, and FDA AI enforcement source collection from official
-  agency index, case, press-release, complaint, order, and litigation-release
-  pages, including DOJ Civil Rights algorithm/software cases and SEC AI/ML
-  enforcement matters plus EEOC automated-hiring actions and FDA AI
-  medical-device warning letters, via
-  `python -m app.scripts.generate_verified_source_csv --sources ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement,eeoc_ai_enforcement,fda_ai_medical_device_warning_letters`
-- five-agency import batch preparation that checks the DB, skips existing
-  external IDs/source URLs, writes source-named inbox CSVs, and reports the
-  actual official eligible count when a target such as 500 cannot be reached:
-  `python -m app.scripts.prepare_verified_source_import_batch --target-total 500`
-- concurrency-bound DeepSeek review with no proactive qps cap and shared 429
-  cooldown via
-  `python -m app.scripts.run_incident_csv_workflow --max-reviews 100 --review-concurrency 10`
-- incident daily runner commands documented in `docs/product/daily-runner.md`
-- canonical operator research prompt for ChatGPT Deep Research / Gemini Deep Research in `backend/app/services/case_search_prompt.py`
+The AI Accidents daily pipeline runs as two scripts:
+
+1. **Scrape**: `python -m app.scripts.scrape_verified_sources` — discovers incidents
+   from 9 verified sources (CA DMV, NHTSA, FTC, DOJ, SEC, EEOC, FDA, EDRM,
+   Charlotin), fetches and parses source evidence, and persists new incidents as
+   `pending_llm_review`.
+2. **Review**: `python -m app.scripts.review_pending_incidents` — runs async LLM
+   review via DeepSeek, auto-approves high-confidence verified incidents,
+   deduplicates via embedding similarity, and translates approved incidents EN → ZH.
+
+Additional capabilities:
+- CSV incident import for backfill via `python -m app.scripts.run_incident_csv_workflow --import-only`
+- AI News search discovery via `python -m app.scripts.run_dual_track_daily_runner --skip-verified`
+- Fixed-source CSV generation via `python -m app.scripts.generate_verified_source_csv --sources all`
+- Concurrency-bound DeepSeek review with 429 cooldown
+- Full operational docs in `docs/product/daily-runner.md`
+- Canonical operator research prompt in `backend/app/services/case_search_prompt.py`
 
 ### Admin Review
 
