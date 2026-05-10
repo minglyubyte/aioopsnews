@@ -75,13 +75,33 @@ The runner prints a JSON summary with:
   - FTC official AI enforcement actions
   - DOJ official AI-related enforcement actions and case announcements
   - SEC official AI-washing and AI-related enforcement actions
+  - EEOC official AI/automated hiring enforcement actions
+  - FDA official AI medical-device warning letters
 - New fixed-source accident records are written with `publication_track="verified_accident"` and `status="pending_llm_review"`.
 - Existing `external_id` or source URL matches are skipped.
 - Existing reviewed incidents are not overwritten or moved back into review.
 - FTC, DOJ, and SEC records are treated as regulator/court evidence, not as
-  aggregator evidence. Pure guidance, speeches, inventories, and policy pages
+  aggregator evidence. These sources start from official AI/enforcement index
+  pages and curated case seeds, then follow only allowlisted official
+  enforcement, case, litigation-release, complaint, order, or press-release
+  links. Pure guidance, speeches, inventories, investor alerts, and policy pages
   are skipped unless they announce a named complaint, lawsuit, settlement,
   order, charges, or comparable enforcement action.
+- DOJ coverage includes official Civil Rights case pages and settlement records
+  when the alleged harm turns on algorithmic screening, automated software, or
+  AI-assisted systems. SEC coverage includes official AI/ML enforcement matters
+  such as AI-washing, AI-product misstatements, machine-learning startup fraud,
+  and algorithmic-trading fraud.
+- EEOC coverage is limited to named enforcement actions involving automated or
+  AI-related employment decision systems. FDA coverage is limited to warning
+  letters where the agency identifies AI-based medical-device claims,
+  premarket-authorization issues, or software validation issues.
+- The broader agency-action mode also searches official FTC, SEC, and EEOC
+  listing/search pages for named software, automation, algorithm, and AI
+  actions. It still requires an official action page and skips pure guidance,
+  speeches, policy pages, and generic search hits. If the official eligible
+  count is below an operator target such as 500, the scraper reports the actual
+  count and does not fabricate rows or use non-official sources.
 
 To generate a CSV for inspection before importing, run:
 
@@ -101,14 +121,46 @@ UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.import_incidents_csv \
   app/imports/inbox/verified-source-auto.csv --dry-run
 ```
 
-To generate only the official FTC, DOJ, and SEC AI enforcement tier:
+To generate only the official FTC, DOJ, SEC, EEOC, and FDA AI enforcement tier:
 
 ```bash
 cd /Users/leo/Desktop/AI_Oops/backend
 UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.generate_verified_source_csv \
-  --sources ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement \
+  --sources ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement,eeoc_ai_enforcement,fda_ai_medical_device_warning_letters \
   --limit-per-source 50 \
   --out app/imports/inbox/verified-source-enforcement.csv
+```
+
+To prepare source-named import batches for the five-agency tier while skipping
+existing DB rows and writing only enough rows to reach a target total:
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+../backend/.venv/bin/python -m app.scripts.prepare_verified_source_import_batch \
+  --sources ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement,eeoc_ai_enforcement,fda_ai_medical_device_warning_letters \
+  --target-total 500 \
+  --limit-per-source 2500 \
+  --out-dir app/imports/inbox \
+  --out-prefix agency-ai-action-$(date -u +%Y%m%d)
+```
+
+Then import without review and refresh evidence:
+
+```bash
+../backend/.venv/bin/python -m app.scripts.run_incident_csv_workflow --import-only
+../backend/.venv/bin/python -m app.scripts.refresh_source_evidence \
+  --limit 500 \
+  --source-registry-keys ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement,eeoc_ai_enforcement,fda_ai_medical_device_warning_letters
+```
+
+When refreshing source evidence for only this tier, keep the refresh scoped to
+the five agency source registry keys so unrelated pending incidents are not fetched:
+
+```bash
+cd /Users/leo/Desktop/AI_Oops/backend
+UV_CACHE_DIR=../.uv-cache uv run python -m app.scripts.refresh_source_evidence \
+  --limit 500 \
+  --source-registry-keys ftc_ai_enforcement,doj_ai_enforcement,sec_ai_enforcement,eeoc_ai_enforcement,fda_ai_medical_device_warning_letters
 ```
 
 ### AI News Track

@@ -10,8 +10,16 @@ from app.scrapers.verified_sources import (
     CA_DMV_COLLISION_REPORTS_URL,
     CHARLOTIN_DOWNLOAD_URL,
     CHARLOTIN_HOME_URL,
+    DOJ_REALPAGE_AI_ENFORCEMENT_URL,
     EDRM_JUDICIAL_ORDERS_URL,
+    EEOC_ITUTORGROUP_AI_HIRING_URL,
+    FDA_EXER_LABS_AI_WARNING_URL,
+    FDA_SENIORLIFE_AI_WARNING_URL,
+    FDA_WAVI_AI_WARNING_URL,
+    FTC_OPERATION_AI_COMPLY_URL,
     NHTSA_SGO_URL,
+    SEC_AI_WASHING_URL,
+    SEC_RIMAR_AI_CLAIMS_URL,
     fetch_verified_source_records,
 )
 from app.workflows.dual_track_ingestion import (
@@ -57,6 +65,31 @@ SUPPLEMENTAL_SOURCE_LINKS = {
         EDRM_JUDICIAL_ORDERS_URL,
         "https://edrm.net/2024/04/edrm-announces-genai-judicial-orders-repository/",
         "https://edrm.net/",
+    ],
+    "ftc_ai_enforcement": [
+        FTC_OPERATION_AI_COMPLY_URL,
+        "https://www.ftc.gov/industry/technology/artificial-intelligence",
+        "https://www.ftc.gov/news-events/news/press-releases/2025/02/ftc-finalizes-order-donotpay-prohibits-deceptive-ai-lawyer-claims-imposes-monetary-relief-requires",
+    ],
+    "doj_ai_enforcement": [
+        DOJ_REALPAGE_AI_ENFORCEMENT_URL,
+        "https://www.justice.gov/atr/case/us-and-plaintiff-states-v-realpage-inc",
+        "https://www.justice.gov/atr",
+    ],
+    "sec_ai_enforcement": [
+        SEC_AI_WASHING_URL,
+        SEC_RIMAR_AI_CLAIMS_URL,
+        "https://www.sec.gov/ai",
+    ],
+    "eeoc_ai_enforcement": [
+        EEOC_ITUTORGROUP_AI_HIRING_URL,
+        "https://www.eeoc.gov/newsroom/eeoc-launches-initiative-artificial-intelligence-and-algorithmic-fairness",
+        "https://www.eeoc.gov/newsroom",
+    ],
+    "fda_ai_medical_device_warning_letters": [
+        FDA_EXER_LABS_AI_WARNING_URL,
+        FDA_WAVI_AI_WARNING_URL,
+        FDA_SENIORLIFE_AI_WARNING_URL,
     ],
 }
 

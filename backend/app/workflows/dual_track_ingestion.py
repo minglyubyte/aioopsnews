@@ -205,6 +205,20 @@ VERIFIED_SOURCE_ADAPTERS: tuple[VerifiedSourceAdapter, ...] = (
         evidence_tier="court_or_regulator",
         source_family="model_governance",
     ),
+    VerifiedSourceAdapter(
+        source_registry_key="eeoc_ai_enforcement",
+        publisher="EEOC",
+        publication_track="verified_accident",
+        evidence_tier="court_or_regulator",
+        source_family="model_governance",
+    ),
+    VerifiedSourceAdapter(
+        source_registry_key="fda_ai_medical_device_warning_letters",
+        publisher="FDA",
+        publication_track="verified_accident",
+        evidence_tier="court_or_regulator",
+        source_family="healthcare_benefits",
+    ),
 )
 
 WATCH_SEARCH_QUERIES: tuple[WatchSearchQuery, ...] = (

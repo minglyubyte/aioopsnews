@@ -894,6 +894,26 @@ class PostgresIncidentRepository:
             ).fetchone()
         return row is not None
 
+    def count_incidents_by_source_registry_keys(
+        self,
+        source_registry_keys: list[str],
+    ) -> int:
+        if not source_registry_keys:
+            return 0
+        placeholders = ", ".join(["%s"] * len(source_registry_keys))
+        with self._connect() as connection:
+            row = connection.execute(
+                f"""
+                select count(distinct incident_logs.id) as count
+                from incident_logs
+                join incident_sources
+                    on incident_sources.incident_id = incident_logs.id
+                where incident_sources.source_registry_key in ({placeholders})
+                """,
+                tuple(source_registry_keys),
+            ).fetchone()
+        return int(row["count"] if row else 0)
+
     def upgrade_watch_incident_to_verified_accident(
         self,
         incident_id: str,

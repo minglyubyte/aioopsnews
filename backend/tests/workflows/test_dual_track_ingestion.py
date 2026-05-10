@@ -68,6 +68,18 @@ def test_verified_source_registry_defines_fixed_high_provenance_adapters() -> No
             "model_governance",
             "fixed_verified_source",
         ),
+        "eeoc_ai_enforcement": (
+            "verified_accident",
+            "court_or_regulator",
+            "model_governance",
+            "fixed_verified_source",
+        ),
+        "fda_ai_medical_device_warning_letters": (
+            "verified_accident",
+            "court_or_regulator",
+            "healthcare_benefits",
+            "fixed_verified_source",
+        ),
     }
 
 
