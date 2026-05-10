@@ -62,7 +62,11 @@ Example: an autonomous or medical AI failure contributes to death, serious injur
 
 ### Trusted Source List
 
-The MVP trusted source list is intentionally narrow and begins with Reuters, AP, Financial Times, Bloomberg, The Verge, Wired, Ars Technica, company blogs, legal filings, NHTSA, EEOC, and FTC publications.
+The trusted source list is intentionally narrow. Fixed verified accident sources
+include official regulator/court records such as California DMV, NHTSA, FTC,
+DOJ, SEC, court filings, and judicial orders. News publications remain useful
+for discovery, but they do not replace primary official evidence for verified
+accident records.
 
 ### Source Credibility Policy
 

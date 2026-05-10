@@ -55,6 +55,11 @@ class IncidentRepository(Protocol):
 
     def source_url_exists(self, source_url: str) -> bool: ...
 
+    def count_incidents_by_source_registry_keys(
+        self,
+        source_registry_keys: list[str],
+    ) -> int: ...
+
     def upgrade_watch_incident_to_verified_accident(
         self,
         incident_id: str,

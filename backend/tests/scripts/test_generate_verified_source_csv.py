@@ -58,6 +58,80 @@ def test_records_to_incident_csv_pads_duplicate_source_links() -> None:
     assert len(parsed_rows[0].source_links) == 3
 
 
+def test_records_to_incident_csv_pads_official_ai_enforcement_links() -> None:
+    records = [
+        VerifiedSourceRecord(
+            source_registry_key="ftc_ai_enforcement",
+            external_id="ftc-ai-donotpay-2024-09-25",
+            title="FTC AI enforcement action: DoNotPay",
+            incident_date="2024-09-25",
+            company="DoNotPay",
+            summary="FTC complaint alleges deceptive AI lawyer claims.",
+            source_url=(
+                "https://www.ftc.gov/news-events/news/press-releases/2024/09/"
+                "ftc-announces-crackdown-deceptive-ai-claims-schemes"
+            ),
+            publisher="FTC",
+            raw_payload={"source_excerpt": "AI enforcement action"},
+        ),
+        VerifiedSourceRecord(
+            source_registry_key="doj_ai_enforcement",
+            external_id="doj-ai-realpage-2024-08-23",
+            title="DOJ antitrust complaint: RealPage algorithmic pricing",
+            incident_date="2024-08-23",
+            company="RealPage",
+            summary="DOJ complaint alleges algorithmic pricing conduct.",
+            source_url="https://www.justice.gov/atr/media/1365471/dl",
+            publisher="DOJ",
+            raw_payload={"source_excerpt": "Complaint"},
+        ),
+        VerifiedSourceRecord(
+            source_registry_key="sec_ai_enforcement",
+            external_id="sec-ai-delphia-usa-inc-2024-03-18",
+            title="SEC charges firms with AI washing",
+            incident_date="2024-03-18",
+            company="Delphia (USA) Inc.",
+            summary="SEC order alleges false AI claims.",
+            source_url="https://www.sec.gov/newsroom/press-releases/2024-36",
+            publisher="SEC",
+            raw_payload={"source_excerpt": "AI washing"},
+        ),
+        VerifiedSourceRecord(
+            source_registry_key="eeoc_ai_enforcement",
+            external_id="eeoc-ai-itutorgroup-2023-09-11",
+            title="iTutorGroup to settle EEOC software hiring suit",
+            incident_date="2023-09-11",
+            company="iTutorGroup",
+            summary="EEOC alleged automated software rejected older applicants.",
+            source_url="https://www.eeoc.gov/newsroom/itutorgroup-pay-365000-settle-eeoc-discriminatory-hiring-suit",
+            publisher="EEOC",
+            raw_payload={"source_excerpt": "software hiring suit"},
+        ),
+        VerifiedSourceRecord(
+            source_registry_key="fda_ai_medical_device_warning_letters",
+            external_id="fda-ai-exer-labs-inc-2025-02-10",
+            title="FDA warning letter: Exer Labs",
+            incident_date="2025-02-10",
+            company="Exer Labs, Inc.",
+            summary="FDA warning letter cited AI algorithms in medical claims.",
+            source_url="https://www.fda.gov/inspections-compliance-enforcement-and-criminal-investigations/warning-letters/exer-labs-inc-699218-02102025",
+            publisher="FDA",
+            raw_payload={"source_excerpt": "AI medical device warning"},
+        ),
+    ]
+
+    parsed_rows = parse_incidents_csv_text(script.records_to_incident_csv(records))
+
+    assert [len(row.source_links) for row in parsed_rows] == [3, 4, 3, 3, 3]
+    assert "https://www.sec.gov/ai" in parsed_rows[2].source_links
+    assert (
+        "https://www.ftc.gov/news-events/news/press-releases/2025/02/"
+        "ftc-finalizes-order-donotpay-prohibits-deceptive-ai-lawyer-claims-"
+        "imposes-monetary-relief-requires"
+        in parsed_rows[0].source_links
+    )
+
+
 def test_records_to_incident_csv_collapses_cell_whitespace() -> None:
     records = [
         VerifiedSourceRecord(

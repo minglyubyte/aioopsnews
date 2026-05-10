@@ -37,6 +37,7 @@ class VerifiedSourceRecord:
     source_url: str
     publisher: str
     raw_payload: dict[str, object]
+    source_family: SourceFamily | None = None
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,41 @@ VERIFIED_SOURCE_ADAPTERS: tuple[VerifiedSourceAdapter, ...] = (
         evidence_tier="official_documented",
         source_family="autonomous_vehicle",
     ),
+    VerifiedSourceAdapter(
+        source_registry_key="ftc_ai_enforcement",
+        publisher="FTC",
+        publication_track="verified_accident",
+        evidence_tier="court_or_regulator",
+        source_family="model_governance",
+    ),
+    VerifiedSourceAdapter(
+        source_registry_key="doj_ai_enforcement",
+        publisher="DOJ",
+        publication_track="verified_accident",
+        evidence_tier="court_or_regulator",
+        source_family="model_governance",
+    ),
+    VerifiedSourceAdapter(
+        source_registry_key="sec_ai_enforcement",
+        publisher="SEC",
+        publication_track="verified_accident",
+        evidence_tier="court_or_regulator",
+        source_family="model_governance",
+    ),
+    VerifiedSourceAdapter(
+        source_registry_key="eeoc_ai_enforcement",
+        publisher="EEOC",
+        publication_track="verified_accident",
+        evidence_tier="court_or_regulator",
+        source_family="model_governance",
+    ),
+    VerifiedSourceAdapter(
+        source_registry_key="fda_ai_medical_device_warning_letters",
+        publisher="FDA",
+        publication_track="verified_accident",
+        evidence_tier="court_or_regulator",
+        source_family="healthcare_benefits",
+    ),
 )
 
 WATCH_SEARCH_QUERIES: tuple[WatchSearchQuery, ...] = (
@@ -211,16 +247,17 @@ def get_watch_search_queries() -> list[WatchSearchQuery]:
 
 def normalize_verified_source_record(record: VerifiedSourceRecord) -> IncidentCandidate:
     adapter = _get_verified_adapter(record.source_registry_key)
+    source_family = record.source_family or adapter.source_family
     return IncidentCandidate(
         external_id=record.external_id,
         headline=record.title,
         date_logged=record.incident_date,
         company_involved=record.company,
-        incident_topic=adapter.source_family,
+        incident_topic=source_family,
         reality_summary=record.summary,
         publication_track=adapter.publication_track,
         evidence_tier=adapter.evidence_tier,
-        source_family=adapter.source_family,
+        source_family=source_family,
         verification_summary=(
             f"Fixed verified source {record.publisher} documents this incident; "
             "editorial review still checks AI relevance, dedupe, and severity."
