@@ -29,6 +29,24 @@ describe("public dashboard CSS", () => {
     );
   });
 
+  it("keeps archive scrollbars visually quiet until hover", () => {
+    expect(css).toMatch(
+      /\.public-archive-scroll[\s\S]*?scrollbar-width:\s*thin;/,
+    );
+    expect(css).toMatch(
+      /\.public-archive-scroll[\s\S]*?scrollbar-color:\s*transparent transparent;/,
+    );
+    expect(css).toMatch(
+      /\.public-archive-scroll:hover[\s\S]*?scrollbar-color:\s*color-mix\(in srgb, var\(--public-text\) 22%, transparent\) transparent;/,
+    );
+    expect(css).toMatch(
+      /\.public-archive-scroll::-webkit-scrollbar[\s\S]*?width:\s*0\.42rem;/,
+    );
+    expect(css).toMatch(
+      /\.public-archive-scroll:hover::-webkit-scrollbar-thumb[\s\S]*?background:\s*color-mix\(in srgb, var\(--public-text\) 20%, transparent\);/,
+    );
+  });
+
   it("clamps archive card text and detail headings", () => {
     expect(css).toMatch(
       /\.public-archive-card h3[\s\S]*?-webkit-line-clamp:\s*2;/,
