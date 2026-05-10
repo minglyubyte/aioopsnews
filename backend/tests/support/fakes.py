@@ -911,7 +911,10 @@ class InMemoryIncidentRepository:
         self,
         incident: dict[str, Any],
     ) -> dict[str, Any]:
-        detail_quality = assess_autonomous_vehicle_detail_quality(incident)
+        public_sources = _public_detail_sources(incident, incident.get("sources", []))
+        detail_quality = assess_autonomous_vehicle_detail_quality(
+            {**incident, "sources": public_sources}
+        )
         payload = {
             "id": incident["id"],
             "headline": incident["headline"],
@@ -964,15 +967,27 @@ class InMemoryIncidentRepository:
                     incident.get("ai_failure_point_zh")
                 ),
                 "why_it_matters_en": _sanitize_reader_text(
+                    incident.get("why_it_matters_en")
+                )
+                or _sanitize_reader_text(
                     incident.get("legitimacy_reasoning"),
                 ),
                 "why_it_matters_zh": _sanitize_reader_text(
+                    incident.get("why_it_matters_zh")
+                )
+                or _sanitize_reader_text(
                     incident.get("legitimacy_reasoning_zh")
                 ),
                 "evidence_summary_en": _sanitize_reader_text(
+                    incident.get("evidence_summary_en")
+                )
+                or _sanitize_reader_text(
                     incident.get("source_validation_summary"),
                 ),
                 "evidence_summary_zh": _sanitize_reader_text(
+                    incident.get("evidence_summary_zh")
+                )
+                or _sanitize_reader_text(
                     incident.get("source_validation_summary_zh")
                 ),
                 "detail_quality": detail_quality.detail_quality,
@@ -980,7 +995,7 @@ class InMemoryIncidentRepository:
                 "source_fact_summary": detail_quality.source_fact_summary,
             },
             "matched_claim": None,
-            "sources": deepcopy(incident.get("sources", [])),
+            "sources": deepcopy(public_sources),
         }
 
         matched_claim_id = incident.get("matched_claim_id")
@@ -1170,3 +1185,26 @@ def _sanitize_reader_text(value: Any) -> str | None:
 
     text = str(value).strip()
     return text or None
+
+
+def _public_detail_sources(
+    incident: dict[str, Any],
+    sources: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if incident.get("source_family") != "autonomous_vehicle":
+        return sources
+    return [
+        source
+        for source in sources
+        if _looks_like_incident_document_url(str(source.get("source_url") or ""))
+    ]
+
+
+def _looks_like_incident_document_url(source_url: str) -> bool:
+    normalized = source_url.lower()
+    return (
+        normalized.endswith(".pdf")
+        or "/portal/file/" in normalized
+        or normalized.endswith("-pdf/")
+        or normalized.endswith("-pdf")
+    )

@@ -4,7 +4,11 @@ from datetime import date
 from uuid import UUID
 
 import app.db.postgres_repository as postgres_repository
-from app.db._serializers import group_sources_by_incident, serialize_llm_pending_row
+from app.db._serializers import (
+    group_sources_by_incident,
+    serialize_llm_pending_row,
+    serialize_public_detail_row,
+)
 from app.db.postgres_repository import PostgresIncidentRepository
 
 
@@ -78,6 +82,101 @@ def test_llm_pending_serializer_returns_json_safe_uuid_strings() -> None:
     assert serialized["id"] == str(incident_id)
     assert serialized["date_logged"] == "2026-04-12"
     assert serialized["sources"][0]["id"] == str(source_id)
+
+
+def test_public_detail_serializer_filters_autonomous_vehicle_sources() -> None:
+    row = {
+        "id": "incident-av",
+        "headline": "Waymo collision report",
+        "headline_en": "Waymo collision report",
+        "headline_zh": None,
+        "date_logged": date(2026, 3, 18),
+        "company_involved": "Waymo",
+        "company_involved_zh": None,
+        "incident_topic": "autonomous_vehicle",
+        "claimant_name": None,
+        "categories": ["Autonomous Systems"],
+        "severity_score": 2,
+        "reality_summary": (
+            "California DMV published an autonomous vehicle collision report."
+        ),
+        "reality_summary_en": (
+            "California DMV published an autonomous vehicle collision report."
+        ),
+        "reality_summary_zh": None,
+        "status": "approved",
+        "translation_status": "not_requested",
+        "incident_summary_en": "A specific Waymo collision report was reviewed.",
+        "incident_summary_zh": None,
+        "what_happened_en": (
+            "The Waymo vehicle was traveling westbound on Market Street near "
+            "5th Street when a bicyclist entered the intersection and the "
+            "vehicle made contact with the bicycle."
+        ),
+        "what_happened_zh": None,
+        "ai_failure_point_en": (
+            "The autonomous driving system did not avoid a bicyclist entering "
+            "the vehicle path before manual control occurred after impact."
+        ),
+        "ai_failure_point_zh": None,
+        "why_it_matters_en": (
+            "The incident matters because it documents a vulnerable-road-user "
+            "interaction in mixed urban traffic."
+        ),
+        "why_it_matters_zh": None,
+        "evidence_summary_en": "The DMV PDF documents the collision.",
+        "evidence_summary_zh": None,
+        "legitimacy_reasoning": None,
+        "legitimacy_reasoning_zh": None,
+        "source_validation_summary": None,
+        "source_validation_summary_zh": None,
+        "publication_track": "verified_accident",
+        "evidence_tier": "official_documented",
+        "source_family": "autonomous_vehicle",
+        "verification_summary": "Official DMV report.",
+        "claim_match_confidence": None,
+        "claim_id": None,
+        "claim_status": None,
+    }
+    sources = [
+        {
+            "id": "source-pdf",
+            "source_url": "https://www.dmv.ca.gov/portal/file/waymo_031826-pdf/",
+            "source_type": "imported",
+            "publisher": "California DMV",
+            "title": "Waymo collision report",
+            "evidence_text": (
+                "Waymo autonomous vehicle operating in autonomous mode was "
+                "traveling westbound on Market Street near 5th Street when a "
+                "bicyclist entered the intersection. The AV made contact with "
+                "the bicycle. No injuries were reported."
+            ),
+        },
+        {
+            "id": "source-index",
+            "source_url": "https://www.dmv.ca.gov/portal/vehicle-industry-services/autonomous-vehicles/autonomous-vehicle-collision-reports/",
+            "source_type": "imported",
+            "publisher": "California DMV",
+            "title": "Autonomous Vehicle Collision Reports",
+            "evidence_text": "DMV index page.",
+        },
+        {
+            "id": "source-nhtsa",
+            "source_url": "https://www.nhtsa.gov/laws-regulations/standing-general-order-crash-reporting",
+            "source_type": "imported",
+            "publisher": "NHTSA",
+            "title": "Standing General Order Crash Reporting",
+            "evidence_text": None,
+        },
+    ]
+
+    serialized = serialize_public_detail_row(
+        row,
+        sources,
+        match_threshold=0.7,
+    )
+
+    assert [source["id"] for source in serialized["sources"]] == ["source-pdf"]
 
 
 class _StubResult:

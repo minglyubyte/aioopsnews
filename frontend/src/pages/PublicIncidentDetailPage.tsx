@@ -208,6 +208,22 @@ function IncidentCaseFile({
     localizePublicCategory(category, readerLocale),
   );
   const hasThinDetail = hasInsufficientDetail(incident);
+  const visibleSources = publicDetailSources(incident);
+  const whatHappened = localizedAnalysisText(
+    incident.analysis,
+    "what_happened",
+    readerLocale,
+  );
+  const aiFailurePoint = localizedAnalysisText(
+    incident.analysis,
+    "ai_failure_point",
+    readerLocale,
+  );
+  const whyItMatters = localizedAnalysisText(
+    incident.analysis,
+    "why_it_matters",
+    readerLocale,
+  );
   const [heroRef, heroInView] = useInView<HTMLElement>();
   const [articleRef, articleInView] = useInView<HTMLElement>();
   const [railRef, railInView] = useInView<HTMLElement>();
@@ -270,41 +286,30 @@ function IncidentCaseFile({
                 copy.officialDetailPendingBody
               }
             />
-          ) : (
-            <>
-              <DetailBlock
-                detailIndex={0}
-                title={copy.whatHappenedTitle}
-                value={localizedAnalysisText(
-                  incident.analysis,
-                  "what_happened",
-                  readerLocale,
-                )}
-              />
-              <DetailBlock
-                detailIndex={1}
-                title={copy.aiFailurePointTitle}
-                value={
-                  localizedAnalysisText(
-                    incident.analysis,
-                    "ai_failure_point",
-                    readerLocale,
-                  ) ?? copy.aiFailurePointUnavailable
-                }
-              />
-              <DetailBlock
-                detailIndex={2}
-                title={copy.whyItMattersTitle}
-                value={localizedAnalysisText(
-                  incident.analysis,
-                  "why_it_matters",
-                  readerLocale,
-                )}
-              />
-            </>
-          )}
+          ) : null}
+          {whatHappened ? (
+            <DetailBlock
+              detailIndex={hasThinDetail ? 1 : 0}
+              title={copy.whatHappenedTitle}
+              value={whatHappened}
+            />
+          ) : null}
+          {!hasThinDetail || aiFailurePoint ? (
+            <DetailBlock
+              detailIndex={hasThinDetail ? 2 : 1}
+              title={copy.aiFailurePointTitle}
+              value={aiFailurePoint ?? copy.aiFailurePointUnavailable}
+            />
+          ) : null}
+          {whyItMatters ? (
+            <DetailBlock
+              detailIndex={hasThinDetail ? 3 : 2}
+              title={copy.whyItMattersTitle}
+              value={whyItMatters}
+            />
+          ) : null}
           <DetailBlock
-            detailIndex={hasThinDetail ? 1 : 3}
+            detailIndex={hasThinDetail ? 4 : 3}
             title={copy.evidenceSummaryTitle}
             value={localizedAnalysisText(
               incident.analysis,
@@ -340,7 +345,7 @@ function IncidentCaseFile({
               />
               <CaseMetaItem
                 label={copy.detailSourceCountLabel}
-                value={copy.detailSourceCount(incident.sources.length)}
+                value={copy.detailSourceCount(visibleSources.length)}
               />
             </dl>
           </section>
@@ -356,10 +361,10 @@ function IncidentCaseFile({
               className="public-source-list"
               data-inview={sourceListInView ? "true" : "false"}
             >
-              {incident.sources.length === 0 ? (
+              {visibleSources.length === 0 ? (
                 <p className="body-copy">{copy.noSources}</p>
               ) : (
-                incident.sources.map((source, sourceIndex) => (
+                visibleSources.map((source, sourceIndex) => (
                   <article
                     className="public-source-item"
                     key={source.id}
@@ -483,6 +488,25 @@ function localizedAnalysisText(
   }
 
   return firstNonBlankText(analysis[englishKey], analysis[baseKey]);
+}
+
+function publicDetailSources(incident: IncidentDetail): IncidentSource[] {
+  if (incident.source_family !== "autonomous_vehicle") {
+    return incident.sources;
+  }
+  return incident.sources.filter((source) =>
+    looksLikeIncidentDocumentUrl(source.source_url),
+  );
+}
+
+function looksLikeIncidentDocumentUrl(sourceUrl: string) {
+  const normalized = sourceUrl.toLowerCase();
+  return (
+    normalized.endsWith(".pdf") ||
+    normalized.includes("/portal/file/") ||
+    normalized.endsWith("-pdf/") ||
+    normalized.endsWith("-pdf")
+  );
 }
 
 function firstNonBlankText(...values: unknown[]) {
@@ -749,6 +773,6 @@ function buildIncidentStructuredData(
       name: "AI Reality Check",
     },
     about: incident.categories,
-    citation: incident.sources.map((source) => source.source_url),
+    citation: publicDetailSources(incident).map((source) => source.source_url),
   };
 }
