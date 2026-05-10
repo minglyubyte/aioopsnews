@@ -1,4 +1,5 @@
 import { buildIncidentUrl, normalizeSiteUrl } from "./publicIncidentRoutes";
+import { buildTopicUrl, type TopicKind } from "./publicTopicRoutes";
 import type { PublicIncidentBase } from "../types/incident";
 
 export { normalizeSiteUrl } from "./publicIncidentRoutes";
@@ -9,7 +10,7 @@ type SitemapOptions = {
 };
 
 export function buildSitemapXml({ incidents, siteUrl }: SitemapOptions) {
-  const urls = incidents
+  const incidentUrls = incidents
     .map(
       (incident) => `  <url>
     <loc>${escapeXml(buildIncidentUrl(incident, siteUrl))}</loc>
@@ -17,6 +18,17 @@ export function buildSitemapXml({ incidents, siteUrl }: SitemapOptions) {
   </url>`,
     )
     .join("\n");
+  const newestLastmod = incidents[0]?.date_logged ?? "";
+  const topicUrls = collectPublicTopics(incidents)
+    .map(
+      (topic) => `  <url>
+    <loc>${escapeXml(buildTopicUrl(topic.kind, topic.value, siteUrl))}</loc>${
+      newestLastmod ? `\n    <lastmod>${escapeXml(newestLastmod)}</lastmod>` : ""
+    }
+  </url>`,
+    )
+    .join("\n");
+  const urls = [incidentUrls, topicUrls].filter(Boolean).join("\n");
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -25,6 +37,37 @@ export function buildSitemapXml({ incidents, siteUrl }: SitemapOptions) {
     "</urlset>",
     "",
   ].join("\n");
+}
+
+function collectPublicTopics(incidents: PublicIncidentBase[]) {
+  const topicKeys = new Set<string>();
+  const topics: Array<{ kind: TopicKind; value: string }> = [];
+
+  for (const incident of incidents) {
+    for (const category of incident.categories ?? []) {
+      addTopic(topics, topicKeys, "category", category);
+    }
+    if (incident.source_family) {
+      addTopic(topics, topicKeys, "source", incident.source_family);
+    }
+  }
+
+  return topics;
+}
+
+function addTopic(
+  topics: Array<{ kind: TopicKind; value: string }>,
+  topicKeys: Set<string>,
+  kind: TopicKind,
+  value: string,
+) {
+  const key = `${kind}:${value}`;
+  if (topicKeys.has(key)) {
+    return;
+  }
+
+  topicKeys.add(key);
+  topics.push({ kind, value });
 }
 
 export function buildRobotsTxt(siteUrl: string) {

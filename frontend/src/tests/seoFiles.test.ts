@@ -3,6 +3,7 @@ import {
   buildIncidentPath,
   MAX_INCIDENT_SLUG_LENGTH,
 } from "../lib/publicIncidentRoutes";
+import { buildTopicUrl, parseTopicRoute } from "../lib/publicTopicRoutes";
 import {
   buildRobotsTxt,
   buildSitemapXml,
@@ -62,6 +63,49 @@ describe("seo files", () => {
       )}</loc>`,
     );
     expect(sitemap).toContain("<lastmod>2026-05-06</lastmod>");
+  });
+
+  it("builds and parses canonical topic URLs", () => {
+    expect(buildTopicUrl("category", "Hallucinations", "https://example.com/")).toBe(
+      "https://example.com/topics/category/hallucinations",
+    );
+    expect(
+      buildTopicUrl("source", "legal_hallucination", "https://example.com/"),
+    ).toBe("https://example.com/topics/source/legal-hallucination");
+    expect(parseTopicRoute("/topics/category/hallucinations")).toEqual({
+      kind: "category",
+      slug: "hallucinations",
+    });
+  });
+
+  it("adds topic URLs for categories and source families with public incidents", () => {
+    const sitemap = buildSitemapXml({
+      incidents: [
+        buildIncident({
+          categories: ["Hallucinations", "Model Governance"],
+          source_family: "legal_hallucination",
+        }),
+        buildIncident({
+          id: "incident-2",
+          categories: ["Hallucinations"],
+          source_family: "legal_hallucination",
+        }),
+      ],
+      siteUrl: "https://airealitycheck.example/",
+    });
+
+    expect(sitemap).toContain(
+      "<loc>https://airealitycheck.example/topics/category/hallucinations</loc>",
+    );
+    expect(sitemap).toContain(
+      "<loc>https://airealitycheck.example/topics/category/model-governance</loc>",
+    );
+    expect(sitemap).toContain(
+      "<loc>https://airealitycheck.example/topics/source/legal-hallucination</loc>",
+    );
+    expect(
+      sitemap.match(/\/topics\/category\/hallucinations/g) ?? [],
+    ).toHaveLength(1);
   });
 
   it("limits generated incident slugs to 120 characters", () => {

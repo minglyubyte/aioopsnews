@@ -14,6 +14,7 @@ import {
   fetchIncidentFilters,
 } from "../lib/api";
 import { buildIncidentUrl } from "../lib/publicIncidentRoutes";
+import { buildTopicUrl } from "../lib/publicTopicRoutes";
 import { RouteEntry } from "../main";
 import type {
   IncidentArchiveItem,
@@ -122,7 +123,7 @@ function buildFeedResponse(
   return {
     items,
     page: overrides.page ?? 1,
-    page_size: overrides.page_size ?? 6,
+    page_size: overrides.page_size ?? 20,
     total_count: overrides.total_count ?? items.length,
     total_pages: overrides.total_pages ?? 1,
     has_next_page: overrides.has_next_page ?? false,
@@ -188,6 +189,9 @@ describe("PublicDashboardPage", () => {
   afterEach(() => {
     vi.resetAllMocks();
     vi.unstubAllEnvs();
+    document
+      .querySelector<HTMLMetaElement>('meta[name="robots"]')
+      ?.remove();
     window.history.pushState({}, "", "/");
   });
 
@@ -235,6 +239,12 @@ describe("PublicDashboardPage", () => {
         "A readable watchlist of AI failures and verified accidents",
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/AI Oops News is for informational and research purposes only/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Read full disclaimer" }),
+    ).toHaveAttribute("href", "/disclaimer");
 
     const verifiedSection = screen
       .getByRole("heading", { name: "Verified AI Accidents" })
@@ -426,6 +436,11 @@ describe("PublicDashboardPage", () => {
     expect(screen.getByText("2 sources")).toBeInTheDocument();
     expect(screen.getByText("What happened")).toBeInTheDocument();
     expect(screen.getByText("Primary source trail")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This case file summarizes cited sources. It is not legal advice. Verify against the original documents.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("Court source")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Sanctions order" }),
@@ -565,6 +580,14 @@ describe("PublicDashboardPage", () => {
       screen.getByText("该法律文件包含法院无法核实的案例。"),
     ).toBeInTheDocument();
     expect(screen.getByText("主要来源链")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "本案件档案基于已列明来源整理，不构成法律建议。请以原始文件核验。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/AI Oops News 仅供信息参考与研究使用。/),
+    ).toBeInTheDocument();
     expect(
       screen
         .getAllByRole("link", { name: "返回事件流" })
@@ -873,7 +896,7 @@ describe("PublicDashboardPage", () => {
     ).not.toBeInTheDocument();
     expect(within(archive).getByText("Page 1 of 2")).toBeInTheDocument();
     expect(
-      within(archive).getByText("Showing 2 of 8 incidents"),
+      within(archive).getByText("Showing 1-2 of 8 incidents"),
     ).toBeInTheDocument();
     expect(within(archive).getByText("AssistCo")).toBeInTheDocument();
     expect(latestIncident.company_involved_zh).toBe("助理公司");
@@ -938,6 +961,197 @@ describe("PublicDashboardPage", () => {
     );
     expect(within(archive).getByText("RoboFleet")).toBeInTheDocument();
     expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
+  });
+
+  it("renders a category topic page with canonical CollectionPage metadata", async () => {
+    vi.stubEnv("VITE_PUBLIC_SITE_URL", "https://aioopsnews.com");
+    const incident = buildArchiveIncident({
+      id: "incident-hallucination",
+      headline: "Court warns litigant about fake AI citations",
+      headline_en: "Court warns litigant about fake AI citations",
+      categories: ["Hallucinations"],
+      source_family: "legal_hallucination",
+      company_involved: "Court filing",
+      date_logged: "2026-05-06",
+    });
+    mockedFetchIncidentFeed.mockResolvedValue(
+      buildFeedResponse([incident], {
+        total_count: 42,
+        total_pages: 3,
+        slice_summary: {
+          total_matches: 42,
+          newest_logged: "2026-05-06",
+          oldest_logged: "2024-01-10",
+          highest_severity: 5,
+          top_categories: [{ category: "Hallucinations", count: 42 }],
+          top_companies: [{ company: "Court filing", count: 8 }],
+        },
+      }),
+    );
+    window.history.pushState({}, "", "/topics/category/hallucinations");
+
+    render(<RouteEntry />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "AI Hallucination Incidents",
+      }),
+    ).toBeInTheDocument();
+    expect(mockedFetchIncidentFeed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "Hallucinations",
+        page: 1,
+        pageSize: 20,
+      }),
+    );
+    expect(screen.getByText("42 incidents")).toBeInTheDocument();
+    expect(screen.getByText("Showing 1-1 of 42 incidents")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Read full disclaimer" }),
+    ).toHaveAttribute("href", "/disclaimer");
+    expect(
+      screen.getByRole("link", {
+        name: /Open full context for Court warns litigant about fake AI citations/i,
+      }),
+    ).toHaveAttribute(
+      "href",
+      "/incidents/incident-hallucination/court-warns-litigant-about-fake-ai-citations",
+    );
+
+    const canonicalUrl = buildTopicUrl(
+      "category",
+      "Hallucinations",
+      "https://aioopsnews.com",
+    );
+    expect(document.title).toBe("AI Hallucination Incidents | AI Oops News");
+    expect(
+      document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
+    ).toBe(canonicalUrl);
+    expect(
+      document.querySelector<HTMLMetaElement>('meta[name="description"]')
+        ?.content,
+    ).toContain("Browse verified and source-backed AI hallucination incidents");
+    await waitFor(() => {
+      expect(
+        document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content,
+      ).toBe("index,follow");
+    });
+    expect(
+      JSON.parse(
+        document.querySelector<HTMLScriptElement>(
+          'script[type="application/ld+json"]',
+        )?.textContent ?? "{}",
+      ),
+    ).toMatchObject({
+      "@type": "CollectionPage",
+      name: "AI Hallucination Incidents",
+      mainEntityOfPage: canonicalUrl,
+    });
+  });
+
+  it("renders a source-family topic page and noindexes unknown topics", async () => {
+    const incident = buildArchiveIncident({
+      id: "incident-legal-source",
+      headline: "Legal AI citation failure reaches court",
+      headline_en: "Legal AI citation failure reaches court",
+      categories: ["Hallucinations"],
+      source_family: "legal_hallucination",
+    });
+    mockedFetchIncidentFeed.mockResolvedValueOnce(
+      buildFeedResponse([incident], {
+        total_count: 3,
+        slice_summary: {
+          total_matches: 3,
+          newest_logged: "2026-04-29",
+          oldest_logged: "2026-01-01",
+          highest_severity: 4,
+          top_categories: [{ category: "Hallucinations", count: 3 }],
+          top_companies: [{ company: "AssistCo", count: 2 }],
+        },
+      }),
+    );
+    window.history.pushState({}, "", "/topics/source/legal-hallucination");
+
+    const { unmount } = render(<RouteEntry />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "AI Legal Hallucination Cases",
+      }),
+    ).toBeInTheDocument();
+    expect(mockedFetchIncidentFeed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceFamily: "legal_hallucination",
+        pageSize: 20,
+      }),
+    );
+    await waitFor(() => {
+      expect(
+        document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content,
+      ).toBe("index,follow");
+    });
+
+    unmount();
+    mockedFetchIncidentFeed.mockClear();
+    window.history.pushState({}, "", "/topics/category/not-real");
+    render(<RouteEntry />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Topic not found",
+      }),
+    ).toBeInTheDocument();
+    expect(mockedFetchIncidentFeed).not.toHaveBeenCalled();
+    expect(
+      document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content,
+    ).toBe("noindex,follow");
+  });
+
+  it("renders a bilingual disclaimer page with noindex metadata", async () => {
+    vi.stubEnv("VITE_PUBLIC_SITE_URL", "https://aioopsnews.com/");
+    window.history.pushState({}, "", "/disclaimer");
+
+    render(<RouteEntry />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Disclaimer" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/AI Oops News is provided for informational and research purposes only/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Read full disclaimer" }),
+    ).not.toBeInTheDocument();
+    expect(mockedFetchIncidentFeed).not.toHaveBeenCalled();
+    expect(mockedFetchIncidentDetail).not.toHaveBeenCalled();
+    expect(document.title).toBe("Disclaimer | AI Oops News");
+    expect(
+      document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href,
+    ).toBe("https://aioopsnews.com/disclaimer");
+    expect(
+      document.querySelector<HTMLMetaElement>('meta[name="robots"]')?.content,
+    ).toBe("noindex,follow");
+    expect(
+      document.querySelector<HTMLScriptElement>(
+        'script[type="application/ld+json"]',
+      ),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "中文" }));
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "免责声明" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/AI Oops News 仅供信息参考与研究使用。本站基于公开报道/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "查看完整免责声明" }),
+    ).not.toBeInTheDocument();
+    expect(document.title).toBe("免责声明 | AI Oops News");
   });
 
   it("uses Chinese company labels for filter options while keeping canonical company values", async () => {
@@ -1218,7 +1432,7 @@ describe("PublicDashboardPage", () => {
     mockedFetchIncidentFeed
       .mockResolvedValueOnce(
         buildFeedResponse([firstPageIncident], {
-          total_count: 7,
+          total_count: 25,
           total_pages: 2,
           has_next_page: true,
         }),
@@ -1226,7 +1440,7 @@ describe("PublicDashboardPage", () => {
       .mockResolvedValueOnce(
         buildFeedResponse([secondPageIncident], {
           page: 2,
-          total_count: 7,
+          total_count: 25,
           total_pages: 2,
           has_next_page: false,
           has_previous_page: true,
@@ -1236,17 +1450,19 @@ describe("PublicDashboardPage", () => {
     render(<PublicDashboardPage />);
 
     await screen.findByText("Page 1 of 2");
+    expect(screen.getByText("Showing 1-1 of 25 incidents")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
     await screen.findByText("Page 2 of 2");
     expect(screen.getByText("Second page incident")).toBeInTheDocument();
+    expect(screen.getByText("Showing 21-21 of 25 incidents")).toBeInTheDocument();
     expect(mockedFetchIncidentFeed.mock.calls[0]?.[0]).toMatchObject({
       page: 1,
-      pageSize: 6,
+      pageSize: 20,
     });
     expect(mockedFetchIncidentFeed.mock.calls[1]?.[0]).toMatchObject({
       page: 2,
-      pageSize: 6,
+      pageSize: 20,
     });
     expect(
       screen.queryByRole("heading", { name: "First page incident" }),

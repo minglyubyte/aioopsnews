@@ -20,6 +20,7 @@ import type {
   IncidentDetail,
   IncidentSource,
 } from "../types/incident";
+import PublicSiteFooter from "./PublicSiteFooter";
 import "./public-dashboard.css";
 
 type PublicIncidentDetailPageProps = {
@@ -347,6 +348,9 @@ function IncidentCaseFile({
           <section className="case-rail-card case-source-card">
             <p className="public-kicker">{copy.reportingTrailKicker}</p>
             <h2>{copy.primarySourceTrailTitle}</h2>
+            <p className="body-copy public-source-disclaimer">
+              {copy.detailSourceDisclaimer}
+            </p>
             <div
               ref={sourceListRef}
               className="public-source-list"
@@ -401,6 +405,8 @@ function IncidentCaseFile({
           ))}
         </div>
       </section>
+
+      <PublicSiteFooter copy={copy} />
     </>
   );
 }

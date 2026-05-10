@@ -293,6 +293,16 @@
   background: var(--case-paper);
 }
 
+.public-source-disclaimer {
+  margin: -0.25rem 0 1rem;
+  padding: 0.85rem 0.95rem;
+  border-left: 3px solid var(--case-accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--case-accent-soft);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
 .case-continue-panel {
   display: grid;
   gap: 0.8rem;
@@ -306,6 +316,86 @@
 
 .case-continue-panel .body-copy {
   margin: 0;
+}
+
+.public-topic-hero {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.public-topic-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--case-rule);
+  border-bottom: 1px solid var(--case-rule);
+}
+
+.public-topic-stats .case-meta-item {
+  border-right: 1px solid var(--case-rule);
+}
+
+.public-topic-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.public-topic-links a,
+.public-related-actions a.tag {
+  text-decoration: none;
+}
+
+.public-site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  padding: 1.25rem 0 0;
+  border-top: 1px solid var(--case-rule, var(--public-border));
+}
+
+.public-frame > .public-site-footer {
+  border-color: var(--public-border);
+}
+
+.public-site-footer div {
+  max-width: 62rem;
+}
+
+.public-site-footer .body-copy {
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.65;
+}
+
+.public-disclaimer-page {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.public-disclaimer-page h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  line-height: 1.05;
+}
+
+.public-disclaimer-body {
+  max-width: 72ch;
+  padding-top: 1rem;
+  border-top: 1px solid var(--public-border);
+}
+
+.public-disclaimer-body p {
+  margin: 0;
+  color: var(--public-text);
+  font-size: 1.06rem;
+  line-height: 1.78;
 }
 
 .case-hero,
@@ -1115,6 +1205,11 @@
 .public-signals[data-inview="true"],
 .public-spotlight[data-inview="true"],
 .public-detail-section[data-inview="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.public-panel:not([data-inview]) {
   opacity: 1;
   transform: translateY(0);
 }

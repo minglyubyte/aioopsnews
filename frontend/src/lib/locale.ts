@@ -149,6 +149,18 @@ export const PUBLIC_COPY = {
     reportingTrailKicker: "Reporting trail",
     sourcesTitle: "Sources",
     noSources: "Source links are not available for this incident yet.",
+    disclaimerFooterKicker: "Disclosure",
+    disclaimerFooterBody:
+      "AI Oops News is for informational and research purposes only. We summarize cited public sources. Nothing on this site is legal, financial, medical, safety, investment, or other professional advice. Verify important facts from the original sources.",
+    disclaimerLinkLabel: "Read full disclaimer",
+    disclaimerPageKicker: "Disclosure",
+    disclaimerPageTitle: "Disclaimer",
+    disclaimerPageIntro:
+      "This notice explains how to read AI Oops News and where its limits are.",
+    disclaimerFullBody:
+      "AI Oops News is provided for informational and research purposes only. We summarize public reports, court records, regulator materials, company statements, technical reports, and other cited sources. The content may be incomplete, delayed, or later corrected by the original source. Nothing on this site is legal, financial, medical, safety, investment, or other professional advice. Do not rely on this site as the sole basis for legal, business, technical, safety, or investment decisions. Verify important facts against the original sources and consult a qualified professional when needed.",
+    detailSourceDisclaimer:
+      "This case file summarizes cited sources. It is not legal advice. Verify against the original documents.",
     selectIncident:
       "Select an incident from the archive to inspect the full context and sources.",
     feedError: "Unable to load the incident feed right now.",
@@ -157,8 +169,11 @@ export const PUBLIC_COPY = {
     paginationNext: "Next",
     paginationStatus: (page: number, totalPages: number) =>
       `Page ${page} of ${totalPages}`,
-    paginationSummary: (visibleCount: number, totalCount: number) =>
-      `Showing ${visibleCount} of ${totalCount} incidents`,
+    paginationSummary: (
+      startItem: number,
+      endItem: number,
+      totalCount: number,
+    ) => `Showing ${startItem}-${endItem} of ${totalCount} incidents`,
     metrics: {
       currentFeed: "Current feed",
       currentFeedNote: (count: number) =>
@@ -296,6 +311,18 @@ export const PUBLIC_COPY = {
     reportingTrailKicker: "报道轨迹",
     sourcesTitle: "来源",
     noSources: "这起事件暂时还没有可用的来源链接。",
+    disclaimerFooterKicker: "免责声明",
+    disclaimerFooterBody:
+      "AI Oops News 仅供信息参考与研究使用。本站基于已列明的公开来源进行整理。本站内容不构成法律、财务、医疗、安全、投资或其他专业建议。重要事实请以原始来源核验。",
+    disclaimerLinkLabel: "查看完整免责声明",
+    disclaimerPageKicker: "免责声明",
+    disclaimerPageTitle: "免责声明",
+    disclaimerPageIntro:
+      "这份说明用于解释如何阅读 AI Oops News，以及本站内容的边界。",
+    disclaimerFullBody:
+      "AI Oops News 仅供信息参考与研究使用。本站基于公开报道、法院文件、监管材料、公司声明、技术报告及其他已列明来源进行整理。相关内容可能不完整、存在延迟，或后续被原始来源更正。本站内容不构成法律、财务、医疗、安全、投资或其他专业建议。请勿将本站作为法律、商业、技术、安全或投资决策的唯一依据。重要事实请以原始来源核验，并在需要时咨询具备资质的专业人士。",
+    detailSourceDisclaimer:
+      "本案件档案基于已列明来源整理，不构成法律建议。请以原始文件核验。",
     selectIncident: "从档案中选择一条事件以查看完整背景和来源。",
     feedError: "当前无法加载事件流。",
     detailError: "当前无法加载事件详情。",
@@ -303,8 +330,11 @@ export const PUBLIC_COPY = {
     paginationNext: "下一页",
     paginationStatus: (page: number, totalPages: number) =>
       `第 ${page} 页，共 ${totalPages} 页`,
-    paginationSummary: (visibleCount: number, totalCount: number) =>
-      `当前显示 ${visibleCount} / ${totalCount} 起事件`,
+    paginationSummary: (
+      startItem: number,
+      endItem: number,
+      totalCount: number,
+    ) => `当前显示第 ${startItem}-${endItem} 条，共 ${totalCount} 起事件`,
     metrics: {
       currentFeed: "当前结果",
       currentFeedNote: (count: number) =>
@@ -432,13 +462,25 @@ export const PUBLIC_COPY = {
     reportingTrailKicker: string;
     sourcesTitle: string;
     noSources: string;
+    disclaimerFooterKicker: string;
+    disclaimerFooterBody: string;
+    disclaimerLinkLabel: string;
+    disclaimerPageKicker: string;
+    disclaimerPageTitle: string;
+    disclaimerPageIntro: string;
+    disclaimerFullBody: string;
+    detailSourceDisclaimer: string;
     selectIncident: string;
     feedError: string;
     detailError: string;
     paginationPrevious: string;
     paginationNext: string;
     paginationStatus: (page: number, totalPages: number) => string;
-    paginationSummary: (visibleCount: number, totalCount: number) => string;
+    paginationSummary: (
+      startItem: number,
+      endItem: number,
+      totalCount: number,
+    ) => string;
     metrics: {
       currentFeed: string;
       currentFeedNote: (count: number) => string;

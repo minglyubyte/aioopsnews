@@ -1,4 +1,5 @@
 import { buildIncidentUrl } from "../lib/publicIncidentRoutes";
+import { buildTopicUrl } from "../lib/publicTopicRoutes";
 
 describe("generate SEO files script helpers", () => {
   it("fetches all public incident feed pages", async () => {
@@ -52,7 +53,7 @@ describe("generate SEO files script helpers", () => {
     expect(incidents).toHaveLength(2);
   });
 
-  it("generates sitemap URLs that match frontend incident route paths", async () => {
+  it("generates sitemap URLs that match frontend incident and topic route paths", async () => {
     const { buildSeoFileContents } = await import(
       "../../scripts/generate-seo-files.mjs"
     );
@@ -61,6 +62,8 @@ describe("generate SEO files script helpers", () => {
       headline: "Court sanctions brief with fake AI citations",
       headline_en: "Court sanctions brief with fake AI citations",
       date_logged: "2026-05-06",
+      categories: ["Hallucinations"],
+      source_family: "legal_hallucination",
     };
     const { sitemapXml, robotsTxt } = buildSeoFileContents({
       incidents: [incident],
@@ -74,6 +77,20 @@ describe("generate SEO files script helpers", () => {
       )}</loc>`,
     );
     expect(sitemapXml).toContain("<lastmod>2026-05-06</lastmod>");
+    expect(sitemapXml).toContain(
+      `<loc>${buildTopicUrl(
+        "category",
+        "Hallucinations",
+        "https://airealitycheck.example/",
+      )}</loc>`,
+    );
+    expect(sitemapXml).toContain(
+      `<loc>${buildTopicUrl(
+        "source",
+        "legal_hallucination",
+        "https://airealitycheck.example/",
+      )}</loc>`,
+    );
     expect(robotsTxt).toContain(
       "Sitemap: https://airealitycheck.example/sitemap.xml",
     );

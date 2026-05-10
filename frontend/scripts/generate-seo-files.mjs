@@ -5,6 +5,7 @@ import {
   buildIncidentUrl,
   normalizeSiteUrl,
 } from "../src/lib/publicIncidentRouteCore.js";
+import { buildTopicUrl } from "../src/lib/publicTopicRouteCore.js";
 
 const DEFAULT_SITE_URL = "http://localhost:5173";
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
@@ -98,7 +99,7 @@ async function loadProjectEnv() {
 }
 
 function buildSitemapXml({ incidents, siteUrl }) {
-  const urls = incidents
+  const incidentUrls = incidents
     .map(
       (incident) => `  <url>
     <loc>${escapeXml(buildIncidentUrl(incident, siteUrl))}</loc>
@@ -106,6 +107,17 @@ function buildSitemapXml({ incidents, siteUrl }) {
   </url>`,
     )
     .join("\n");
+  const newestLastmod = incidents[0]?.date_logged ?? "";
+  const topicUrls = collectPublicTopics(incidents)
+    .map(
+      (topic) => `  <url>
+    <loc>${escapeXml(buildTopicUrl(topic.kind, topic.value, siteUrl))}</loc>${
+      newestLastmod ? `\n    <lastmod>${escapeXml(newestLastmod)}</lastmod>` : ""
+    }
+  </url>`,
+    )
+    .join("\n");
+  const urls = [incidentUrls, topicUrls].filter(Boolean).join("\n");
 
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -114,6 +126,32 @@ function buildSitemapXml({ incidents, siteUrl }) {
     "</urlset>",
     "",
   ].join("\n");
+}
+
+function collectPublicTopics(incidents) {
+  const topicKeys = new Set();
+  const topics = [];
+
+  for (const incident of incidents) {
+    for (const category of incident.categories ?? []) {
+      addTopic(topics, topicKeys, "category", category);
+    }
+    if (incident.source_family) {
+      addTopic(topics, topicKeys, "source", incident.source_family);
+    }
+  }
+
+  return topics;
+}
+
+function addTopic(topics, topicKeys, kind, value) {
+  const key = `${kind}:${value}`;
+  if (topicKeys.has(key)) {
+    return;
+  }
+
+  topicKeys.add(key);
+  topics.push({ kind, value });
 }
 
 function buildRobotsTxt(siteUrl) {

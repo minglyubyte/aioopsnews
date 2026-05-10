@@ -6,6 +6,11 @@ import { fetchIncidentFeed, fetchIncidentFilters } from "../lib/api";
 import { buildIncidentPath } from "../lib/publicIncidentRoutes";
 import { localizePublicCategory } from "../lib/publicDashboardLocalization";
 import {
+  getTopicDefinition,
+  topicDisplayLabel,
+} from "../lib/publicTopicMetadata";
+import { buildTopicPath, topicSlugFromValue } from "../lib/publicTopicRoutes";
+import {
   READER_LOCALE_STORAGE_KEY,
   READER_THEME_STORAGE_KEY,
   readStoredReaderLocale,
@@ -29,7 +34,7 @@ const SIGNAL_COLORS = [
   "#6f4b7e",
   "#405061",
 ];
-const ARCHIVE_PAGE_SIZE = 6;
+const ARCHIVE_PAGE_SIZE = 20;
 const EMPTY_SLICE_SUMMARY: IncidentSliceSummary = {
   total_matches: 0,
   newest_logged: null,
@@ -48,6 +53,7 @@ import {
   type ReaderLocale,
   type ReaderTheme,
 } from "../lib/locale";
+import PublicSiteFooter from "./PublicSiteFooter";
 
 export default function PublicDashboardPage() {
   const [filters, setFilters] = useState<IncidentFilters | null>(null);
@@ -98,6 +104,12 @@ export default function PublicDashboardPage() {
   const maxMonthlyCount = Math.max(
     ...monthlySignals.map((signal) => signal.count),
     1,
+  );
+  const paginationRange = buildPaginationRange(
+    feed.page,
+    ARCHIVE_PAGE_SIZE,
+    incidents.length,
+    feed.total_count,
   );
 
   useEffect(() => {
@@ -600,6 +612,30 @@ export default function PublicDashboardPage() {
                 </select>
               </label>
             </div>
+            <div className="public-topic-links" aria-label="Topic pages">
+              {(filters?.categories ?? []).map((category) => (
+                <a
+                  className="tag"
+                  href={buildTopicPath("category", category)}
+                  key={`category-${category}`}
+                >
+                  {localizePublicCategory(category, readerLocale)}
+                </a>
+              ))}
+              {(filters?.source_families ?? [])
+                .filter((sourceFamily) =>
+                  getTopicDefinition("source", topicSlugFromValue(sourceFamily)),
+                )
+                .map((sourceFamily) => (
+                  <a
+                    className="tag"
+                    href={buildTopicPath("source", sourceFamily)}
+                    key={`source-${sourceFamily}`}
+                  >
+                    {topicDisplayLabel("source", sourceFamily, readerLocale)}
+                  </a>
+                ))}
+            </div>
           </section>
         </section>
 
@@ -678,7 +714,11 @@ export default function PublicDashboardPage() {
               {!isFeedLoading && !feedError && incidents.length > 0 ? (
                 <div className="public-archive-pagination">
                   <span className="body-copy public-pagination-summary">
-                    {copy.paginationSummary(incidents.length, feed.total_count)}
+                    {copy.paginationSummary(
+                      paginationRange.start,
+                      paginationRange.end,
+                      feed.total_count,
+                    )}
                   </span>
                   <div className="public-pagination-controls">
                     <button
@@ -784,6 +824,8 @@ export default function PublicDashboardPage() {
             </section>
           </aside>
         </section>
+
+        <PublicSiteFooter copy={copy} />
       </div>
     </main>
   );
@@ -1201,6 +1243,22 @@ function buildEmptyIncidentFeed(): IncidentFeedResponse {
     has_previous_page: false,
     slice_summary: EMPTY_SLICE_SUMMARY,
   };
+}
+
+function buildPaginationRange(
+  page: number,
+  pageSize: number,
+  visibleCount: number,
+  totalCount: number,
+) {
+  if (visibleCount === 0 || totalCount === 0) {
+    return { start: 0, end: 0 };
+  }
+
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(start + visibleCount - 1, totalCount);
+
+  return { start, end };
 }
 
 function normalizeIncidentFeed(
